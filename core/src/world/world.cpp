@@ -273,7 +273,7 @@ int World::surface_y_peek(int x, int z) const {
     return -1;
 }
 
-ForestStats World::forest() const {
+const std::vector<Vec3i>& World::generated_trees() const {
     if (!trees_known_) {
         tree_bases_ = gen_.tree_bases();
         std::sort(tree_bases_.begin(), tree_bases_.end(), [&](const Vec3i& a, const Vec3i& b) {
@@ -282,6 +282,11 @@ ForestStats World::forest() const {
         });
         trees_known_ = true;
     }
+    return tree_bases_;
+}
+
+ForestStats World::forest() const {
+    generated_trees();
     ForestStats f;
     const MatId log = reg_->m().log;
     for (const Vec3i& t : tree_bases_) {

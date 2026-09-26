@@ -17,6 +17,7 @@
 #include "icarus/society/society.h"
 #include "icarus/decision/decisions.h"
 #include "icarus/sim/clock.h"
+#include "icarus/sim/ecology.h"
 #include "icarus/sim/physics.h"
 #include "icarus/util/json.h"
 #include "icarus/util/rng.h"
@@ -73,6 +74,13 @@ public:
     const Economy& economy() const { return econ_; }
     const Buildings& buildings() const { return buildings_; }
     Decisions& decisions() { return decisions_; }
+    const Ecology& ecology() const { return ecology_; }
+    // The islands' forest: generated trees still standing plus those that grew back.
+    ForestStats forest() const {
+        ForestStats f = world_.forest();
+        f.regrown = ecology_.regrown_standing();
+        return f;
+    }
     const Decisions& decisions() const { return decisions_; }
     SimContext& ctx() { return ctx_; }
 
@@ -109,6 +117,7 @@ private:
     Agents agents_;
     Society society_;
     Decisions decisions_;
+    Ecology ecology_;
     Rng scenario_rng_;
     std::vector<AdminCommand> admin_queue_;
     Tick tick_ = 0;

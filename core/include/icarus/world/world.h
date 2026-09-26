@@ -10,6 +10,8 @@
 // the simulation-relevant state, so camera movement cannot change history.
 #pragma once
 
+#include <algorithm>
+
 #include <array>
 #include <functional>
 #include <memory>
@@ -65,7 +67,10 @@ struct VoxelChange {
 // How much of the islands' forest still stands (trees counted by their trunk base).
 struct ForestStats {
     int initial = 0, standing = 0;
-    float ratio() const { return initial > 0 ? (float)standing / (float)initial : 1.0f; }
+    int regrown = 0;  // trees that grew back since (see Ecology)
+    float ratio() const {
+        return initial > 0 ? std::min(1.0f, (float)(standing + regrown) / (float)initial) : 1.0f;
+    }
 };
 
 struct WorldStats {
@@ -139,6 +144,8 @@ public:
     // Cheap: cells never touched still hold their generated trees; only modified cells
     // are looked at.
     ForestStats forest() const;
+    // The generator's trees (trunk bases), sorted by cell.
+    const std::vector<Vec3i>& generated_trees() const;
 
     // ---- persistence ----
     void save(BinWriter& w) const;

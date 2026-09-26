@@ -70,7 +70,8 @@ Simulation::Simulation(const Registry& reg)
       nav_(world_),
       agents_(ctx_),
       society_(ctx_),
-      decisions_(ctx_) {
+      decisions_(ctx_),
+      ecology_(world_, reg) {
     world_.on_wake = [this](Cell& c, Tick last, Tick now) { on_cell_wake(c, last, now); };
     ctx_.reg = reg_;
     ctx_.world = &world_;
@@ -108,6 +109,7 @@ void Simulation::new_game(const GameConfig& cfg) {
     agents_.reset(hash_combine(cfg.world.seed, 0xA9));
     society_.reset(hash_combine(cfg.world.seed, 0x50));
     decisions_.reset(hash_combine(cfg.world.seed, 0xDE));
+    ecology_.reset(hash_combine(cfg.world.seed, 0xEC));
     scenario_rng_.seed(pseed, 0x5CE7);
     ctx_.now = tick_;
     econ_.set_now(tick_);
@@ -169,6 +171,10 @@ void Simulation::step() {
     dispatch_changes();
     auto t4b = std::chrono::steady_clock::now();
 
+    if (tick_ % kTicksPerDay == kTicksPerDay / 2 && tick_ > 0) {
+        ecology_.daily(tick_, buildings_);
+        dispatch_changes();
+    }
     if (tick_ % 100 == 0) world_.update_lifecycle(tick_, cfg_.lifecycle_idle_ticks);
 
     auto t5 = std::chrono::steady_clock::now();
@@ -431,6 +437,7 @@ std::vector<u8> Simulation::save() const {
         w.str(c.params.dump());
     }
     w.end_section(s);
+    ecology_.save(w);  // added later: saves without it load with an empty ecology
     return std::move(w.data_mut());
 }
 
@@ -472,6 +479,8 @@ void Simulation::load(const std::vector<u8>& data) {
         c.params = Json::parse(q.str());
         admin_queue_.push_back(std::move(c));
     }
+    if (!r.at_end()) ecology_.load(r);
+    else ecology_.reset(hash_combine(cfg_.world.seed, 0xEC));
     world_.changes().clear();
 }
 
@@ -486,6 +495,7 @@ u64 Simulation::state_hash() const {
     h = hash_combine(h, agents_.hash());
     h = hash_combine(h, society_.hash());
     h = hash_combine(h, decisions_.hash());
+    h = hash_combine(h, ecology_.hash());
     return h;
 }
 

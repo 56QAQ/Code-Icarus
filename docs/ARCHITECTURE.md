@@ -66,6 +66,12 @@ simulation depends on the camera, frame rate or scene tree.
   leave meteoric iron + basalt, and queue area damage.
 * Physics never touches characters directly; it queues `AreaDamage` for the agents.
 
+**Ecology** (`sim/ecology.cpp`): once a day, near trees still standing in places the
+simulation has touched, saplings take root on open grass (not against buildings) and
+grow into real trees after three days; berry bushes re-sprout at the edge of the woods.
+Untouched parts of the island are left as generated and cost nothing. Its random
+stream and state are saved (older saves load with an empty ecology).
+
 ## 5. Chronicle (core/sim/chronicle)
 
 Append-only log of `Event{id, tick, type, severity, pos, actor, target, polity,

@@ -1,0 +1,50 @@
+// Ecology: the living world between the voxels. Once a day, near trees that still
+// stand, a few saplings take root on open grass; after some days a sapling grows into a
+// tree (a real trunk and crown). Berry bushes re-sprout near the woods. So a forest
+// felled faster than it regrows shrinks, and one left alone slowly returns.
+//
+// Only places the simulation has already touched are seeded: an island nobody has
+// visited keeps its generated forest untouched and costs nothing.
+#pragma once
+
+#include <vector>
+
+#include "icarus/util/binio.h"
+#include "icarus/util/rng.h"
+#include "icarus/world/world.h"
+
+namespace icarus {
+
+class Buildings;
+
+class Ecology {
+public:
+    Ecology(World& world, const Registry& reg) : w_(world), reg_(&reg) {}
+
+    void reset(u64 seed);
+    void daily(Tick now, const Buildings& buildings);
+
+    // Trees that grew from saplings and still stand.
+    int regrown_standing() const;
+    size_t saplings() const { return saplings_.size(); }
+
+    void save(BinWriter& w) const;
+    void load(BinReader& r);
+    u64 hash() const;
+
+private:
+    struct Sapling {
+        Vec3i pos;
+        Tick planted = 0;
+    };
+    bool open_grass(const Vec3i& above, const Buildings& buildings);
+    void grow_tree(const Vec3i& base);
+
+    World& w_;
+    const Registry* reg_;
+    Rng rng_;
+    std::vector<Sapling> saplings_;
+    std::vector<Vec3i> regrown_;
+};
+
+}  // namespace icarus

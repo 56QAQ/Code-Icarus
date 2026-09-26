@@ -360,7 +360,7 @@ int cmd_experiment(const Args& a) {
             return false;
         }();
         r.unified = sim.society().unification_event() != 0;
-        r.forest_end = sim.world().forest().ratio();
+        r.forest_end = sim.forest().ratio();
         if (r.unified) r.outcome = r.wars > 0 ? "分裂、战争后重归统一" : "分裂后重归统一";
         else if (r.secessions > 0) r.outcome = r.wars > 0 ? "分裂并交战" : "分裂";
         else if (r.coups > 0) r.outcome = "政变";

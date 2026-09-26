@@ -28,6 +28,7 @@
     {"key": "basalt", "name": "玄武岩", "color": "#3b3836", "color_var": 0.06, "hardness": 120, "toughness": 6, "density": 2.9, "drop": "stone"},
     {"key": "spring", "name": "泉眼", "color": "#6fb8e0", "color_var": 0.04, "hardness": 150, "toughness": 5, "density": 2.4, "drop": "stone"},
     {"key": "door", "name": "门", "color": "#7b5a36", "color_var": 0.03, "passable": true, "opaque": true, "hardness": 30, "toughness": 3, "density": 0.6, "drop": "planks", "flammability": 0.35, "burn_ticks": 120, "burn_to": "air", "rigid": true},
+    {"key": "sapling", "name": "树苗", "color": "#6fae45", "color_var": 0.10, "solid": false, "opaque": false, "hardness": 4, "toughness": 1, "density": 0.2, "flammability": 0.5, "burn_ticks": 20, "burn_to": "air", "rigid": false, "drop": "fiber"},
     {"key": "berry_bush", "name": "浆果丛", "color": "#3d6b3a", "color_var": 0.10, "solid": false, "opaque": false, "hardness": 8, "toughness": 1, "density": 0.2, "flammability": 0.5, "burn_ticks": 30, "burn_to": "air", "rigid": false, "drop": "fiber"},
     {"key": "stone_brick", "name": "石砖", "color": "#9d9a92", "color_var": 0.04, "hardness": 120, "toughness": 6, "density": 2.5, "drop": "stone_block"},
     {"key": "glass", "name": "玻璃", "color": "#cfe8f0", "color_var": 0.02, "opaque": false, "transparent": true, "hardness": 15, "toughness": 1, "density": 2.4},

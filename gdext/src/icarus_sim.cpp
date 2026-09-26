@@ -923,7 +923,7 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
     out["knowledge"] = total_techs ? (float)p->techs.size() / (float)total_techs : 0.0f;
     const icarus::ForestStats f = forest();
     out["ecology"] = f.ratio();
-    out["trees"] = f.standing;
+    out["trees"] = f.standing + f.regrown;
     out["trees_initial"] = f.initial;
     out["stability"] = s.stability;
     d["outcomes"] = out;
@@ -945,7 +945,7 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
 icarus::ForestStats IcarusSim::forest() const {
     // The tally is cheap but not free; the island's forest changes slowly.
     if (sim_ && (forest_tick_ < 0 || (int64_t)sim_->now() - forest_tick_ >= icarus::kTicksPerHour)) {
-        forest_ = sim_->world().forest();
+        forest_ = sim_->forest();
         forest_tick_ = (int64_t)sim_->now();
     }
     return forest_;

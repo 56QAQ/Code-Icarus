@@ -216,3 +216,25 @@ TEST("migration: contented residents stay") {
         if (e.type == EventType::Migration) ++moved;
     CHECK_EQ(moved, 0);
 }
+
+TEST("ecology: saplings take root near standing trees, grow into trees, and survive a save") {
+    Simulation sim(test_registry());
+    sim.new_game(village(1));
+    size_t most_saplings = 0;
+    for (int d = 0; d < 6; ++d) {
+        sim.run(kTicksPerDay);
+        most_saplings = std::max(most_saplings, sim.ecology().saplings());
+    }
+    std::printf("  ecology: up to %zu saplings, %d trees regrown\n", most_saplings, sim.ecology().regrown_standing());
+    CHECK(most_saplings > 0);
+    CHECK(sim.ecology().regrown_standing() > 0);
+    CHECK_EQ(sim.forest().regrown, sim.ecology().regrown_standing());
+    // Deterministic across a save.
+    std::vector<u8> bytes = sim.save();
+    Simulation loaded(test_registry());
+    loaded.load(bytes);
+    CHECK_EQ(loaded.state_hash(), sim.state_hash());
+    sim.run(kTicksPerDay);
+    loaded.run(kTicksPerDay);
+    CHECK_EQ(loaded.state_hash(), sim.state_hash());
+}
