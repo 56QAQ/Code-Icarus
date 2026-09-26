@@ -15,6 +15,17 @@ var _was_paused := false
 
 const SLOT_NAMES := {"auto": "自动存档", "1": "存档一", "2": "存档二", "3": "存档三"}
 
+const HELP := [
+	["右键 / 中键拖动", "旋转 / 平移镜头；滚轮缩放；WASD、Q/E 也可移动与旋转"],
+	["左键", "使用底部工具；「观察」时点击居民、魔法少女或建筑查看详情"],
+	["空格 · 1–4", "暂停 · 1×、2×、5×、20× 速度"],
+	["J 议事录", "魔法少女的每项决策：她知道的局势、可行选项、谁的主张、她的理由"],
+	["C 编年史", "历史与因果链：点任一事件，看它从何而来、引出了什么"],
+	["T 科技", "四个时代的科技树与当前研究"],
+	["神迹", "赐粮、鼓舞、恐吓、治愈、天雷；魔法少女详情页里可以向她低语"],
+	["你是谁", "你不统治任何国家。改变世界，然后看魔法少女与居民如何应对"],
+]
+
 
 func _ready() -> void:
 	var sb := UITheme.card_style(UITheme.BG_SOLID, 18, 22)
@@ -73,6 +84,28 @@ func _ready() -> void:
 	_slot_box = VBoxContainer.new()
 	_slot_box.add_theme_constant_override("separation", 6)
 	_col.add_child(_slot_box)
+
+	# How to play (folded by default).
+	var help_toggle := _button("玩法与操作 ▾", UITheme.TEXT_DIM)
+	help_toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_col.add_child(help_toggle)
+	var help := GridContainer.new()
+	help.columns = 2
+	help.add_theme_constant_override("h_separation", 14)
+	help.add_theme_constant_override("v_separation", 3)
+	help.visible = false
+	_col.add_child(help)
+	for entry in HELP:
+		var k := UITheme.label(entry[0], 12, UITheme.ACCENT)
+		k.custom_minimum_size = Vector2(120, 0)
+		help.add_child(k)
+		var d := UITheme.label(entry[1], 12, UITheme.TEXT_DIM)
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d.custom_minimum_size = Vector2(390, 0)
+		help.add_child(d)
+	help_toggle.pressed.connect(func() -> void:
+		help.visible = not help.visible
+		help_toggle.text = "玩法与操作 ▴" if help.visible else "玩法与操作 ▾")
 
 	var foot := HBoxContainer.new()
 	_col.add_child(foot)

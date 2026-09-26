@@ -90,6 +90,9 @@ jobs:
           godot --headless --path game --import || true
           godot --headless --path game --script res://tests/smoke.gd
           HOME="$(mktemp -d)" godot --headless --path game --script res://tests/save_test.gd | tee /dev/stderr | grep -q "SAVE PASS"
+          UI_OUT="$(HOME="$(mktemp -d)" timeout 300 godot --headless --path game --script res://tests/ui_test.gd 2>&1 || true)"
+          echo "$UI_OUT" | grep -E "UI |SCRIPT ERROR" || true
+          echo "$UI_OUT" | grep -q "UI PASS" && ! echo "$UI_OUT" | grep -q "SCRIPT ERROR"
       - name: Export
         run: |
           mkdir -p build/export/windows build/export/linux build/export/macos
