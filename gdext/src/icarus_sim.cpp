@@ -514,7 +514,14 @@ Array IcarusSim::characters() const {
         d["task"] = to_gd(icarus::task_name_zh(c.task.type));
         d["status"] = to_gd(c.status_text);
         const icarus::Store* inv = sim_->economy().store(c.inv);
-        d["carrying"] = inv && !inv->empty();
+        // Cargo, not the tools and gear they always have on them.
+        bool cargo = false;
+        if (inv)
+            for (const auto& st : inv->items) {
+                const int kept = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
+                if (st.count > kept) cargo = true;
+            }
+        d["carrying"] = cargo;
         d["working"] = c.task.type == icarus::TaskType::Work && c.task.until > now && !c.moving;
         d["protest"] = c.task.type == icarus::TaskType::Protest && c.task.step == 2;
         if (c.is_girl()) d["drive"] = drive_name(*reg_, c.girl->drive);
@@ -522,6 +529,7 @@ Array IcarusSim::characters() const {
         if (const icarus::Polity* cp_pol = sim_->society().polity(c.polity)) d["pcolor"] = col(cp_pol->color);
         d["weapon"] = c.weapon != icarus::kNoItem ? to_gd(reg_->item(c.weapon).key) : String();
         d["armor"] = c.armor != icarus::kNoItem ? to_gd(reg_->item(c.armor).key) : String();
+        d["cart"] = c.cart != icarus::kNoItem;
         d["fighting"] = c.task.type == icarus::TaskType::Fight && !c.moving && c.alive;
         d["casting"] = c.task.type == icarus::TaskType::Cast && !c.moving && c.alive;
         out.push_back(d);

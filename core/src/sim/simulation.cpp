@@ -289,8 +289,12 @@ EventId Simulation::apply_admin(const AdminCommand& cmd) {
         ItemId item = reg_->find_item(p.str("item", "grain"));
         if (item == kNoItem) item = reg_->find_item("grain");
         const int n = std::clamp(p.integer("amount", 40), 1, 1000);
+        // Gifts land where people can reach them (not on a roof or a ledge).
         Vec3i at = pos;
-        while (world_.in_bounds(at) && world_.mat(at) != M.air && at.y < pos.y + 8) at.y++;
+        if (!agents_.nearest_walkable(pos, 8, at)) {
+            at = pos;
+            while (world_.in_bounds(at) && world_.mat(at) != M.air && at.y < pos.y + 8) at.y++;
+        }
         e.pos = at;
         e.text = strfmt("天降粮食：%d 份%s落在 %s", n, reg_->item(item).name.c_str(), at.str().c_str());
         EventId id = chronicle_.emit(std::move(e));

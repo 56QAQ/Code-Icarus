@@ -50,6 +50,8 @@ public:
     void damage(Character& c, float fraction, int part, const std::string& what, EventId cause);
     // What a character can carry: more with a cart.
     float carry_capacity(const Character& c) const;
+    // The nearest cube within `radius` that residents can walk to from a settlement.
+    bool nearest_walkable(const Vec3i& p, int radius, Vec3i& out) const;
     // A hazard residents will run from for a while (explosions, a god's wrath).
     void add_danger(const Vec3f& p, float radius) { dangers_.push_back({p, radius}); }
 

@@ -472,6 +472,8 @@ void Agents::deposit_all(Character& c, StoreId to) {
             if (st.count > keep) ctx_.econ->transfer(c.inv, pile, st.item, st.count - keep);
         }
     }
+    // Standing at the store anyway: a good moment to pick up better tools or a cart.
+    update_equipment(c);
 }
 
 void Agents::update_equipment(Character& c) {

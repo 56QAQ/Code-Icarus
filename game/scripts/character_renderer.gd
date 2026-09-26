@@ -137,7 +137,36 @@ func _create(c: Dictionary) -> Dictionary:
 	crate.visible = false
 	body.add_child(crate)
 	n["crate"] = crate
+	n["cart"] = _make_cart(root)
 	return n
+
+
+## A little hand cart, pulled behind a hauler who owns one.
+func _make_cart(root: Node3D) -> Node3D:
+	var cart := Node3D.new()
+	cart.position = Vector3(0, 0, -1.05)
+	cart.visible = false
+	root.add_child(cart)
+	var wood := _gear_mat("wood")
+	_box(cart, Vector3(0.8, 0.32, 0.9), Vector3(0, 0.55, 0), wood)
+	_box(cart, Vector3(0.06, 0.06, 0.7), Vector3(-0.3, 0.62, 0.75), wood)
+	_box(cart, Vector3(0.06, 0.06, 0.7), Vector3(0.3, 0.62, 0.75), wood)
+	var load := _box(cart, Vector3(0.6, 0.22, 0.7), Vector3(0, 0.8, 0), _crate_mat)
+	load.name = "load"
+	for side in [-1.0, 1.0]:
+		var wheel := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.28
+		cm.bottom_radius = 0.28
+		cm.height = 0.08
+		cm.radial_segments = 10
+		wheel.mesh = cm
+		wheel.material_override = _gear_mat("leather")
+		wheel.rotation.z = PI / 2.0
+		wheel.position = Vector3(0.46 * side, 0.28, 0)
+		wheel.name = "wheel_l" if side < 0 else "wheel_r"
+		cart.add_child(wheel)
+	return cart
 
 
 func _rebuild_body(n: Dictionary, id: int) -> void:
@@ -237,7 +266,13 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 		ll.rotation.x = -arml.rotation.x
 	head.rotation.x = sin(t * 0.7 + float(c["id"])) * 0.06
 	body.position.y += bob
-	(n["crate"] as MeshInstance3D).visible = c.get("carrying", false) and not lying and not c.get("drafted", false)
+	var pulling: bool = c.get("cart", false) and c.get("carrying", false) and not lying and not c.get("drafted", false)
+	(n["crate"] as MeshInstance3D).visible = c.get("carrying", false) and not lying and not c.get("drafted", false) and not pulling
+	var cart: Node3D = n["cart"]
+	cart.visible = pulling
+	if pulling and c["moving"]:
+		for wn in ["wheel_l", "wheel_r"]:
+			(cart.get_node(wn) as Node3D).rotate_x(delta * 6.0)
 	var sig := "%s|%s|%s|%s" % [weapon, c.get("armor", ""), c.get("drafted", false), c.get("pcolor", Color.WHITE)]
 	if sig != n["gear_sig"]:
 		n["gear_sig"] = sig

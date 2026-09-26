@@ -13,6 +13,22 @@
 
 namespace icarus {
 
+bool Agents::nearest_walkable(const Vec3i& p, int radius, Vec3i& out) const {
+    int best = -1;
+    for (int dy = -8; dy <= 8; ++dy)
+        for (int dz = -radius; dz <= radius; ++dz)
+            for (int dx = -radius; dx <= radius; ++dx) {
+                const Vec3i q = p + Vec3i{dx, dy, dz};
+                if (region_map_.find(q) == region_map_.end()) continue;
+                const int d = dx * dx + dz * dz + 4 * dy * dy;
+                if (best < 0 || d < best || (d == best && q < out)) {
+                    best = d;
+                    out = q;
+                }
+            }
+    return best >= 0;
+}
+
 float Agents::carry_capacity(const Character& c) const {
     float cap = tune.carry_capacity;
     if (c.cart != kNoItem) cap += ctx_.reg->item(c.cart).carry;
