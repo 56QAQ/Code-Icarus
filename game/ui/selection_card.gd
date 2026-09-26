@@ -192,7 +192,8 @@ func _refresh_character() -> void:
 		_subtitle.text = "%s · %s · Lv%d" % [girl["title"], roles.get(girl["role"], girl["role"]), girl["level"]]
 	else:
 		var occ := {"food": "农夫", "build": "工匠", "gather": "劳工"}
-		_subtitle.text = "人造人 · %s · 住在%s" % [occ.get(d.get("occupation", ""), "居民"), d.get("home", "野外")]
+		var job: String = "士兵" if d.get("drafted", false) else occ.get(d.get("occupation", ""), "居民")
+		_subtitle.text = "人造人 · %s · 住在%s" % [job, d.get("home", "野外")]
 	match _tab:
 		"status":
 			if not d["alive"]:
@@ -219,6 +220,13 @@ func _refresh_character() -> void:
 				elif p["integrity"] < 0.99:
 					parts += "%s %d%%  " % [p["name"], int(p["integrity"] * 100)]
 			_line(parts if parts != "" else "完好无损", 13, UITheme.TEXT_DIM if parts == "" else UITheme.WARN)
+			var eq: Array = d.get("equipment", [])
+			if not eq.is_empty():
+				var es := PackedStringArray()
+				for e in eq:
+					es.append("%s %s" % [e["slot"], e["name"]])
+				_section("装备")
+				_line("  ·  ".join(es), 13, UITheme.TEXT_DIM)
 			var inv: Array = d["inventory"]
 			if not inv.is_empty():
 				var s := ""

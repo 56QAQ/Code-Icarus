@@ -2,7 +2,8 @@ extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}|break_bridge] [--council [id]] [--hide-ui] [--frames N]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--focus-soldiers [dist]]
+##        [--hide-ui] [--frames N]
 
 var renderer: WorldRenderer
 var chars: CharacterRenderer
@@ -77,6 +78,19 @@ func _ready() -> void:
 		hud.selection._tab = _cli["tab"]
 	if _cli.has("select"):
 		_select_character(int(_cli["select"]))
+	if _cli.has("focus-soldiers"):
+		# Screenshot helper: look at the soldiers (select the first one).
+		var sum := Vector3.ZERO
+		var n := 0
+		for c in Game.sim.characters():
+			if c.get("drafted", false) and c["alive"]:
+				if n == 0:
+					_select_character(int(c["id"]))
+				sum += c["pos"]
+				n += 1
+		if n > 0:
+			var d := float(_cli["focus-soldiers"]) if String(_cli["focus-soldiers"]).is_valid_float() else 30.0
+			rig.focus(sum / n, d, true)
 	if _cli.has("council"):
 		var cid := int(_cli["council"]) if String(_cli["council"]).is_valid_int() else 0
 		hud.toggle_council(cid)
@@ -89,6 +103,8 @@ func _ready() -> void:
 	if _cli.has("chronicle"):
 		var eid := int(_cli["chronicle"]) if String(_cli["chronicle"]).is_valid_int() else 0
 		hud.toggle_chronicle(eid)
+	if _cli.has("tech"):
+		hud.toggle_tech()
 	if _cli.has("shot"):
 		_shot_path = _cli["shot"]
 		_shot_frames = int(_cli.get("frames", "20"))
@@ -290,6 +306,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.toggle_council()
 			KEY_C:
 				hud.toggle_chronicle()
+			KEY_T:
+				hud.toggle_tech()
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_apply_tool()
 

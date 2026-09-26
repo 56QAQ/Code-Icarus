@@ -1,5 +1,7 @@
 #include "icarus_sim.h"
 
+#include <map>
+
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -50,6 +52,7 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("character_body", "id"), &IcarusSim::character_body);
     ClassDB::bind_method(D_METHOD("character_info", "id"), &IcarusSim::character_info);
     ClassDB::bind_method(D_METHOD("polity_info", "id"), &IcarusSim::polity_info);
+    ClassDB::bind_method(D_METHOD("tech_tree", "polity"), &IcarusSim::tech_tree);
     ClassDB::bind_method(D_METHOD("polities"), &IcarusSim::polities);
     ClassDB::bind_method(D_METHOD("piles"), &IcarusSim::piles);
     ClassDB::bind_method(D_METHOD("building_at", "cube"), &IcarusSim::building_at);
@@ -511,6 +514,12 @@ Array IcarusSim::characters() const {
         d["working"] = c.task.type == icarus::TaskType::Work && c.task.until > now && !c.moving;
         d["protest"] = c.task.type == icarus::TaskType::Protest && c.task.step == 2;
         if (c.is_girl()) d["drive"] = drive_name(*reg_, c.girl->drive);
+        d["drafted"] = c.drafted;
+        if (const icarus::Polity* cp_pol = sim_->society().polity(c.polity)) d["pcolor"] = col(cp_pol->color);
+        d["weapon"] = c.weapon != icarus::kNoItem ? to_gd(reg_->item(c.weapon).key) : String();
+        d["armor"] = c.armor != icarus::kNoItem ? to_gd(reg_->item(c.armor).key) : String();
+        d["fighting"] = c.task.type == icarus::TaskType::Fight && !c.moving && c.alive;
+        d["casting"] = c.task.type == icarus::TaskType::Cast && !c.moving && c.alive;
         out.push_back(d);
     }
     return out;
@@ -596,6 +605,17 @@ Dictionary IcarusSim::character_info(int64_t id) const {
         skills.push_back(t);
     }
     d["skills"] = skills;
+    d["drafted"] = c.drafted;
+    Array equip;
+    const std::pair<const char*, icarus::ItemId> slots[] = {{"工具", c.tool}, {"武器", c.weapon}, {"护甲", c.armor}};
+    for (const auto& [slot, item] : slots) {
+        if (item == icarus::kNoItem) continue;
+        Dictionary t;
+        t["slot"] = String::utf8(slot);
+        t["name"] = to_gd(reg_->item(item).name);
+        equip.push_back(t);
+    }
+    d["equipment"] = equip;
     Array trace;
     for (const auto& o : c.trace) {
         Dictionary t;
@@ -811,7 +831,117 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
         reigns.push_back(t);
     }
     d["reigns"] = reigns;
+    // Technology and war.
+    const icarus::Society& soc = sim_->society();
+    const int era = soc.era(*p);
+    d["era"] = era;
+    const icarus::Json& eras = reg_->doc("techs")["eras"];
+    d["era_name"] = era < (int)eras.size() ? to_gd(eras[(size_t)era].as_str()) : String();
+    d["techs_known"] = (int64_t)p->techs.size();
+    Dictionary res;
+    if (!p->policies.research.empty())
+        if (const icarus::Json* t = soc.tech(p->policies.research)) {
+            float prog = 0;
+            for (const auto& r : p->research)
+                if (r.first == p->policies.research) prog = r.second;
+            res["key"] = to_gd(p->policies.research);
+            res["name"] = to_gd(t->str("name"));
+            res["progress"] = prog;
+            res["cost"] = t->flt("cost", 100.0f);
+        }
+    d["research"] = res;
+    d["soldiers"] = soc.soldiers(p->id);
+    Array wars;
+    for (const auto& w : p->wars) {
+        Dictionary t;
+        t["enemy"] = w.enemy;
+        const icarus::Polity* e = soc.polity(w.enemy);
+        t["enemy_name"] = e ? to_gd(e->name) : String("?");
+        t["enemy_color"] = e ? col(e->color) : Color(0.5, 0.5, 0.5);
+        t["attacker"] = w.attacker;
+        t["aim"] = to_gd(w.aim);
+        t["since"] = to_gd(icarus::format_time_zh(w.since));
+        t["kills"] = w.kills;
+        t["losses"] = w.losses;
+        t["event"] = (int64_t)w.event;
+        wars.push_back(t);
+    }
+    d["wars"] = wars;
+    Dictionary op;
+    op["active"] = p->op.active;
+    if (p->op.active) {
+        static const char* phases[] = {"集结", "行军", "交锋", "撤回"};
+        op["aim"] = to_gd(p->op.aim);
+        op["phase"] = p->op.phase;
+        op["phase_name"] = String::utf8(phases[std::min<int>(p->op.phase, 3)]);
+        const icarus::Polity* e = soc.polity(p->op.enemy);
+        op["enemy_name"] = e ? to_gd(e->name) : String("?");
+        op["party"] = p->op.party;
+        op["lost"] = p->op.lost;
+        op["objective"] = to_gd(p->op.objective);
+        op["event"] = (int64_t)p->op.event;
+    }
+    d["op"] = op;
     return d;
+}
+
+Array IcarusSim::tech_tree(int64_t polity) const {
+    Array out;
+    if (!sim_) return out;
+    const icarus::Society& soc = sim_->society();
+    const icarus::Polity* p = soc.polity((uint16_t)polity);
+    // What each tech unlocks: recipes and buildings that name it.
+    std::map<std::string, std::vector<std::string>> unlocks;
+    for (const icarus::Json& r : reg_->doc("recipes")["recipes"].items())
+        if (r.has("tech")) unlocks[r.str("tech")].push_back(r.str("name"));
+    for (const icarus::Json& b : reg_->doc("buildings")["buildings"].items())
+        if (b.has("tech")) unlocks[b.str("tech")].push_back(b.str("name"));
+    for (const icarus::Json& t : reg_->doc("techs")["techs"].items()) {
+        Dictionary d;
+        const std::string key = t.str("key");
+        d["key"] = to_gd(key);
+        d["name"] = to_gd(t.str("name"));
+        d["era"] = t.integer("era", 0);
+        d["cost"] = t.flt("cost", 0.0f);
+        d["desc"] = to_gd(t.str("desc"));
+        PackedStringArray req;
+        if (t.has("requires"))
+            for (const icarus::Json& r : t["requires"].items()) req.push_back(to_gd(r.as_str()));
+        d["requires"] = req;
+        PackedStringArray un;
+        for (const std::string& u : unlocks[key]) un.push_back(to_gd(u));
+        d["unlocks"] = un;
+        static const std::map<std::string, std::pair<const char*, bool>> effect_names = {
+            {"craft_speed", {"制作速度", true}},   {"research_speed", {"研究速度", true}},
+            {"irrigation_radius", {"灌溉范围", false}}, {"morale", {"士气", true}},
+            {"fair_punishment", {"刑罚公正", true}}, {"loyalty_drift", {"忠诚回归", true}}};
+        String effects;
+        if (t.has("effects"))
+            for (const auto& [k, v] : t["effects"].members()) {
+                if (!effects.is_empty()) effects += " · ";
+                auto it = effect_names.find(k);
+                if (it == effect_names.end())
+                    effects += to_gd(k) + " +" + String::num(v.as_num(), 2);
+                else if (it->second.second)
+                    effects += String::utf8(it->second.first) + " +" + String::num_int64((int64_t)std::lround(v.as_num() * 100)) + "%";
+                else
+                    effects += String::utf8(it->second.first) + " +" + String::num(v.as_num(), 0);
+            }
+        d["effects"] = effects;
+        float prog = 0;
+        String state = "locked";
+        if (p) {
+            for (const auto& r : p->research)
+                if (r.first == key) prog = r.second;
+            if (p->has_tech(key)) state = "known";
+            else if (p->policies.research == key) state = "researching";
+            else if (soc.tech_available(*p, key)) state = "available";
+        }
+        d["progress"] = prog;
+        d["state"] = state;
+        out.push_back(d);
+    }
+    return out;
 }
 
 Array IcarusSim::piles() const {

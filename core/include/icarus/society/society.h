@@ -53,6 +53,7 @@ public:
     int draft(u16 polity, int n, EventId cause);
     void discharge(u16 polity);
     int soldiers(u16 polity) const;
+    int draftable(u16 polity) const;  // residents fit to serve who are not yet soldiers
     // The winner absorbs the loser: people, fields, buildings and stores change hands.
     void annex(u16 winner, u16 loser, EventId cause, const std::string& how = "");
     void refresh_passives(Polity& p);

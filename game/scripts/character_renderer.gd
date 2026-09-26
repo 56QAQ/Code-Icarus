@@ -17,6 +17,14 @@ var _ring: MeshInstance3D
 var _crate_mesh: BoxMesh
 var _crate_mat: StandardMaterial3D
 var _pile_nodes := {}  # key -> MeshInstance3D
+var _gear_mats := {}   # name -> StandardMaterial3D
+
+# Materials of held gear, by the item's key.
+const GEAR_COLORS := {
+	"wood": Color(0.52, 0.36, 0.2), "stone": Color(0.55, 0.55, 0.56), "copper": Color(0.78, 0.5, 0.28),
+	"iron": Color(0.62, 0.65, 0.7), "hide": Color(0.62, 0.52, 0.33), "leather": Color(0.42, 0.3, 0.18),
+	"string": Color(0.9, 0.88, 0.8),
+}
 var _pile_timer := 0.0
 
 const PART_HEAD := 0
@@ -103,7 +111,8 @@ func _create(c: Dictionary) -> Dictionary:
 	add_child(root)
 	var body := Node3D.new()  # tilts when lying down
 	root.add_child(body)
-	var n := {"root": root, "body": body, "parts": [], "version": -1, "pos": c["pos"], "label": null, "crate": null}
+	var n := {"root": root, "body": body, "parts": [], "version": -1, "pos": c["pos"], "label": null, "crate": null,
+		"aabbs": [], "gear_sig": ""}
 	root.position = c["pos"]
 	if c.get("girl", false):
 		var l := Label3D.new()
@@ -135,6 +144,8 @@ func _rebuild_body(n: Dictionary, id: int) -> void:
 	for p in n["parts"]:
 		p.queue_free()
 	n["parts"] = []
+	n["aabbs"] = []
+	n["gear_sig"] = ""
 	var parts: Array = sim.character_body(id)
 	for i in parts.size():
 		var d: Dictionary = parts[i]
@@ -149,12 +160,18 @@ func _rebuild_body(n: Dictionary, id: int) -> void:
 			mi.mesh = mesh
 			mi.material_override = _mat
 			pivot.add_child(mi)
+			n["aabbs"].append(mesh.get_aabb())
+		else:
+			n["aabbs"].append(AABB())
 		n["parts"].append(pivot)
 
 
 func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	var root: Node3D = n["root"]
-	var target: Vector3 = c["pos"]
+	# Characters walk the same cube paths; a small fixed offset per character keeps
+	# two of them on one cube from rendering as one merged body.
+	var a := float(c["id"]) * 2.39996
+	var target: Vector3 = c["pos"] + Vector3(cos(a), 0.0, sin(a)) * 0.22
 	# Smooth between simulation ticks.
 	if root.position.distance_to(target) > 4.0:
 		root.position = target
@@ -194,17 +211,142 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	if c.get("protest", false):
 		ar = -2.8 + sin(t * 6.0) * 0.35
 		al = -0.3
+	var weapon := String(c.get("weapon", ""))
+	if c.get("fighting", false):
+		if weapon == "bow":
+			al = -1.55
+			ar = -1.35 + sin(t * 3.0) * 0.12
+		else:
+			# Thrust / swing, a little out of step for each fighter.
+			var ph2 := t * 8.0 + float(c["id"])
+			ar = -1.25 + sin(ph2) * 0.55
+			al = -0.5
+	elif c.get("drafted", false) and not c["moving"] and weapon != "":
+		ar = -0.35  # weapon at the ready
+	if c.get("casting", false):
+		al = -2.0 + sin(t * 5.0) * 0.15
+		ar = -2.0 - sin(t * 5.0) * 0.15
 	arml.rotation.x = lerpf(arml.rotation.x, al, 1.0 - exp(-delta * 12.0))
 	armr.rotation.x = lerpf(armr.rotation.x, ar, 1.0 - exp(-delta * 12.0))
+	# Spears stay level and bows upright in the body's frame.
+	var lr: Node3D = n.get("level_r")
+	if lr != null and is_instance_valid(lr):
+		lr.rotation.x = -armr.rotation.x - 0.1
+	var ll: Node3D = n.get("level_l")
+	if ll != null and is_instance_valid(ll):
+		ll.rotation.x = -arml.rotation.x
 	head.rotation.x = sin(t * 0.7 + float(c["id"])) * 0.06
 	body.position.y += bob
-	(n["crate"] as MeshInstance3D).visible = c.get("carrying", false) and not lying
+	(n["crate"] as MeshInstance3D).visible = c.get("carrying", false) and not lying and not c.get("drafted", false)
+	var sig := "%s|%s|%s|%s" % [weapon, c.get("armor", ""), c.get("drafted", false), c.get("pcolor", Color.WHITE)]
+	if sig != n["gear_sig"]:
+		n["gear_sig"] = sig
+		_attach_gear(n, c)
 	if not alive and not n.get("dead_applied", false):
 		n["dead_applied"] = true
 		for p in parts:
 			for ch in p.get_children():
 				if ch is MeshInstance3D:
 					ch.material_override = _dead_mat
+
+
+func _gear_mat(key: String, metal := false) -> StandardMaterial3D:
+	var k := key + ("_m" if metal else "")
+	if not _gear_mats.has(k):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = GEAR_COLORS.get(key, Color(0.6, 0.6, 0.6))
+		m.roughness = 0.45 if metal else 0.85
+		m.metallic = 0.55 if metal else 0.0
+		_gear_mats[k] = m
+	return _gear_mats[k]
+
+
+func _box(parent: Node3D, size: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation = rot
+	mi.set_meta("gear", true)
+	parent.add_child(mi)
+	return mi
+
+
+## Weapons, armour and the soldier's helmet, hung on the voxel body's part pivots. Pure
+## decoration derived from the kernel's equipment slots.
+func _attach_gear(n: Dictionary, c: Dictionary) -> void:
+	var parts: Array = n["parts"]
+	if parts.size() < 6:
+		return
+	for p in parts:
+		for ch in (p as Node3D).get_children():
+			if ch.has_meta("gear"):
+				ch.queue_free()
+	n.erase("level_r")
+	n.erase("level_l")
+	var aabbs: Array = n["aabbs"]
+	var weapon := String(c.get("weapon", ""))
+	var armor := String(c.get("armor", ""))
+	var arm_r: Node3D = parts[PART_ARM_R]
+	var arm_l: Node3D = parts[PART_ARM_L]
+	var hand_r := Vector3(0, (aabbs[PART_ARM_R] as AABB).position.y + 0.05, 0)
+	var hand_l := Vector3(0, (aabbs[PART_ARM_L] as AABB).position.y + 0.05, 0)
+	var metal := "iron" if weapon.begins_with("iron") else ("copper" if weapon.begins_with("copper") else "stone")
+	match weapon:
+		"spear":
+			# Held level in the fist whatever the arm does (see _animate), so a raised
+			# arm thrusts it forward.
+			var g := Node3D.new()
+			g.set_meta("gear", true)
+			g.position = hand_r
+			arm_r.add_child(g)
+			_box(g, Vector3(0.05, 0.05, 1.9), Vector3(0, 0, 0.45), _gear_mat("wood"))
+			_box(g, Vector3(0.09, 0.03, 0.22), Vector3(0, 0, 1.48), _gear_mat("stone"))
+			n["level_r"] = g
+		"copper_sword", "iron_sword":
+			var g := Node3D.new()
+			g.set_meta("gear", true)
+			g.position = hand_r
+			g.rotation.x = -0.2
+			arm_r.add_child(g)
+			_box(g, Vector3(0.05, 0.1, 0.78), Vector3(0, 0, 0.46), _gear_mat(metal, true))
+			_box(g, Vector3(0.26, 0.05, 0.05), Vector3(0, 0, 0.06), _gear_mat("leather"))
+		"bow":
+			# Upright in the left hand whatever the arm does: grip, two limbs curving
+			# back towards the archer, and the string.
+			var g := Node3D.new()
+			g.set_meta("gear", true)
+			g.position = hand_l
+			arm_l.add_child(g)
+			_box(g, Vector3(0.05, 0.5, 0.05), Vector3(0, 0, 0.08), _gear_mat("wood"))
+			_box(g, Vector3(0.05, 0.45, 0.05), Vector3(0, 0.42, -0.01), _gear_mat("wood"), Vector3(-0.45, 0, 0))
+			_box(g, Vector3(0.05, 0.45, 0.05), Vector3(0, -0.42, -0.01), _gear_mat("wood"), Vector3(0.45, 0, 0))
+			_box(g, Vector3(0.015, 1.24, 0.015), Vector3(0, 0, -0.11), _gear_mat("string"))
+			n["level_l"] = g
+	var torso: Node3D = parts[PART_TORSO]
+	var tb: AABB = aabbs[PART_TORSO]
+	if armor != "" and tb.size.y > 0.0:
+		var am := "hide" if armor == "hide_armor" else ("copper" if armor == "bronze_armor" else "iron")
+		var vest := _box(torso, Vector3(tb.size.x * 1.1, tb.size.y * 0.62, tb.size.z * 1.18),
+			tb.get_center() + Vector3(0, tb.size.y * 0.12, 0), _gear_mat(am, am != "hide"))
+		vest.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if c.get("drafted", false):
+		var head: Node3D = parts[PART_HEAD]
+		var hb: AABB = aabbs[PART_HEAD]
+		if hb.size.y > 0.0:
+			var hm := "leather" if armor == "" or armor == "hide_armor" else ("copper" if armor == "bronze_armor" else "iron")
+			_box(head, Vector3(hb.size.x * 1.12, hb.size.y * 0.3, hb.size.z * 1.12),
+				Vector3(hb.get_center().x, hb.end.y - hb.size.y * 0.1, hb.get_center().z), _gear_mat(hm, hm != "leather"))
+			# A pennant in the polity's colour tells the sides apart.
+			var pm := StandardMaterial3D.new()
+			pm.albedo_color = c.get("pcolor", Color.WHITE)
+			pm.emission_enabled = true
+			pm.emission = pm.albedo_color
+			pm.emission_energy_multiplier = 0.35
+			_box(head, Vector3(0.045, 0.55, 0.045), Vector3(hb.get_center().x, hb.end.y + 0.2, hb.position.z - 0.02), _gear_mat("leather"))
+			_box(head, Vector3(0.025, 0.2, 0.3), Vector3(hb.get_center().x, hb.end.y + 0.37, hb.position.z - 0.17), pm)
 
 
 func pick(screen_pos: Vector2, max_px := 26.0) -> int:

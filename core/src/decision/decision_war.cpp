@@ -133,19 +133,34 @@ void Decisions::build_defense_options(Decision& d, Polity& p, const Crisis& c) {
     const int ours = residents_of(ctx_, p.id);
     d.petition = Json::object();
     d.petition.set("other", (int)w->enemy);
-    const int n = std::max(4, ours / 3);
+    // Only the able-bodied can be called up; the maimed and the soldiers already
+    // serving do not count.
+    const int serving = ctx_.society->soldiers(p.id);
+    const int fit = ctx_.society->draftable(p.id);
+    const int n = std::min(std::max(4, ours / 3), serving + fit);
     {
         DecisionOption o = make("call_to_arms", strfmt("全民应战（征召 %d 人守卫家园）", n),
                                 "拿起武器守在议事厅周围，击退来犯之敌。",
                                 {{kMilitary, 0.9f}, {kOrder, 0.4f}, {kRisk, 0.4f}, {kFoodSecurity, -0.2f}, {kSelfPower, 0.2f}},
                                 act("defend"));
         o.action.set("n", n);
+        o.facts.set("fit_to_fight", serving + fit);
+        o.facts.set("already_serving", serving);
+        if (n <= serving) {
+            o.feasible = false;
+            o.why_not = fit == 0 ? "已没有能拿起武器的人" : "能征召的人都已在军中";
+        }
         O.push_back(o);
     }
     {
-        DecisionOption o = make("hold", "小股守卫（征召 3 人）", "只派少数人守卫，其余照常劳作。",
+        const int h = std::min(3, serving + fit);
+        DecisionOption o = make("hold", strfmt("小股守卫（征召 %d 人）", h), "只派少数人守卫，其余照常劳作。",
                                 {{kMilitary, 0.4f}, {kFrugality, 0.4f}, {kFoodSecurity, 0.2f}, {kRisk, 0.2f}}, act("defend"));
-        o.action.set("n", 3);
+        o.action.set("n", h);
+        if (h <= 0) {
+            o.feasible = false;
+            o.why_not = "已没有能拿起武器的人";
+        }
         O.push_back(o);
     }
     {

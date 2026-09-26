@@ -28,6 +28,7 @@ signal focus_requested(pos: Vector3)
 
 var council: CouncilPanel
 var chronicle: ChroniclePanel
+var tech: TechPanel
 var _council_wrap: CenterContainer
 var _thinking: HBoxContainer
 
@@ -168,6 +169,9 @@ func _build_time_pill() -> void:
 	var chron_btn := _icon_button("chronicle", "编年史与因果链（C）")
 	chron_btn.pressed.connect(func() -> void: toggle_chronicle())
 	row.add_child(chron_btn)
+	var tech_btn := _icon_button("flask", "科技（T）")
+	tech_btn.pressed.connect(func() -> void: toggle_tech())
+	row.add_child(tech_btn)
 	var right_pad := Control.new()
 	right_pad.custom_minimum_size = Vector2(2, 0)
 	row.add_child(right_pad)
@@ -207,6 +211,8 @@ func _build_status() -> void:
 		selection.visible = false
 		Game.select({}))
 	civ_card.council_requested.connect(func() -> void: toggle_council())
+	civ_card.tech_requested.connect(func() -> void: toggle_tech())
+	civ_card.event_requested.connect(func(id: int) -> void: toggle_chronicle(id))
 	selection.decision_requested.connect(func(id: int) -> void: toggle_council(id))
 	selection.event_requested.connect(func(id: int) -> void: toggle_chronicle(id))
 
@@ -380,6 +386,10 @@ func _build_council() -> void:
 	chronicle.sim = Game.sim
 	chronicle.visible = false
 	_council_wrap.add_child(chronicle)
+	tech = TechPanel.new()
+	tech.sim = Game.sim
+	tech.visible = false
+	_council_wrap.add_child(tech)
 	chronicle.focus_requested.connect(func(p: Vector3) -> void:
 		chronicle.visible = false
 		focus_requested.emit(p))
@@ -394,6 +404,7 @@ func _size_council() -> void:
 	var sz := Vector2(minf(1080.0, vp.x * 0.9), minf(660.0, vp.y * 0.82))
 	council.custom_minimum_size = sz
 	chronicle.custom_minimum_size = sz
+	tech.custom_minimum_size = sz
 
 
 ## Opens the decision ledger (at a decision if given); only one overlay at a time.
@@ -402,6 +413,7 @@ func toggle_council(id: int = 0) -> void:
 		council.visible = false
 	else:
 		chronicle.visible = false
+		tech.visible = false
 		council.open_at(id)
 
 
@@ -411,16 +423,28 @@ func toggle_chronicle(id: int = 0) -> void:
 		chronicle.visible = false
 	else:
 		council.visible = false
+		tech.visible = false
 		chronicle.open_at(id)
 
 
+## Opens the technology tree of the polity shown in the civilisation card.
+func toggle_tech() -> void:
+	if tech.visible:
+		tech.visible = false
+	else:
+		council.visible = false
+		chronicle.visible = false
+		tech.open_for(civ_card.polity_id)
+
+
 func overlay_open() -> bool:
-	return council.visible or chronicle.visible
+	return council.visible or chronicle.visible or tech.visible
 
 
 func close_overlays() -> void:
 	council.visible = false
 	chronicle.visible = false
+	tech.visible = false
 
 
 # ------------------------------------------------------------------ toasts

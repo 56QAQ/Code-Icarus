@@ -53,6 +53,7 @@ public:
     Array character_body(int64_t id) const; // 6 parts: {mesh, pivot}
     Dictionary character_info(int64_t id) const;
     Dictionary polity_info(int64_t id) const;
+    Array tech_tree(int64_t polity) const;  // every tech with its state for the polity
     Array polities() const;
     Array piles() const;
     Dictionary building_at(const Vector3i& cube) const;

@@ -110,14 +110,25 @@ int Society::soldiers(u16 id) const {
     return n;
 }
 
+static bool fit_to_serve(const Character& c, u16 polity) {
+    return c.alive && !c.departed && !c.is_girl() && c.polity == polity && !c.drafted && c.body.can_hold() &&
+           c.body.mobility() >= 0.6f;
+}
+
+int Society::draftable(u16 id) const {
+    int n = 0;
+    for (const auto& cp : ctx_.agents->all())
+        if (cp && fit_to_serve(*cp, id)) ++n;
+    return n;
+}
+
 int Society::draft(u16 id, int n, EventId cause) {
     Polity* p = polity(id);
     if (!p) return 0;
     std::vector<std::pair<float, Character*>> pool;
     for (const auto& cp : ctx_.agents->all()) {
         Character* c = cp.get();
-        if (!c || !c->alive || c->departed || c->is_girl() || c->polity != id || c->drafted) continue;
-        if (!c->body.can_hold() || c->body.mobility() < 0.6f) continue;
+        if (!c || !fit_to_serve(*c, id)) continue;
         float fit = c->pers.aggression + c->skills[kCombat] + 0.3f * c->pers.conformity - 0.3f * c->pers.caution +
                     0.2f * c->body.vitality;
         pool.push_back({fit, c});
@@ -205,16 +216,25 @@ void Society::update_wars(Polity& p) {
         return;
     }
     int serving = soldiers(p.id);
+    // Nobody could be called up (or everyone has already gone home): the operation
+    // simply lapses.
+    if (serving == 0 && op.lost == 0) {
+        op.active = false;
+        return;
+    }
     // Broken army: too many lost, or nobody left.
     if (serving == 0 || (op.party > 0 && op.lost * 2 >= op.party + 1)) {
         if (op.phase < 3) {
             op.phase = 3;
+            op.since = ctx_.now;
             Event e;
             e.type = EventType::Battle;
             e.severity = 4;
             e.polity = p.id;
             e.causes[0] = op.event;
-            e.text = strfmt("「%s」的军队伤亡惨重，撤退了（损失 %d 人）", title(p.id).c_str(), op.lost);
+            e.text = op.aim == "defend"
+                         ? strfmt("「%s」的守军伤亡惨重，溃散了（损失 %d 人）", title(p.id).c_str(), op.lost)
+                         : strfmt("「%s」的军队伤亡惨重，撤退了（损失 %d 人）", title(p.id).c_str(), op.lost);
             ctx_.chron->emit(std::move(e));
         }
     }

@@ -141,6 +141,23 @@ func _draw() -> void:
 			for i in 3:
 				var y := 0.34 + float(i) * 0.15
 				draw_line(P.call(0.34, y), P.call(0.66 if i < 2 else 0.54, y), color, w, true)
+		"flask":
+			var fl := PackedVector2Array([P.call(0.4, 0.16), P.call(0.6, 0.16), P.call(0.6, 0.4), P.call(0.8, 0.78),
+				P.call(0.74, 0.86), P.call(0.26, 0.86), P.call(0.2, 0.78), P.call(0.4, 0.4)])
+			fl.append(fl[0])
+			draw_colored_polygon(PackedVector2Array([P.call(0.3, 0.6), P.call(0.7, 0.6), P.call(0.8, 0.78),
+				P.call(0.74, 0.86), P.call(0.26, 0.86), P.call(0.2, 0.78)]), Color(color, 0.55))
+			draw_polyline(fl, color, w, true)
+			draw_line(P.call(0.34, 0.16), P.call(0.66, 0.16), color, w, true)
+		"swords":
+			for sgn in [-1.0, 1.0]:
+				var a: Vector2 = P.call(0.5 - 0.32 * sgn, 0.18)
+				var b: Vector2 = P.call(0.5 + 0.26 * sgn, 0.76)
+				draw_line(a, b, color, w * 1.3, true)
+				var g: Vector2 = P.call(0.5 + 0.17 * sgn, 0.66)
+				var nrm := (b - a).normalized().orthogonal() * 0.12 * s
+				draw_line(g - nrm, g + nrm, color, w * 1.2, true)
+				draw_circle(P.call(0.5 + 0.3 * sgn, 0.8), 0.045 * s, color)
 		"think":
 			for i in 3:
 				draw_circle(P.call(0.26 + float(i) * 0.24, 0.52), 0.07 * s, Color(color, 0.45 + 0.25 * float(i)))
