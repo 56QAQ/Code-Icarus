@@ -9,6 +9,9 @@ ARGUMENTS.setdefault("disable_exceptions", "no")
 env = SConscript("../thirdparty/godot-cpp/SConstruct")
 
 env.Append(CPPPATH=["src/", "../core/include/"])
+# The kernel is written against C++20 (godot-cpp itself only asks for C++17).
+env["CXXFLAGS"] = [f for f in env["CXXFLAGS"] if f not in ("-std=c++17", "/std:c++17")]
+env.Append(CXXFLAGS=["/std:c++20"] if env.get("is_msvc", False) else ["-std=c++20"])
 if env["platform"] == "windows" and env.get("use_mingw", False) is False and env.get("is_msvc", False):
     env.Append(CXXFLAGS=["/fp:precise"])
 else:

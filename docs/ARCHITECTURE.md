@@ -79,35 +79,92 @@ AdminAction(meteor) → MeteorImpact → StructureDestroyed(bridge) → PathBloc
 
 Each system that reacts to a change passes the triggering event id on as a cause.
 
-## 6. Agents (core/agents) — see docs/AGENTS.md when written
+## 6. Agents (core/agents)
 
-Characters (residents and magical girls) with voxel bodies, needs, personality, skills,
-relationships, support for each magical girl, inventory, memory and a decision trace.
-Rule-based utility AI with hysteresis; tasks are small state machines; all resource
-targets are reserved with expiry; A* over standable cube positions with repath on
-invalidation and temporary blacklisting of unreachable targets.
+Characters (residents and magical girls) with voxel bodies (6 parts, 1/8-cube voxels,
+severable limbs, regrowth that costs food), needs, personality (8 traits), skills,
+relationships, support for each magical girl, inventory, memories (linked to chronicle
+events) and a decision trace (the scored options behind the current activity).
 
-## 7. Economy
+* **Utility AI with hysteresis** (`agents_ai.cpp`): eat, drink, sleep, talk, work,
+  govern, flee, protest, steal, cast, escape, wander. The current activity gets a
+  commitment bonus; the top options are kept as the "why" shown in the UI.
+* **Tasks** are small state machines (`agents_tasks.cpp`); every resource target is
+  reserved with an expiry; unreachable targets are blacklisted for a while.
+* **Jobs** (`agents_jobs.cpp`) appear where the world needs them: fields to till, sow
+  and harvest; piles to store; construction/repair sites to supply and build; dig
+  projects; kitchens; crafting on demand (recipes in `data/recipes.json`, produced at a
+  public store and logged in the ledger); foraging under scarcity.
+* **Navigation**: A* over standable cube positions (8-way, climb 1–2 with headroom,
+  drop 3). A flood fill labels **walkable regions** around settlement anchors; the
+  region map is rebuilt when event-driven terrain changes happen (or daily after
+  settling matter) and is saved, so water search skips unreachable spots and saves stay
+  deterministic. Someone outside every region (fallen into the ravine) plans and cuts a
+  45° staircase out of the rock (`agents_escape.cpp`).
+* **Magic on her own initiative** (`agents_magic.cpp`): healing the injured nearby,
+  quenching fires. Strategic spells go through decisions (below).
 
-Material ledger: every item unit lives in exactly one inventory (stockpile, character,
-ground pile). Sources (harvest, mining, admin gifts) and sinks (eating, spoilage,
-construction, crafting) are explicit and counted, so conservation is testable.
+## 7. Economy (core/economy)
 
-## 8. Society, magic and decisions
+Material ledger: every item unit lives in exactly one store (stockpile, workshop, ground
+pile, character inventory, construction site, home). Sources and sinks (harvest,
+mining, crafting, cooking, eating, spoilage, construction, spells) are explicit and
+counted by reason, so conservation is tested. Buildings are real cubes placed from
+blueprints; integrity is derived from the world, so damage degrades function.
+Bridges follow a span rule and fail as real debris. Farms are plots of farmland whose
+growth depends on irrigation from real water nearby.
 
-Polity (identity, display name, culture, ruler, policies, projects, territory),
-support dynamics, crises. Magical girls: drive (源动力) + separate personality, levels,
-2 active + 2 passive spells from data. Strategic choices go through the **Jev pipeline**:
-program builds feasible options with computed costs → a decision provider (local persona
-model or remote LLM via the Godot host) picks one with a rationale → local executor
-applies it → outcome is checked later. Requests have deadlines, budgets, staleness
-checks, fallbacks, and are logged for replay.
+## 8. Society, politics, magic and decisions
 
-## 9. Determinism
+* **Polity** (`society/`): identity and display name are separate from the ruler, so the
+  title "X的文明，国名" follows the ruler while people, industry and history remain.
+  Hourly statistics, support drift, crises (food, water/irrigation, logistics, unrest)
+  with root causes from the chronicle, projects. Passive spells of the polity's girls
+  are summed per effect and shape daily life (mood floor, meal joy, preservation...).
+* **Jev pipeline** (`decision/`):
+  1. *What she knows*: a situation text built from stats, crises with cause chains,
+     the other girls and her past decisions.
+  2. *Options*: programs build feasible options with computed facts and a value
+     profile over 12 features (food security, welfare, order, harshness, cooperation,
+     self-power, growth, frugality, military, risk, fairness, speed); infeasible ones
+     carry a reason. Other girls add **proposals** (their own pick).
+  3. *Provider*: the **local persona model** (drive values × personality, experience of
+     past outcomes, loyalty/affinity bias, stateless noise), a **remote LLM** answered by
+     the host (structured output restricted to feasible keys; validation, staleness
+     check, deadline, daily budget, fallback to local), or a **replay** log (answers
+     applied at the original tick).
+  4. *Executor*: policies, repair/build/dig projects, farm expansion/founding,
+     requisition, punishment, spells (real matter: feast from grain, growth draws water),
+     petitions, withdrawal, secession (new polity, farm split, goods hauled away),
+     coups.
+  5. *Reaction and review*: residents judge the decision and the alternatives by their
+     own personalities (support shifts); advisers whose proposal was ignored lose
+     loyalty; outcomes are reviewed later and remembered as experience.
+* The Godot autoload `Jev` sends awaiting decisions to the Claude Messages API (raw
+  HTTP; `fallbacks: "default"`), and `tools/jev_mock_server.py` stands in for the API in
+  tests.
+
+## 9. Presentation (game/)
+
+Godot renders cell meshes from the kernel, characters as voxel parts, debris and
+meteors. The UI is built in code (`ui/ui_theme.gd`) as floating cards over the world —
+time pill, civilisation card with polity switcher, tool dock, toasts, contextual
+selection card with tabs — plus two centred overlays: **议事录** (decisions) and
+**编年史** (history with a causal-chain graph). No permanent side panels.
+
+## 10. Validation
+
+`icarus_cli experiment` runs the same scenario and shocks on many seeds and reports how
+each civilisation responded and ended (recovered / declined / split / coup). Reports
+live in `docs/experiments/`.
+
+## 11. Determinism
 
 * All randomness from `Rng` streams owned by systems (saved), or pure hashes.
 * No iteration over unordered containers in simulation logic.
 * `-ffp-contract=off`.
 * Tests assert: same seed ⇒ same state hash; save→load→continue ⇒ same hash as an
-  uninterrupted run. Remote Jev responses are not reproducible by nature: they are
-  recorded and replayed from the decision log instead.
+  uninterrupted run; replaying a decision log reproduces a run exactly. Remote Jev
+  responses are not reproducible by nature: they are recorded and replayed instead.
+* Decision noise is a pure hash of (decision, girl, option), so local, remote and
+  replayed decisions consume no shared random stream.
