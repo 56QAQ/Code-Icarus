@@ -455,6 +455,20 @@ bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Cha
         const ItemId item = ctx_.reg->find_item(a.str("item"));
         i32 left = a.integer("n", 0);
         if (item == kNoItem || left <= 0 || !ctx_.society->polity(other)) return true;
+        if (ctx_.society->at_war(p.id, other)) {
+            // War broke out while she was deciding: the food stays home.
+            Event e;
+            e.type = EventType::Trade;
+            e.severity = 3;
+            e.actor = g.id;
+            e.polity = p.id;
+            e.causes[0] = cause;
+            if (const War* w = p.war_with(other)) e.causes[1] = w->event;
+            e.text = strfmt("「%s」本想援助「%s」，但战事已起，援粮没能送出", p.name.c_str(),
+                            ctx_.society->polity(other)->name.c_str());
+            ctx_.chron->emit(std::move(e));
+            return true;
+        }
         Event e;
         e.type = EventType::Trade;
         e.severity = 4;
