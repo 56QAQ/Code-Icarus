@@ -310,6 +310,26 @@ void Society::update_wars(Polity& p) {
         for (const auto& cp : ctx_.agents->all())
             if (cp && cp->alive && cp->polity == p.id && cp->drafted && cp->foot.dist2(op.rally) < 12 * 12) ++home;
         if (home * 3 >= serving * 2 || ctx_.now - op.since > kTicksPerDay / 2) {
+            // What the undertaking came to.
+            const Polity* en = polity(op.enemy);
+            const std::string enemy = en ? en->name : "?";
+            Event e;
+            e.type = EventType::Battle;
+            e.severity = 3;
+            e.polity = p.id;
+            e.causes[0] = op.event;
+            if (op.aim == "raid")
+                e.text = op.loot > 0 ? strfmt("「%s」劫掠「%s」的队伍回来了：抢回 %d 份粮食（出动 %d 人，折损 %d 人）",
+                                              p.name.c_str(), enemy.c_str(), op.loot, op.party, op.lost)
+                                     : strfmt("「%s」劫掠「%s」的队伍空手而归（出动 %d 人，折损 %d 人）", p.name.c_str(),
+                                              enemy.c_str(), op.party, op.lost);
+            else if (op.aim == "conquest")
+                e.text = strfmt("「%s」进攻「%s」未能得手，军队撤回（出动 %d 人，折损 %d 人）", p.name.c_str(), enemy.c_str(),
+                                op.party, op.lost);
+            else
+                e.text = strfmt("「%s」的守军解散回家（折损 %d 人）", p.name.c_str(), op.lost);
+            e.data.set("loot", op.loot);
+            ctx_.chron->emit(std::move(e));
             op.active = false;
             discharge(p.id);
         }

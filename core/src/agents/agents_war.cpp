@@ -129,7 +129,7 @@ bool Agents::task_fight(Character& c) {
                     if (ctx_.reg->item(st.item).nutrition <= 0) continue;
                     float unit = std::max(0.1f, ctx_.reg->item(st.item).weight);
                     i32 room = (i32)std::floor((carry_capacity(c) + 4.0f - carried_weight(c)) / unit);
-                    if (room > 0) ctx_.econ->transfer(sid, c.inv, st.item, std::min(room, st.count));
+                    if (room > 0) p->op.loot += ctx_.econ->transfer(sid, c.inv, st.item, std::min(room, st.count));
                 }
             }
             say(c, "搬走敌人的粮食");

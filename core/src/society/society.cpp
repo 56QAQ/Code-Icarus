@@ -733,6 +733,8 @@ void Society::save(BinWriter& w) const {
     w.vari(most_polities_);
     w.u64v(last_merge_);
     w.u64v(unification_);
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) w.vari(polities_[i].op.loot);
     w.end_section(sec);
 }
 
@@ -872,6 +874,10 @@ void Society::load(BinReader& outer) {
         most_polities_ = (int)r.vari();
         last_merge_ = r.u64v();
         unification_ = r.u64v();
+        if (!r.at_end()) {
+            const u64 np2 = r.varu();
+            for (size_t i = 1; i < (size_t)np2 && i < polities_.size(); ++i) polities_[i].op.loot = (int)r.vari();
+        }
     }
 }
 

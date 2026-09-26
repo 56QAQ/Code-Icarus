@@ -114,6 +114,11 @@ TEST("war: after an operation ends, rulers can launch new ones; launching drafts
     for (int h = 0; h < 48 && sim.society().polity(1) && sim.society().polity(1)->op.active; ++h) sim.run(kTicksPerHour);
     REQUIRE(sim.society().polity(1) != nullptr);
     CHECK(!sim.society().polity(1)->op.active);
+    // How the raid went is on record, traced to the declaration.
+    bool reported = false;
+    for (const Event& e : sim.chronicle().events())
+        if (e.type == EventType::Battle && e.data.has("loot") && e.causes[0] == war) reported = true;
+    CHECK(reported);
     // The next war decision offers to fight on, not only to wait.
     const Decision* next = nullptr;
     for (int h = 0; h < 30 && !next; ++h) {

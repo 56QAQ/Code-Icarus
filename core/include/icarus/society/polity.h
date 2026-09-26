@@ -108,6 +108,7 @@ struct Operation {
     int party = 0, lost = 0;
     EventId event = 0;
     bool engaged = false;    // a battle event has been recorded
+    int loot = 0;            // units of food carried off (raids)
 };
 
 struct Polity {

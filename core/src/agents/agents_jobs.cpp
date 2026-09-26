@@ -33,10 +33,16 @@ void Agents::generate_jobs() {
     std::map<std::pair<u32, ItemId>, i32> in_transit;  // (site store, item) -> units being hauled
     std::map<u32, int> build_jobs;                     // building -> open build jobs
     std::map<std::pair<u32, ItemId>, int> pile_jobs;
+    // Units already promised from a store by haul jobs nobody has taken yet (taken ones
+    // hold a reservation, which `available` already accounts for).
+    std::map<std::pair<StoreId, ItemId>, i32> promised;
     for (const Job& j : jobs.all()) {
         if (!j.alive) continue;
         existing[{(int)j.type, j.pos}] = j.id;
-        if (j.type == JobType::HaulToSite) in_transit[{j.to, j.item}] += j.count;
+        if (j.type == JobType::HaulToSite) {
+            in_transit[{j.to, j.item}] += j.count;
+            if (j.claimed_by == kNoEntity) promised[{j.from, j.item}] += j.count;
+        }
         if (j.type == JobType::Build) build_jobs[j.building]++;
         if (j.type == JobType::HaulPile) pile_jobs[{j.from, j.item}]++;
     }
@@ -74,16 +80,30 @@ void Agents::generate_jobs() {
         }
     }
 
-    // Loose piles → storage.
+    // Loose piles → storage. A pile job nobody has taken for a day is dropped (the pile
+    // may be out of reach); it is planned again if someone can get there later.
+    for (const Job& j : jobs.all())
+        if (j.alive && j.type == JobType::HaulPile && j.claimed_by == kNoEntity && now_ - j.created > kTicksPerDay) {
+            pile_jobs[{j.from, j.item}]--;
+            jobs.complete(j.id);
+        }
+    auto region_of = [&](const Vec3i& p) -> u16 {
+        for (int dy = 0; dy <= 1; ++dy)
+            if (auto it = region_map_.find(p + Vec3i{0, dy, 0}); it != region_map_.end()) return it->second;
+        return 0;
+    };
     for (const Store& s : econ.stores()) {
         if (!s.alive || s.kind != StoreKind::Pile || s.empty()) continue;
-        // Which polity cares? The one with the nearest storage.
+        // Which polity cares? The one with the nearest storage that can be walked to
+        // from the pile (when the regions are known).
+        const u16 pr = region_of(s.pos);
         u16 owner = 0;
         float bd = 1e30f;
         for (auto& p : ctx_.society->polities()) {
             if (!p.alive) continue;
             for (StoreId sid : ctx_.society->public_stores(p.id)) {
                 const Store* st = econ.store(sid);
+                if (pr && region_of(st->pos) && region_of(st->pos) != pr) continue;
                 float d = (float)st->pos.dist2(s.pos);
                 if (d < bd) {
                     bd = d;
@@ -128,7 +148,7 @@ void Agents::generate_jobs() {
                 StoreId src = kNoStore;
                 float bd = 1e30f;
                 for (StoreId sid : ctx_.society->public_stores(b->polity)) {
-                    if (econ.available(sid, item) <= 0) continue;
+                    if (econ.available(sid, item) - promised[{sid, item}] <= 0) continue;
                     const Store* s = econ.store(sid);
                     float d = (float)s->pos.dist2(b->entrance);
                     if (d < bd) {
@@ -137,7 +157,8 @@ void Agents::generate_jobs() {
                     }
                 }
                 if (!src) break;
-                i32 n = std::min({missing, load, econ.available(src, item)});
+                i32 n = std::min({missing, load, econ.available(src, item) - promised[{src, item}]});
+                promised[{src, item}] += n;
                 Job& j = add(JobType::HaulToSite, b->polity, econ.store(src)->pos, prio);
                 j.from = src;
                 j.to = b->site;
