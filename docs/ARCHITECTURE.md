@@ -162,6 +162,16 @@ growth depends on irrigation from real water nearby.
   themselves from the stores and follow one operation at a time (muster, march, raid or
   take the objective, return). Hits remove voxels from bodies, reduced by armour;
   raiders haul real food home; conquest annexes people, land and stores.
+* **Trade** (`society/trade.cpp`, the `Trade` job in `agents_tasks.cpp`): each polity's
+  *trade book* lists what it can spare (food beyond five days of eating, building
+  materials beyond what construction still needs, tools and arms beyond one for everyone
+  who would use them) and what it lacks. A ruler at peace may propose a pact when the
+  books match; the other ruler accepts or refuses by her own values (a hungry polity is
+  pulled towards it, uncooperative drives shun it). Under a pact, carriers take a load
+  from their store to the partner's store and bring back goods of equal value — units
+  move between stores, so the ledger holds. A caravan that cannot get there turns back;
+  the cut trade road is an event caused by the latest destruction. War ends the pact;
+  each day's exchanges are summed up in the chronicle; dealing slowly warms relations.
 * **Miracles** (`sim/simulation.cpp`, `apply_admin`): besides matter (dig, place,
   meteor, fire, water) the god can bless food (items enter the ledger as
   `admin_bless`), inspire or terrify (fear, memories, a hazard people flee), heal (lost

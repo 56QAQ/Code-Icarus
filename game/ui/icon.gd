@@ -158,6 +158,12 @@ func _draw() -> void:
 				var nrm := (b - a).normalized().orthogonal() * 0.12 * s
 				draw_line(g - nrm, g + nrm, color, w * 1.2, true)
 				draw_circle(P.call(0.5 + 0.3 * sgn, 0.8), 0.045 * s, color)
+		"trade":
+			# Two arrows passing each other: goods out, goods back.
+			draw_line(P.call(0.16, 0.36), P.call(0.72, 0.36), color, w * 1.2, true)
+			draw_colored_polygon(PackedVector2Array([P.call(0.86, 0.36), P.call(0.68, 0.23), P.call(0.68, 0.49)]), color)
+			draw_line(P.call(0.84, 0.66), P.call(0.28, 0.66), color, w * 1.2, true)
+			draw_colored_polygon(PackedVector2Array([P.call(0.14, 0.66), P.call(0.32, 0.53), P.call(0.32, 0.79)]), color)
 		"think":
 			for i in 3:
 				draw_circle(P.call(0.26 + float(i) * 0.24, 0.52), 0.07 * s, Color(color, 0.45 + 0.25 * float(i)))

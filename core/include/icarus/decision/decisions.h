@@ -145,6 +145,7 @@ private:
     void build_war_options(Decision& d, Polity& p, War& w);
     void build_defense_options(Decision& d, Polity& p, const Crisis& c);
     void build_peace_options(Decision& d, Polity& p, u16 from);
+    void build_trade_offer_options(Decision& d, Polity& p, u16 from);
     bool execute_war(Decision& d, const DecisionOption& o, Polity& p, Character& g);
     void consider_foreign(Polity& p, Character& ruler);
     std::string describe_situation(const Polity& p, const Character& girl, const std::string& focus) const;

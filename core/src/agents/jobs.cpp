@@ -23,6 +23,7 @@ const char* job_name_zh(JobType t) {
         case JobType::Research: return "研究";
         case JobType::Forage: return "采集";
         case JobType::Guard: return "守卫";
+        case JobType::Trade: return "通商";
         default: return "工作";
     }
 }
@@ -36,7 +37,8 @@ int job_skill(JobType t) {
         case JobType::Mine:
         case JobType::Dig: return kMining;
         case JobType::HaulPile:
-        case JobType::HaulToSite: return kHauling;
+        case JobType::HaulToSite:
+        case JobType::Trade: return kHauling;
         case JobType::Build: return kBuilding;
         case JobType::Cook: return kCooking;
         case JobType::Craft: return kCrafting;
@@ -60,7 +62,8 @@ const char* job_category(JobType t) {
         case JobType::Dig: return "build";
         case JobType::Chop:
         case JobType::Mine:
-        case JobType::HaulPile: return "gather";
+        case JobType::HaulPile:
+        case JobType::Trade: return "gather";
         case JobType::Research: return "research";
         case JobType::Guard: return "military";
         default: return "gather";

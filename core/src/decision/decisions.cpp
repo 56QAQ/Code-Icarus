@@ -412,6 +412,17 @@ std::string Decisions::describe_situation(const Polity& p, const Character& girl
                       cp->id == p.ruler ? "统治者" : cp->girl->role.c_str(), n ? sup / (float)n : 0.0f,
                       girl.affinity(cp->id), cp->girl->stance.c_str());
     }
+    // The neighbours: relations, wars and trade.
+    for (const Polity& o : ctx_.society->polities()) {
+        if (!o.alive || o.id == p.id) continue;
+        std::string rel;
+        if (p.war_with(o.id)) rel = "交战中";
+        else if (const TradePact* t = p.pact_with(o.id))
+            rel = t->blocked ? "通商，但商路受阻" : strfmt("通商中（我方商队往来 %d 次）", t->trips);
+        else rel = "未通商";
+        out += strfmt("邻国「%s」：人口 %d，存粮约 %.1f 天，你国对其态度 %+.2f，%s。\n", ctx_.society->title(o.id).c_str(),
+                      o.stats.population, o.stats.food_days, p.attitude_to(o.id), rel.c_str());
+    }
     // Her past choices and how they went.
     if (girl.girl) {
         int shown = 0;
@@ -554,8 +565,14 @@ void Decisions::decide_local(Decision& d, const std::string& source) {
     std::vector<std::pair<float, int>> contrib;
     for (int f = 0; f < kFeatureCount; ++f) contrib.push_back({w[f] * o.f[f], f});
     std::sort(contrib.begin(), contrib.end(), [](auto& a, auto& b) { return a.first > b.first; });
-    std::string why = g->girl->temperament + "的" + g->name + "最看重" + feature_name_zh(contrib[0].second);
-    if (contrib[1].first > 0.05f) why += std::string("与") + feature_name_zh(contrib[1].second);
+    // A value served by avoiding something (a negative weight on a negative feature)
+    // reads as what she shuns.
+    auto minds = [&](int f) { return std::string(o.f[f] >= 0 ? "看重" : "排斥") + feature_name_zh(f); };
+    std::string why = g->girl->temperament + "的" + g->name + "最" + minds(contrib[0].second);
+    if (contrib[1].first > 0.05f) {
+        const bool same = (o.f[contrib[0].second] >= 0) == (o.f[contrib[1].second] >= 0);
+        why += same ? std::string("与") + feature_name_zh(contrib[1].second) : "，也" + minds(contrib[1].second);
+    }
     why += "，因此选择「" + o.title + "」。";
     if (second >= 0) {
         const DecisionOption& o2 = d.options[(size_t)second];

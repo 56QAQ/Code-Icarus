@@ -1,7 +1,7 @@
 // Jev pipeline: foreign policy and war. Rulers facing another polity choose between
-// peace, reconciliation, raids and conquest; at war they press on, reinforce, withdraw
-// or offer peace; the attacked call their people to arms or sue for peace. Offers of
-// peace are decisions of the other ruler.
+// peace, reconciliation, trade, raids and conquest; at war they press on, reinforce,
+// withdraw or offer peace; the attacked call their people to arms or sue for peace.
+// Offers of peace and of trade are decisions of the other ruler.
 #include <algorithm>
 #include <cmath>
 
@@ -33,6 +33,16 @@ int armed_stock(SimContext& ctx, u16 polity) {
                 if (ctx.reg->item(st.item).has_tag("weapon")) n += st.count;
     return n;
 }
+// What trading would bring beyond the ruler's taste for it: goods we lack (food above
+// all when stores run low), and a use for what would otherwise sit or spoil.
+float trade_gain(const Registry& reg, const Polity& p, ItemId in, ItemId out) {
+    float g = 0;
+    if (in != kNoItem) g += 0.25f;
+    if (out != kNoItem) g += 0.15f;
+    if (in != kNoItem && reg.item(in).nutrition > 0 && p.stats.food_days < 4.0f)
+        g += 0.5f * std::min(1.0f, (4.0f - p.stats.food_days) / 4.0f);
+    return g;
+}
 // How tired of this war a polity is: its length, the dead, and hunger at home.
 float war_weariness(const Polity& p, const War& w, Tick now) {
     const float days = (float)(now - w.since) / (float)kTicksPerDay;
@@ -57,6 +67,45 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
                                 {{kCooperation, 0.9f}, {kWelfare, 0.3f}, {kRisk, -0.3f}, {kMilitary, -0.3f}, {kSelfPower, -0.1f}},
                                 act("reconcile"));
         o.action.set("other", (int)other.id);
+        O.push_back(o);
+    }
+    // Trade: what each side could spare for the other.
+    if (const TradePact* pact = p.pact_with(other.id)) {
+        DecisionOption o = make("end_trade", "断绝与「" + other.name + "」的通商",
+                                strfmt("通商以来我方商队往来 %d 次，送出价值 %.0f，换回 %.0f。", pact->trips, pact->sent,
+                                       pact->received),
+                                {{kSelfPower, 0.4f}, {kHarshness, 0.3f}, {kCooperation, -0.8f}, {kGrowth, -0.3f}, {kWelfare, -0.2f}},
+                                act("end_trade"));
+        o.action.set("other", (int)other.id);
+        O.push_back(o);
+    } else {
+        const Registry& reg = *ctx_.reg;
+        i32 n_out = 0, n_in = 0;
+        const ItemId out = ctx_.society->trade_export(p.id, other.id, &n_out);
+        const ItemId in = ctx_.society->trade_export(other.id, p.id, &n_in);
+        std::string what;
+        if (out != kNoItem) what = strfmt("我们富余的%s（约 %d）", reg.item(out).name.c_str(), n_out);
+        if (in != kNoItem)
+            what += (what.empty() ? "" : "，") + strfmt("换取对方富余的%s（约 %d）", reg.item(in).name.c_str(), n_in);
+        const bool food_in = in != kNoItem && reg.item(in).nutrition > 0;
+        const bool food_out = out != kNoItem && reg.item(out).nutrition > 0;
+        DecisionOption o = make("propose_trade", "提议与「" + other.name + "」通商",
+                                (what.empty() ? std::string("互通有无") : "以" + what) + "。由对方的统治者决定是否接受。",
+                                {{kCooperation, 0.7f}, {kGrowth, 0.5f}, {kWelfare, 0.3f},
+                                 {kFoodSecurity, food_in ? 0.7f : (food_out ? -0.1f : 0.1f)}, {kFrugality, 0.2f},
+                                 {kSelfPower, -0.1f}, {kRisk, -0.1f}},
+                                act("propose_trade"));
+        o.action.set("other", (int)other.id);
+        o.bias += trade_gain(reg, p, in, out);
+        if (out != kNoItem) o.facts.set("export", reg.item(out).name);
+        if (in != kNoItem) o.facts.set("import", reg.item(in).name);
+        if (out == kNoItem && in == kNoItem) {
+            o.feasible = false;
+            o.why_not = "双方都没有可交换的富余物资";
+        } else if (att < -0.4f) {
+            o.feasible = false;
+            o.why_not = "两国积怨太深，对方不会接受";
+        }
         O.push_back(o);
     }
     const int raiders = std::max(3, ours / 4);
@@ -243,6 +292,35 @@ void Decisions::build_peace_options(Decision& d, Polity& p, u16 from) {
     O.push_back(r);
 }
 
+void Decisions::build_trade_offer_options(Decision& d, Polity& p, u16 from) {
+    auto& O = d.options;
+    Polity* other = ctx_.society->polity(from);
+    const std::string on = other ? other->name : "?";
+    const Registry& reg = *ctx_.reg;
+    d.petition = Json::object();
+    d.petition.set("other", (int)from);
+    i32 n_in = 0, n_out = 0;
+    const ItemId in = ctx_.society->trade_export(from, p.id, &n_in);
+    const ItemId out = ctx_.society->trade_export(p.id, from, &n_out);
+    std::string what;
+    if (in != kNoItem) what = strfmt("对方能送来%s（约 %d）", reg.item(in).name.c_str(), n_in);
+    if (out != kNoItem) what += (what.empty() ? "" : "，") + strfmt("我们可以用富余的%s（约 %d）交换", reg.item(out).name.c_str(), n_out);
+    const bool food_in = in != kNoItem && reg.item(in).nutrition > 0;
+    DecisionOption a = make("accept_trade", "接受与「" + on + "」通商", (what.empty() ? std::string("互通有无") : what) + "。",
+                            {{kCooperation, 0.7f}, {kGrowth, 0.5f}, {kWelfare, 0.3f}, {kFoodSecurity, food_in ? 0.7f : 0.1f},
+                             {kSelfPower, -0.1f}, {kRisk, -0.1f}},
+                            act("trade_accept"));
+    a.action.set("other", (int)from);
+    a.bias += 0.5f * p.attitude_to(from) + trade_gain(reg, p, in, out);
+    if (p.war_with(from)) {
+        a.feasible = false;
+        a.why_not = "两国正在交战";
+    }
+    O.push_back(a);
+    O.push_back(make("refuse_trade", "拒绝通商", "不与对方往来，自给自足。",
+                     {{kSelfPower, 0.4f}, {kOrder, 0.2f}, {kRisk, -0.2f}, {kCooperation, -0.5f}}, act("wait")));
+}
+
 bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Character& g) {
     const Json& a = o.action;
     const std::string what = a.str("do");
@@ -324,6 +402,32 @@ bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Cha
         ctx_.society->make_peace(p.id, other, "议和停战", cause);
         return true;
     }
+    if (what == "propose_trade") {
+        Polity* op = ctx_.society->polity(other);
+        Character* ruler = op ? ctx_.agents->get(op->ruler) : nullptr;
+        if (op && ruler && ruler->alive && !p.pact_with(other)) {
+            Decision td;
+            td.girl = ruler->id;
+            td.polity = op->id;
+            td.kind = "trade_offer";
+            td.topic = "「" + p.name + "」提议通商";
+            td.cause = cause;
+            td.petitioner = g.id;
+            build_trade_offer_options(td, *op, p.id);
+            td.situation = describe_situation(*op, *ruler, td.topic);
+            open(std::move(td));
+        }
+        return true;
+    }
+    if (what == "trade_accept") {
+        ctx_.society->open_trade(other, p.id, g.id, cause);
+        return true;
+    }
+    if (what == "end_trade") {
+        if (Polity* op = ctx_.society->polity(other)) op->attitude_ref(p.id) = std::max(-1.0f, op->attitude_to(p.id) - 0.15f);
+        ctx_.society->end_trade(p.id, other, g.name + "下令断绝往来", cause);
+        return true;
+    }
     return false;
 }
 
@@ -331,14 +435,16 @@ void Decisions::consider_foreign(Polity& p, Character& ruler) {
     for (const Polity& oc : ctx_.society->polities()) {
         if (!oc.alive || oc.id == p.id) continue;
         Polity& other = *ctx_.society->polity(oc.id);
-        // Not asked again too soon about the same neighbour.
+        const float att = p.attitude_to(other.id);
+        // Not asked again too soon about the same neighbour (a mere chance to trade
+        // comes up less often than a grudge).
         bool recent = false;
         for (size_t i = list_.size() > 96 ? list_.size() - 96 : 1; i < list_.size(); ++i) {
             const Decision& x = list_[i];
             if (x.polity != p.id || x.petition.integer("other", 0) != other.id) continue;
-            if (x.kind != "diplomacy" && x.kind != "war") continue;
-            if (x.status == DecisionStatus::Pending || x.status == DecisionStatus::AwaitingRemote ||
-                now_ - x.created < (x.kind == "war" ? kTicksPerDay : kTicksPerDay * 3 / 2))
+            if (x.kind != "diplomacy" && x.kind != "war" && x.kind != "trade_offer") continue;
+            const Tick wait = x.kind == "war" ? kTicksPerDay : (att < 0.1f ? kTicksPerDay * 3 / 2 : kTicksPerDay * 3);
+            if (x.status == DecisionStatus::Pending || x.status == DecisionStatus::AwaitingRemote || now_ - x.created < wait)
                 recent = true;
         }
         if (recent) continue;
@@ -361,7 +467,8 @@ void Decisions::consider_foreign(Polity& p, Character& ruler) {
         }
         // A newly founded polity is left alone for a day or so.
         const bool settled = now_ > p.founded + kTicksPerDay && now_ > other.founded + kTicksPerDay;
-        if (!w && settled && p.attitude_to(other.id) < 0.1f && now_ > kTicksPerDay / 2) {
+        const bool prospect = !w && !p.pact_with(other.id) && att > -0.4f && ctx_.society->trade_prospect(p.id, other.id);
+        if (!w && settled && (att < 0.1f || prospect) && now_ > kTicksPerDay / 2) {
             Decision d;
             d.girl = ruler.id;
             d.polity = p.id;

@@ -313,6 +313,66 @@ void Agents::generate_jobs() {
             }
     }
 
+    // Trade caravans: one at a time to each partner, when there is something worth
+    // taking. The load leaves from our store holding most of it for the partner's store
+    // nearest our seat.
+    if (now_ % kTicksPerHour == 0) {
+        // A load nobody set out with for half a day is planned afresh.
+        for (const Job& j : jobs.all())
+            if (j.alive && j.type == JobType::Trade && j.claimed_by == kNoEntity && now_ - j.created > kTicksPerDay / 2)
+                jobs.complete(j.id);
+        for (const Polity& pc : ctx_.society->polities()) {
+            if (!pc.alive) continue;
+            const Building* seat = ctx_.buildings->get(pc.seat);
+            for (const TradePact& t : pc.pacts) {
+                if (t.blocked_until > now_ || ctx_.society->at_war(pc.id, t.partner)) continue;
+                bool open = false;
+                for (const Job& j : jobs.all())
+                    if (j.alive && j.type == JobType::Trade && j.polity == pc.id && j.project == t.partner) open = true;
+                if (open) continue;
+                i32 amount = 0;
+                const ItemId it = ctx_.society->trade_export(pc.id, t.partner, &amount);
+                if (it == kNoItem || amount <= 0) continue;
+                StoreId src = kNoStore, dst = kNoStore;
+                i32 most = 0;
+                for (StoreId sid : ctx_.society->public_stores(pc.id)) {
+                    const i32 n = econ.available(sid, it) - promised[{sid, it}];
+                    if (n > most) {
+                        most = n;
+                        src = sid;
+                    }
+                }
+                const Vec3i home = seat ? seat->entrance : (src ? econ.store(src)->pos : Vec3i{});
+                float bd = 1e30f;
+                for (StoreId sid : ctx_.society->public_stores(t.partner)) {
+                    const Store* s = econ.store(sid);
+                    const float d = (float)s->pos.dist2(home) * (s->kind == StoreKind::Stockpile ? 1.0f : 1.5f);
+                    if (d < bd) {
+                        bd = d;
+                        dst = sid;
+                    }
+                }
+                if (!src || !dst) continue;
+                float cap = tune.carry_capacity;
+                for (const auto& cp : chars_)
+                    if (cp && cp->alive && cp->polity == pc.id && cp->cart != kNoItem) {
+                        cap = carry_capacity(*cp);
+                        break;
+                    }
+                const i32 load = std::min({amount, most, std::max(1, (i32)std::floor(cap / std::max(0.05f, reg.item(it).weight)))});
+                if ((float)load * reg.item(it).value < 3.0f) continue;  // not worth the walk
+                Job& j = add(JobType::Trade, pc.id, econ.store(src)->pos, 0.9f);
+                j.from = src;
+                j.to = dst;
+                j.item = it;
+                j.count = load;
+                j.project = t.partner;
+                j.cause = t.event;
+                promised[{src, it}] += load;
+            }
+        }
+    }
+
     // Foraging when food is short.
     for (auto& pc : ctx_.society->polities()) {
         if (!pc.alive || pc.stats.food_days > 3.0f) continue;

@@ -62,6 +62,7 @@ enum class EventType : u16 {
     Construction,
     Info,
     Unification,  // one polity holds the whole island
+    Trade,        // pacts, caravans, cut trade roads
     Count
 };
 

@@ -154,6 +154,7 @@ void Society::hourly(Tick now) {
         update_support(p);
         update_crises(p);
         update_wars(p);
+        tidy_pacts(p);
         // A polity without any magical girl cannot hold together: after a few hours its
         // people rejoin the polity it came from (or the nearest other).
         bool has_girl = false;
@@ -210,6 +211,7 @@ void Society::check_unification() {
 }
 
 void Society::daily(Tick now) {
+    trade_daily();
     ctx_.econ->spoil(rng_, [this](u16 polity) { return 1.0f - std::min(0.9f, passive(polity, "preserve")); });
     ctx_.agents->day = {};
     (void)now;
@@ -735,6 +737,30 @@ void Society::save(BinWriter& w) const {
     w.u64v(unification_);
     w.varu(polities_.size());
     for (size_t i = 1; i < polities_.size(); ++i) w.vari(polities_[i].op.loot);
+    // Trade pacts (added later; older saves have none).
+    auto save_goods = [&](const std::vector<std::pair<ItemId, i32>>& g) {
+        w.varu(g.size());
+        for (auto& [it, n] : g) {
+            w.u16v(it);
+            w.vari(n);
+        }
+    };
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) {
+        w.varu(polities_[i].pacts.size());
+        for (const TradePact& t : polities_[i].pacts) {
+            w.u16v(t.partner);
+            w.u64v(t.since);
+            w.u32v(t.event);
+            w.vari(t.trips);
+            w.f32(t.sent);
+            w.f32(t.received);
+            w.u64v(t.blocked_until);
+            w.u32v(t.blocked);
+            save_goods(t.out_today);
+            save_goods(t.in_today);
+        }
+    }
     w.end_section(sec);
 }
 
@@ -878,6 +904,33 @@ void Society::load(BinReader& outer) {
             const u64 np2 = r.varu();
             for (size_t i = 1; i < (size_t)np2 && i < polities_.size(); ++i) polities_[i].op.loot = (int)r.vari();
         }
+        if (!r.at_end()) {
+            auto load_goods = [&](std::vector<std::pair<ItemId, i32>>& g) {
+                const u64 n = r.varu();
+                for (u64 k = 0; k < n; ++k) {
+                    ItemId it = r.u16v();
+                    g.push_back({it, (i32)r.vari()});
+                }
+            };
+            const u64 np3 = r.varu();
+            for (size_t i = 1; i < (size_t)np3; ++i) {
+                const u64 nt = r.varu();
+                for (u64 k = 0; k < nt; ++k) {
+                    TradePact t;
+                    t.partner = r.u16v();
+                    t.since = r.u64v();
+                    t.event = r.u32v();
+                    t.trips = (int)r.vari();
+                    t.sent = r.f32();
+                    t.received = r.f32();
+                    t.blocked_until = r.u64v();
+                    t.blocked = r.u32v();
+                    load_goods(t.out_today);
+                    load_goods(t.in_today);
+                    if (i < polities_.size()) polities_[i].pacts.push_back(std::move(t));
+                }
+            }
+        }
     }
 }
 
@@ -888,6 +941,7 @@ u64 Society::hash() const {
         h = hash_combine(h, p.ruler);
         h = hash_combine(h, (u64)(p.stats.food_stock * 10.0f));
         h = hash_combine(h, (u64)(p.policies.ration * 1000.0f));
+        for (const TradePact& t : p.pacts) h = hash_combine(h, ((u64)t.partner << 32) ^ (u64)t.trips ^ ((u64)t.blocked << 16));
     }
     return h;
 }

@@ -23,7 +23,8 @@ var _last_count := -1
 var _last_selected_status := ""
 var _situation_open := false
 
-const KIND_NAMES := {"crisis": "危机应对", "governance": "日常施政", "stance": "立场", "petition": "进谏"}
+const KIND_NAMES := {"crisis": "危机应对", "governance": "日常施政", "stance": "立场", "petition": "进谏", "research": "研究方向",
+	"diplomacy": "外交", "war": "战事", "peace_offer": "议和", "trade_offer": "通商"}
 const SOURCE_NAMES := {"local": "本地人格", "fallback": "本地接管", "replay": "回放"}
 
 

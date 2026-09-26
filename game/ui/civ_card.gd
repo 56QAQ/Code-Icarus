@@ -283,45 +283,59 @@ func _refresh() -> void:
 
 func _refresh_war(d: Dictionary) -> void:
 	var wars: Array = d.get("wars", [])
+	var pacts: Array = d.get("pacts", [])
 	var op: Dictionary = d.get("op", {})
-	var sig := var_to_str(wars) + var_to_str(op)
+	var sig := var_to_str(wars) + var_to_str(op) + var_to_str(pacts)
 	if sig == _war_sig:
 		return
 	_war_sig = sig
 	for c in _war.get_children():
 		c.queue_free()
-	_war.visible = not wars.is_empty() or op.get("active", false)
+	_war.visible = not wars.is_empty() or op.get("active", false) or not pacts.is_empty()
 	var aims := {"raid": "劫掠", "conquest": "征服", "defend": "防御"}
 	for w in wars:
-		var b := Button.new()
-		b.focus_mode = Control.FOCUS_NONE
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.add_theme_font_size_override("font_size", 12)
-		var sb := UITheme.flat(Color(UITheme.BAD, 0.14), 8, 8, 3)
-		sb.border_color = Color(UITheme.BAD, 0.5)
-		sb.set_border_width_all(1)
-		b.add_theme_stylebox_override("normal", sb)
-		var hov := sb.duplicate() as StyleBoxFlat
-		hov.bg_color = Color(UITheme.BAD, 0.24)
-		b.add_theme_stylebox_override("hover", hov)
-		b.add_theme_color_override("font_color", UITheme.BAD.lightened(0.25))
 		var what := ("向「%s」发动%s" % [w["enemy_name"], aims.get(w["aim"], "战争")]) if w["attacker"] else ("抵御「%s」的进攻" % w["enemy_name"])
-		b.text = "      %s · 歼%d 损%d" % [what, w["kills"], w["losses"]]
-		b.tooltip_text = "自 %s 起。点击查看宣战的因果链" % w["since"]
-		var ic := UIIcon.new("swords", 14)
-		ic.color = UITheme.BAD.lightened(0.2)
-		ic.position = Vector2(8, 5)
-		b.add_child(ic)
-		var dot := UIIcon.new("dot", 10)
-		dot.color = w["enemy_color"]
-		dot.position = Vector2(24, 7)
-		b.add_child(dot)
-		var ev: int = w["event"]
-		b.pressed.connect(func() -> void: event_requested.emit(ev))
-		_war.add_child(b)
+		_war.add_child(_relation("swords", UITheme.BAD, w["enemy_color"], "%s · 歼%d 损%d" % [what, w["kills"], w["losses"]],
+			"自 %s 起。点击查看宣战的因果链" % w["since"], w["event"]))
+	for t in pacts:
+		var blocked: bool = t["blocked"]
+		var line := "与「%s」通商 · %s" % [t["partner_name"], "商路受阻" if blocked else "往来 %d 次" % t["trips"]]
+		var tip := "自 %s 起。我方送出价值 %d，换回 %d。" % [t["since"], int(t["sent"]), int(t["received"])]
+		tip += "点击查看商路为何受阻" if blocked else "点击查看通商的由来"
+		_war.add_child(_relation("trade", UITheme.WARN if blocked else UITheme.GOOD, t["partner_color"], line, tip,
+			t["blocked_event"] if blocked else t["event"]))
 	if op.get("active", false):
 		var verb := {"raid": "劫掠", "conquest": "进攻", "defend": "迎击"}
 		var line := "军队 · %s「%s」 · %s · %d人" % [verb.get(op["aim"], ""), op["enemy_name"], op["phase_name"], op["party"]]
 		if int(op["lost"]) > 0:
 			line += "（折损 %d）" % op["lost"]
 		_war.add_child(UITheme.label(line, 12, UITheme.WARN))
+
+
+# A relation with another civilisation (war, trade) as a small clickable strip that
+# opens the event behind it.
+func _relation(icon: String, tint: Color, other: Color, text: String, tip: String, ev: int) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_font_size_override("font_size", 12)
+	var sb := UITheme.flat(Color(tint, 0.14), 8, 8, 3)
+	sb.border_color = Color(tint, 0.5)
+	sb.set_border_width_all(1)
+	b.add_theme_stylebox_override("normal", sb)
+	var hov := sb.duplicate() as StyleBoxFlat
+	hov.bg_color = Color(tint, 0.24)
+	b.add_theme_stylebox_override("hover", hov)
+	b.add_theme_color_override("font_color", tint.lightened(0.25))
+	b.text = "      " + text
+	b.tooltip_text = tip
+	var ic := UIIcon.new(icon, 14)
+	ic.color = tint.lightened(0.2)
+	ic.position = Vector2(8, 5)
+	b.add_child(ic)
+	var dot := UIIcon.new("dot", 10)
+	dot.color = other
+	dot.position = Vector2(24, 7)
+	b.add_child(dot)
+	b.pressed.connect(func() -> void: event_requested.emit(ev))
+	return b

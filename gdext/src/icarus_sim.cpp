@@ -417,7 +417,7 @@ String IcarusSim::event_category(int type) {
         case T::PathBlocked: case T::LogisticsDisrupted: case T::CropFailure:
             return "disaster";
         case T::Shortage: case T::ShortageResolved: case T::Harvest: case T::ProjectStarted: case T::ProjectCompleted:
-        case T::ProjectAbandoned: case T::Construction: case T::Theft: case T::TechDiscovered:
+        case T::ProjectAbandoned: case T::Construction: case T::Theft: case T::TechDiscovered: case T::Trade:
             return "economy";
         case T::Death: case T::Injury: case T::Starvation: case T::Rescue: case T::SpellCast: case T::Migration:
             return "life";
@@ -897,6 +897,23 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
         wars.push_back(t);
     }
     d["wars"] = wars;
+    Array pacts;
+    for (const auto& t : p->pacts) {
+        Dictionary x;
+        x["partner"] = t.partner;
+        const icarus::Polity* o = soc.polity(t.partner);
+        x["partner_name"] = o ? to_gd(o->name) : String("?");
+        x["partner_color"] = o ? col(o->color) : Color(0.5, 0.5, 0.5);
+        x["since"] = to_gd(icarus::format_time_zh(t.since));
+        x["trips"] = t.trips;
+        x["sent"] = t.sent;
+        x["received"] = t.received;
+        x["blocked"] = t.blocked != 0;
+        x["blocked_event"] = (int64_t)t.blocked;
+        x["event"] = (int64_t)t.event;
+        pacts.push_back(x);
+    }
+    d["pacts"] = pacts;
     Dictionary op;
     op["active"] = p->op.active;
     if (p->op.active) {

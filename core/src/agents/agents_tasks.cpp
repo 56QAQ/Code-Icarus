@@ -953,6 +953,93 @@ bool Agents::task_work(Character& c) {
             }
             return true;
         }
+        case JobType::Trade: {
+            // A caravan: our goods to the partner's storehouse, their goods back home.
+            const u16 partner = (u16)j->project;
+            const Polity* home = ctx_.society->polity(c.polity);
+            const Polity* other = ctx_.society->polity(partner);
+            if (!home || !other || !home->pact_with(partner) || ctx_.society->at_war(c.polity, partner)) {
+                ctx_.econ->release(j->from, c.id);
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                if (carried_weight(c) > 0) {
+                    t.step = 10;
+                    return true;
+                }
+                end_task(c, false);
+                return false;
+            }
+            if (t.step == 0) {
+                if (!ctx_.econ->store(j->from) || ctx_.econ->available(j->from, j->item, c.id) <= 0) {
+                    ctx_.jobs->complete(t.job);
+                    t.job = 0;
+                    end_task(c, false);
+                    return false;
+                }
+                ctx_.econ->reserve(j->from, j->item, std::min(j->count, ctx_.econ->available(j->from, j->item, c.id)), c.id,
+                                   now_ + kTicksPerHour);
+                t.step = 1;
+            }
+            if (t.step == 1) {
+                const Store* src = ctx_.econ->store(j->from);
+                if (!src) return fail("货源消失了");
+                say(c, "为商队备货");
+                Move m = move_to(c, src->pos, true);
+                if (m == Move::Failed) return fail("到不了仓库");
+                if (m != Move::Arrived) return true;
+                float unit = std::max(0.01f, reg.item(j->item).weight);
+                i32 cap = (i32)std::floor((carry_capacity(c) - carried_weight(c)) / unit);
+                i32 k = ctx_.econ->transfer(j->from, c.inv, j->item, std::min(j->count, cap));
+                ctx_.econ->release(j->from, c.id);
+                if (k <= 0) return fail("货已经被拿走了");
+                t.count = k;
+                t.step = 2;
+            }
+            if (t.step == 2) {
+                const Store* d = ctx_.econ->store(j->to);
+                if (!d || d->polity != partner) {
+                    // Their storehouse is gone: the nearest other one of theirs.
+                    j->to = kNoStore;
+                    float bd = 1e30f;
+                    for (StoreId sid : ctx_.society->public_stores(partner))
+                        if (const Store* s = ctx_.econ->store(sid); s && (float)s->pos.dist2(c.foot) < bd) {
+                            bd = (float)s->pos.dist2(c.foot);
+                            j->to = sid;
+                        }
+                    d = ctx_.econ->store(j->to);
+                    if (!d) {
+                        ctx_.jobs->complete(t.job);
+                        t.job = 0;
+                        t.step = 10;
+                        return true;
+                    }
+                }
+                say(c, "带着货物前往「" + other->name + "」");
+                Move m = move_to(c, d->pos, true);
+                if (m == Move::Failed) {
+                    // The road there is cut: the caravan turns back with its load.
+                    ctx_.society->trade_road_blocked(c.polity, partner);
+                    ctx_.jobs->complete(t.job);
+                    t.job = 0;
+                    t.step = 10;
+                    return true;
+                }
+                if (m != Move::Arrived) return true;
+                const TradeDeal deal =
+                    ctx_.society->exchange(c.polity, partner, c.inv, j->to, j->item, t.count, carry_capacity(c));
+                if (deal.out_n > 0) {
+                    say(c, strfmt("用%s×%d换到%s×%d", reg.item(deal.out).name.c_str(), deal.out_n,
+                                  reg.item(deal.in).name.c_str(), deal.in_n));
+                    c.skills[kHauling] = std::min(1.0f, c.skills[kHauling] + 0.01f);
+                } else {
+                    say(c, "对方没有可换的东西，原样带回");
+                }
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                t.step = 10;
+            }
+            return true;
+        }
         case JobType::HaulPile:
         case JobType::HaulToSite: {
             if (t.step == 0) {

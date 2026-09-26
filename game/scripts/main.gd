@@ -1,7 +1,7 @@
 extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
-##   godot --path game -- --shot out.png [--seed N] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
+##   godot --path game -- --shot out.png [--seed N | --load FILE] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
 ##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]]
 ##        [--hide-ui] [--frames N]
 
@@ -46,6 +46,9 @@ func _ready() -> void:
 	if not Game.start_new_game({"seed": seed}):
 		push_error("could not start game")
 		return
+	# A saved game (e.g. written by `icarus_cli run --save`) to look at instead.
+	if _cli.has("load") and not Game.load_game(String(_cli["load"])):
+		push_error("could not load " + String(_cli["load"]))
 	var info: Dictionary = Game.sim.world_info()
 	if _cli.has("cam"):
 		var p: PackedStringArray = _cli["cam"].split(",")

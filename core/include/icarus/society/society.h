@@ -10,6 +10,31 @@
 
 namespace icarus {
 
+// What a polity could give away and what it lacks, judged from its public stores:
+// food beyond five days of eating, building materials beyond what is needed, tools and
+// arms beyond one for everyone who would use them; and the other way round.
+struct TradeBook {
+    std::vector<std::pair<ItemId, i32>> spare;  // units, most plentiful first
+    std::vector<std::pair<ItemId, i32>> want;   // units, most needed first
+    i32 spare_of(ItemId it) const {
+        for (auto& [i, n] : spare)
+            if (i == it) return n;
+        return 0;
+    }
+    i32 want_of(ItemId it) const {
+        for (auto& [i, n] : want)
+            if (i == it) return n;
+        return 0;
+    }
+};
+
+// One caravan's exchange at the partner's storehouse.
+struct TradeDeal {
+    ItemId out = kNoItem, in = kNoItem;
+    i32 out_n = 0, in_n = 0;
+    float value = 0;
+};
+
 class Society {
 public:
     explicit Society(SimContext& ctx);
@@ -62,6 +87,19 @@ public:
     int draftable(u16 polity) const;  // residents fit to serve who are not yet soldiers
     // The winner absorbs the loser: people, fields, buildings and stores change hands.
     void annex(u16 winner, u16 loser, EventId cause, const std::string& how = "");
+    // Trade.
+    TradeBook trade_book(u16 polity) const;
+    // Goods `from` would carry to `to` (an item it spares that the other wants, or one
+    // the other would take in payment for something `from` wants); kNoItem if none.
+    ItemId trade_export(u16 from, u16 to, i32* amount = nullptr) const;
+    bool trade_prospect(u16 a, u16 b) const;  // either side has a reason to trade
+    EventId open_trade(u16 a, u16 b, EntityId by, EventId cause);
+    void end_trade(u16 a, u16 b, const std::string& why, EventId cause);
+    // A caravan of `from` at `at` (a store of `to`) hands over up to `count` of its load
+    // from `inv` and takes goods of equal value back, as much as `carry` (weight)
+    // allows. Units only move between stores.
+    TradeDeal exchange(u16 from, u16 to, StoreId inv, StoreId at, ItemId load, i32 count, float carry);
+    void trade_road_blocked(u16 from, u16 to);
     void refresh_passives(Polity& p);
     // Set once one polity holds the whole island after there had been several.
     EventId unification_event() const { return unification_; }
@@ -86,6 +124,8 @@ private:
     void update_wars(Polity& p);
 
     void check_unification();
+    void trade_daily();
+    void tidy_pacts(Polity& p);
 
     SimContext& ctx_;
     Rng rng_;

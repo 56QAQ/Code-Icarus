@@ -12,7 +12,9 @@
 namespace icarus {
 
 enum class JobType : u8 {
-    None = 0, Till, Sow, Harvest, Chop, Mine, Dig, HaulPile, HaulToSite, Build, Cook, Craft, Research, Forage, Guard, Count
+    None = 0, Till, Sow, Harvest, Chop, Mine, Dig, HaulPile, HaulToSite, Build, Cook, Craft, Research, Forage, Guard,
+    Trade,  // a caravan: goods to a partner polity's store and payment back (to = its store, project = the partner)
+    Count
 };
 const char* job_name_zh(JobType t);
 int job_skill(JobType t);

@@ -35,6 +35,7 @@ EventId Society::declare_war(u16 attacker, u16 defender, const std::string& aim,
     e.data.set("aim", aim);
     e.data.set("enemy", (int)defender);
     EventId ev = ctx_.chron->emit(std::move(e));
+    if (a->pact_with(defender)) end_trade(attacker, defender, "战争断绝了商路", ev);
     War wa;
     wa.enemy = defender;
     wa.attacker = true;

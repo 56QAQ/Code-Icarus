@@ -111,6 +111,21 @@ struct Operation {
     int loot = 0;            // units of food carried off (raids)
 };
 
+// A trade pact between two polities at peace. Each side's carriers take what it can
+// spare to the other's storehouse and bring back goods of equal value; nothing is
+// created or lost on the way, and a cut road stops the caravans.
+struct TradePact {
+    u16 partner = 0;
+    Tick since = 0;
+    EventId event = 0;         // the pact
+    int trips = 0;             // our caravans that made an exchange
+    float sent = 0, received = 0;  // exchange value, all time
+    Tick blocked_until = 0;    // a caravan could not get there: none until then
+    EventId blocked = 0;       // "the trade road is cut" (0 while it is open)
+    // Today's exchanges by our caravans (for the evening summary).
+    std::vector<std::pair<ItemId, i32>> out_today, in_today;
+};
+
 struct Polity {
     u16 id = 0;
     bool alive = false;
@@ -127,6 +142,7 @@ struct Polity {
     std::vector<u16> at_war;
     std::vector<War> wars;
     Operation op;
+    std::vector<TradePact> pacts;
     std::vector<std::string> techs;
     std::vector<std::pair<std::string, float>> research;
     std::vector<Crisis> crises;
@@ -155,6 +171,16 @@ struct Polity {
     const War* war_with(u16 other) const {
         for (auto& w : wars)
             if (w.enemy == other) return &w;
+        return nullptr;
+    }
+    TradePact* pact_with(u16 other) {
+        for (auto& t : pacts)
+            if (t.partner == other) return &t;
+        return nullptr;
+    }
+    const TradePact* pact_with(u16 other) const {
+        for (auto& t : pacts)
+            if (t.partner == other) return &t;
         return nullptr;
     }
     float attitude_to(u16 other) const {

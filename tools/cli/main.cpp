@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "icarus/data/registry.h"
+#include "icarus/economy/buildings.h"
 #include "icarus/util/binio.h"
 #include "icarus/util/image.h"
 #include "icarus/util/log.h"
@@ -152,6 +153,15 @@ std::vector<Scheduled> parse_admin(const Args& a, Simulation& sim) {
             s.cmd.params.set("pos", vec(f.spring));
             s.cmd.params.set("radius", 2.5);
             s.cmd.params.set("material", "stone");
+        } else if (type == "bless_seat") {
+            // Food from the sky at the first polity's hall (favouring one civilisation).
+            s.cmd.type = "bless_food";
+            s.cmd.params = Json::object();
+            Vec3i at = f.village;
+            if (const Polity* p = sim.society().polity(1))
+                if (const Building* hall = sim.buildings().get(p->seat)) at = hall->entrance;
+            s.cmd.params.set("pos", vec(at));
+            s.cmd.params.set("amount", c2 == std::string::npos ? 200 : std::stoi(rest.substr(c2 + 1)));
         } else if (type == "drain_lake") {
             s.cmd.type = "dig";
             s.cmd.params = Json::object();
@@ -273,7 +283,7 @@ struct RunSummary {
     u64 seed = 0;
     std::string ruler, drive, girls;
     std::vector<std::string> responses;  // first crisis decisions: "who: choice (proposals)"
-    int pop_start = 0, pop_end = 0, deaths = 0, polities = 1, coups = 0, secessions = 0, wars = 0;
+    int pop_start = 0, pop_end = 0, deaths = 0, polities = 1, coups = 0, secessions = 0, wars = 0, pacts = 0, trips = 0;
     float food_end = 0, mood_end = 0, support_end = 0, forest_end = 1;
     bool unified = false;
     std::string outcome;
@@ -349,6 +359,7 @@ int cmd_experiment(const Args& a) {
             if (e.type == EventType::Coup && e.text.find("失败") == std::string::npos) r.coups++;
             if (e.type == EventType::Secession) r.secessions++;
             if (e.type == EventType::WarDeclared) r.wars++;
+            if (e.type == EventType::Trade && e.text.find("缔结") != std::string::npos) r.pacts++;
             bool key = e.severity >= 4 || e.type == EventType::DecisionMade || e.type == EventType::Death;
             if (key && e.tick >= first_shock && r.timeline.size() < 40)
                 r.timeline.push_back(format_time_zh(e.tick) + " " + e.text);
@@ -360,6 +371,9 @@ int cmd_experiment(const Args& a) {
             return false;
         }();
         r.unified = sim.society().unification_event() != 0;
+        for (const Polity& p : sim.society().polities())
+            if (p.alive)
+                for (const TradePact& t : p.pacts) r.trips += t.trips;
         r.forest_end = sim.forest().ratio();
         if (r.unified) r.outcome = r.wars > 0 ? "分裂、战争后重归统一" : "分裂后重归统一";
         else if (r.secessions > 0) r.outcome = r.wars > 0 ? "分裂并交战" : "分裂";
@@ -368,10 +382,10 @@ int cmd_experiment(const Args& a) {
         else if (!crises_left && r.deaths == 0) r.outcome = "恢复";
         else if (!crises_left) r.outcome = "恢复（有伤亡）";
         else r.outcome = "僵持";
-        std::printf("seed %llu: %s（%s）→ %s | %s | pop %d→%d deaths %d polities %d wars %d food %.1fd mood %.2f support %+.2f forest %.0f%%\n",
+        std::printf("seed %llu: %s（%s）→ %s | %s | pop %d→%d deaths %d polities %d wars %d pacts %d trips %d food %.1fd mood %.2f support %+.2f forest %.0f%%\n",
                     (unsigned long long)seed, r.ruler.c_str(), r.drive.c_str(), r.outcome.c_str(),
                     r.responses.empty() ? "-" : r.responses.front().c_str(), r.pop_start, r.pop_end, r.deaths, r.polities,
-                    r.wars, r.food_end, r.mood_end, r.support_end, 100.0f * r.forest_end);
+                    r.wars, r.pacts, r.trips, r.food_end, r.mood_end, r.support_end, 100.0f * r.forest_end);
         std::fflush(stdout);
         runs.push_back(std::move(r));
     }
@@ -390,12 +404,13 @@ int cmd_experiment(const Args& a) {
         std::string md = "# 分歧历史实验报告\n\n";
         md += strfmt("场景：%s · 每个种子模拟 %.1f 天 · 冲击：", a.scenario.c_str(), a.days);
         for (const std::string& s : a.admin) md += "`" + s + "` ";
-        md += "\n\n| 种子 | 统治者 | 首要应对 | 结局 | 人口 | 死亡 | 国家数 | 战争 | 存粮(天) | 心情 | 支持 | 林木 |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n";
+        md += "\n\n| 种子 | 统治者 | 首要应对 | 结局 | 人口 | 死亡 | 国家数 | 战争 | 通商 | 存粮(天) | 心情 | 支持 | 林木 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n";
         for (const RunSummary& r : runs)
-            md += strfmt("| %llu | %s（%s） | %s | **%s** | %d→%d | %d | %d | %d | %.1f | %.2f | %+.2f | %.0f%% |\n",
+            md += strfmt("| %llu | %s（%s） | %s | **%s** | %d→%d | %d | %d | %d | %s | %.1f | %.2f | %+.2f | %.0f%% |\n",
                          (unsigned long long)r.seed, r.ruler.c_str(), r.drive.c_str(),
                          r.responses.empty() ? "-" : r.responses.front().c_str(), r.outcome.c_str(), r.pop_start, r.pop_end,
-                         r.deaths, r.polities, r.wars, r.food_end, r.mood_end, r.support_end, 100.0f * r.forest_end);
+                         r.deaths, r.polities, r.wars, r.pacts ? strfmt("%d（商队 %d 次）", r.pacts, r.trips).c_str() : "-",
+                         r.food_end, r.mood_end, r.support_end, 100.0f * r.forest_end);
         md += "\n## 各种子的经过\n";
         for (const RunSummary& r : runs) {
             md += strfmt("\n### 种子 %llu — %s\n\n魔法少女：%s\n\n", (unsigned long long)r.seed, r.outcome.c_str(), r.girls.c_str());
