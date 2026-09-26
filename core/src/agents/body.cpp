@@ -157,11 +157,18 @@ DamageReport Body::damage_spread(float fraction, Rng& rng, int preferred_part) {
     return rep;
 }
 
-int Body::regrow(int count, const Appearance& a) {
-    if (count <= 0) return 0;
+int Body::regrow(int count, const Appearance& a, bool limbs) {
+    if (count <= 0 && !limbs) return 0;
     Body fresh;
     fresh.build(a);
     int done = 0;
+    for (int p = 0; p < kPartCount; ++p) {
+        BodyPart& bp = parts[p];
+        if (bp.severed && limbs) {
+            bp = fresh.parts[p];
+            done += bp.alive;
+        }
+    }
     for (int p = 0; p < kPartCount && done < count; ++p) {
         BodyPart& bp = parts[p];
         if (bp.severed) continue;

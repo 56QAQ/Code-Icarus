@@ -30,6 +30,7 @@ void Agents::run_task(Character& c) {
         case TaskType::Protest: ok = task_protest(c); break;
         case TaskType::Steal: ok = task_steal(c); break;
         case TaskType::Govern: ok = task_govern(c); break;
+        case TaskType::Cast: ok = task_cast(c); break;
         case TaskType::Wander:
         case TaskType::Idle: ok = task_wander(c); break;
         default: break;
@@ -312,7 +313,7 @@ bool Agents::task_eat(Character& c) {
             while (c.needs.food < target - 0.02f && ctx_.econ->store(c.inv)->count(st.item) > 0) {
                 ctx_.econ->remove(c.inv, st.item, 1, "eaten");
                 c.needs.food = std::min(1.0f, c.needs.food + d.nutrition);
-                joy += d.joy;
+                joy += d.joy + ctx_.society->passive(c.polity, "meal_joy");
             }
         }
         if (joy > 0.04f) c.remember(now_, joy > 0.15f ? MemoryKind::Feast : MemoryKind::AteWell, kNoEntity, std::min(0.25f, joy), 0);

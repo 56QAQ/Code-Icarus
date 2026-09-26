@@ -157,13 +157,21 @@ void Agents::think(Character& c) {
         float s = c.support_for(p->ruler);
         float grievance = std::max(0.0f, -s) * (1.0f - c.mood) * (0.6f + c.pers.aggression + 0.3f * c.pers.idealism) -
                           c.fear * c.pers.conformity * 0.6f - pol.punishment * 0.25f;
-        if (grievance > 0.18f) add("抗议", grievance * 1.6f, strfmt("对统治者不满（支持度 %.2f），心情 %s", s, pct(c.mood)));
+        const float calm = p->passive("calm");
+        if (grievance > 0.18f + calm) add("抗议", grievance * 1.6f, strfmt("对统治者不满（支持度 %.2f），心情 %s", s, pct(c.mood)));
     }
 
     // Desperate theft when public food is withheld.
     if (hunger > 0.6f && !carrying_food && !food_known && p && ctx_.society->public_food(c.polity) > 1.0f) {
         float steal = hunger * hunger * (0.4f + c.pers.aggression - 0.6f * c.pers.conformity - 0.5f * pol.punishment);
         if (steal > 0.05f) add("偷取食物", steal * 2.0f, strfmt("饥饿难耐，公共粮仓却不开放（服从 %s）", pct(c.pers.conformity)));
+    }
+
+    SpellPick spell;
+    if (c.is_girl()) {
+        std::string why;
+        float sc = pick_spell(c, spell, why);
+        if (sc > 0) add("施法", sc, why);
     }
 
     add("闲逛", 0.1f + (1.0f - c.mood) * 0.12f, "无事可做");
@@ -181,6 +189,7 @@ void Agents::think(Character& c) {
             case TaskType::Protest: return "抗议";
             case TaskType::Steal: return "偷取食物";
             case TaskType::Wander: return "闲逛";
+            case TaskType::Cast: return "施法";
             default: return "";
         }
     };
@@ -206,6 +215,13 @@ void Agents::think(Character& c) {
     else if (best.label == "逃离危险") start_task(c, TaskType::Flee, best.score, best.why);
     else if (best.label == "抗议") start_task(c, TaskType::Protest, best.score, best.why);
     else if (best.label == "偷取食物") start_task(c, TaskType::Steal, best.score, best.why);
+    else if (best.label == "施法") {
+        start_task(c, TaskType::Cast, best.score, best.why);
+        c.task.count = spell.effect;
+        c.task.target = spell.pos;
+        c.task.other = spell.who;
+        c.task.label = spell.name;
+    }
     else if (best.label == "工作" && job) {
         start_task(c, TaskType::Work, best.score, best.why);
         c.task.job = job;

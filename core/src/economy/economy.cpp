@@ -228,14 +228,15 @@ float Economy::food_nutrition_in(StoreId sid) const {
     return n;
 }
 
-void Economy::spoil(Rng& rng) {
+void Economy::spoil(Rng& rng, const std::function<float(u16)>& polity_factor) {
     for (auto& s : stores_) {
         if (!s.alive) continue;
+        const float pf = (polity_factor && s.polity) ? polity_factor(s.polity) : 1.0f;
         std::vector<ItemStack> copy = s.items;
         for (auto& st : copy) {
             const ItemDef& d = reg_->item(st.item);
             if (d.spoil_per_day <= 0 || st.count <= 0) continue;
-            float expected = (float)st.count * d.spoil_per_day * s.spoil_factor;
+            float expected = (float)st.count * d.spoil_per_day * s.spoil_factor * pf;
             i32 k = (i32)std::floor(expected);
             if (rng.chance(expected - (float)k)) ++k;
             if (k > 0) remove(s.id, st.item, k, "spoiled");

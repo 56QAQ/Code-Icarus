@@ -36,6 +36,12 @@ public:
     void finish_project(u32 id, bool success, EventId cause);
 
     void compute_stats(Polity& p);
+    void refresh_passives(Polity& p);
+    // Convenience for systems that only know a polity id.
+    float passive(u16 polity, const std::string& effect) const {
+        const Polity* p = this->polity(polity);
+        return p ? p->passive(effect) : 0.0f;
+    }
 
     void save(BinWriter& w) const;
     void load(BinReader& r);

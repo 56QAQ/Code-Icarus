@@ -157,12 +157,36 @@ void Society::hourly(Tick now) {
 }
 
 void Society::daily(Tick now) {
-    ctx_.econ->spoil(rng_);
+    ctx_.econ->spoil(rng_, [this](u16 polity) { return 1.0f - std::min(0.9f, passive(polity, "preserve")); });
     ctx_.agents->day = {};
     (void)now;
 }
 
+void Society::refresh_passives(Polity& p) {
+    p.passives.clear();
+    const Json& drives = ctx_.reg->doc("drives")["drives"];
+    for (const auto& cp : ctx_.agents->all()) {
+        if (!cp || !cp->alive || cp->departed || !cp->is_girl() || cp->polity != p.id) continue;
+        for (const Json& d : drives.items()) {
+            if (d.str("key") != cp->girl->drive) continue;
+            for (const Json& sp : d["spells"].items()) {
+                if (sp.str("type") != "passive" || cp->girl->level < sp.integer("level", 1)) continue;
+                std::string eff = sp.str("effect");
+                float amt = sp.flt("amount", 1.0f);
+                bool found = false;
+                for (auto& e : p.passives)
+                    if (e.first == eff) {
+                        e.second += amt;
+                        found = true;
+                    }
+                if (!found) p.passives.push_back({eff, amt});
+            }
+        }
+    }
+}
+
 void Society::compute_stats(Polity& p) {
+    refresh_passives(p);
     PolityStats s;
     s.tick = ctx_.now;
     int residents = 0, fed = 0, watered = 0;
@@ -474,6 +498,11 @@ void Society::save(BinWriter& w) const {
         for (auto& h : p.history) save_stats(w, h);
         w.vari(p.deaths_total);
         w.u64v(p.forage_until);
+        w.varu(p.passives.size());
+        for (auto& [k, v] : p.passives) {
+            w.str(k);
+            w.f32(v);
+        }
     }
     w.varu(projects_.size());
     for (size_t i = 1; i < projects_.size(); ++i) {
@@ -573,6 +602,13 @@ void Society::load(BinReader& outer) {
         for (u64 k = 0; k < nh; ++k) p.history.push_back(load_stats(r));
         p.deaths_total = (int)r.vari();
         p.forage_until = r.u64v();
+        p.passives.clear();
+        u64 npv = r.varu();
+        for (u64 k = 0; k < npv; ++k) {
+            std::string key = r.str();
+            float v = r.f32();
+            p.passives.push_back({key, v});
+        }
     }
     u64 np = r.varu();
     projects_.assign((size_t)np, Project{});

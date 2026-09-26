@@ -123,7 +123,10 @@ void Agents::step(Tick now) {
 void Agents::update_needs(Character& c) {
     const float per_tick = 1.0f / (float)kTicksPerDay;
     float activity = c.task.type == TaskType::Work ? 1.25f : (c.sleeping ? 0.6f : 1.0f);
-    c.needs.food = clampv(c.needs.food - tune.food_per_day * per_tick * activity, 0.0f, 1.0f);
+    if (const Polity* pp = ctx_.society->polity(c.polity)) activity *= 1.0f - pp->passive("numb");
+    float appetite = 1.0f;
+    if (c.is_girl() && c.girl->drive == "gluttony" && c.girl->level >= 2) appetite = 3.0f;  // 无底
+    c.needs.food = clampv(c.needs.food - tune.food_per_day * per_tick * activity * appetite, 0.0f, 1.0f);
     c.needs.water = clampv(c.needs.water - tune.water_per_day * per_tick * activity, 0.0f, 1.0f);
     if (c.sleeping) {
         c.needs.rest = clampv(c.needs.rest + 3.0f * per_tick * 1.1f, 0.0f, 1.0f);
@@ -214,6 +217,13 @@ void Agents::hourly(Character& c) {
     target += clampv(mem, -0.4f, 0.3f);
     float injury = 1.0f - (float)c.body.total_alive() / (float)std::max(1, c.body.total_voxels());
     target -= injury * 0.5f;
+    // Passive spells of the polity's magical girls colour everyone's days.
+    if (const Polity* pp = ctx_.society->polity(c.polity)) {
+        target = std::max(target, 4.0f * pp->passive("mood_floor"));
+        target -= 0.5f * pp->passive("fear_rule");
+        target = std::min(target, 1.0f - 2.0f * pp->passive("numb"));
+        c.fear = std::max(c.fear, pp->passive("fear_rule"));
+    }
     target = clampv(target, 0.0f, 1.0f);
     c.mood += (target - c.mood) * 0.25f;
     c.stress = clampv(c.stress * 0.95f + (c.mood < 0.3f ? 0.05f : 0.0f), 0.0f, 1.0f);

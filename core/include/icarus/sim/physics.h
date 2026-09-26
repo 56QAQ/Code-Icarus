@@ -87,6 +87,7 @@ public:
         spring_state_.push_back({});
     }
     const std::vector<Vec3i>& springs() const { return springs_; }
+    const std::vector<Vec3i>& fire_positions() const { return fire_.items(); }
     // A spring is blocked when every outlet is solid; the event that sealed it is kept.
     struct SpringState {
         bool flowing = true;

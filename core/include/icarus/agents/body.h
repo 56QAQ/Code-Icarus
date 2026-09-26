@@ -62,7 +62,8 @@ struct Body {
     // Remove about `fraction` of total voxels spread over exposed surfaces (fire, crush).
     DamageReport damage_spread(float fraction, Rng& rng, int preferred_part = -1);
     // Regrow up to `count` missing voxels in non-severed parts; returns voxels regrown.
-    int regrow(int count, const Appearance& a);
+    // Regrows missing voxels next to living tissue; with `limbs`, severed parts regrow too.
+    int regrow(int count, const Appearance& a, bool limbs = false);
 
     float part_integrity(int p) const { return parts[p].severed ? 0.0f : parts[p].integrity(); }
     float mobility() const;      // 0..1, from legs

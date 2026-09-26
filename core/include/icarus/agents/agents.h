@@ -94,6 +94,16 @@ private:
     bool task_protest(Character& c);
     bool task_steal(Character& c);
     bool task_govern(Character& c);
+    // Magic cast on her own initiative (healing the injured, quenching fire).
+    struct SpellPick {
+        int effect = 0;  // 1 heal, 2 quench
+        Vec3i pos;
+        EntityId who = kNoEntity;
+        float mana = 0;
+        std::string name;
+    };
+    float pick_spell(Character& c, SpellPick& out, std::string& why);
+    bool task_cast(Character& c);
     // movement
     enum class Move { Moving, Arrived, Failed };
     Move move_to(Character& c, const Vec3i& goal, bool adjacent_ok);

@@ -4,6 +4,7 @@
 // so conservation can be audited at any time.
 #pragma once
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -107,7 +108,7 @@ public:
     const std::map<std::string, i64>& reasons() const { return reasons_; }
 
     // Daily spoilage of perishable food in every store.
-    void spoil(Rng& rng);
+    void spoil(Rng& rng, const std::function<float(u16)>& polity_factor = {});
 
     void save(BinWriter& w) const;
     void load(BinReader& r);
