@@ -1,0 +1,386 @@
+class_name HUD
+extends Control
+## Main overlay. Layout principle: the world stays visible. A compact time pill at the
+## top, a status strip top-left, transient toasts top-right, one tool dock at the
+## bottom, and contextual floating cards — no permanent side panels.
+
+var _time_label: Label
+var _day_icon: UIIcon
+var _speed_buttons: Array[Button] = []
+var _pause_button: Button
+var _tool_buttons := {}
+var _options_panel: PanelContainer
+var _options_box: VBoxContainer
+var _hover_card: PanelContainer
+var _hover_label: RichTextLabel
+var _toasts: VBoxContainer
+var _status_box: HBoxContainer
+var _status_labels := {}
+var _top_left: VBoxContainer
+var _top_center: CenterContainer
+var _top_right: VBoxContainer
+var _bottom_left: VBoxContainer
+var _bottom_center: VBoxContainer
+
+const TOOLS := [
+	{"id": "inspect", "icon": "inspect", "label": "观察", "tip": "查看方块、地格与居民"},
+	{"sep": true},
+	{"id": "dig", "icon": "dig", "label": "挖除", "tip": "移除物质：留下真实的缺口，失去支撑的结构会坍塌"},
+	{"id": "place", "icon": "place", "label": "创造", "tip": "凭空创造物质（会记录在编年史中）"},
+	{"sep": true},
+	{"id": "meteor", "icon": "meteor", "label": "陨石", "tip": "召唤陨石：撞出陨坑、点燃周边、留下陨铁"},
+	{"id": "ignite", "icon": "fire", "label": "火焰", "tip": "点燃可燃物，火势会沿材料蔓延"},
+	{"id": "flood", "icon": "water", "label": "洪水", "tip": "倾倒大量的水，水量守恒地流动"},
+]
+
+const PLACE_MATERIALS := [
+	["stone", "岩石"], ["dirt", "泥土"], ["sand", "沙"], ["planks", "木板"], ["log", "原木"], ["levistone", "浮石"],
+]
+
+
+func _ready() -> void:
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	theme = UITheme.build()
+	_build_layout()
+	_build_time_pill()
+	_build_status()
+	_build_dock()
+	_build_hover_card()
+	_build_toasts()
+	Game.speed_changed.connect(_on_speed_changed)
+	Game.tool_changed.connect(_on_tool_changed)
+	Game.event_logged.connect(_on_event)
+	_on_speed_changed(Game.speed, Game.paused)
+	_on_tool_changed(Game.current_tool)
+
+
+# ------------------------------------------------------------------ layout
+
+func _build_layout() -> void:
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 14)
+	add_child(margin)
+	var col := VBoxContainer.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(col)
+	var top := HBoxContainer.new()
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(top)
+	_top_left = _column(top, true)
+	_top_center = CenterContainer.new()
+	_top_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_top_center.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	top.add_child(_top_center)
+	_top_right = _column(top, true)
+	_top_right.alignment = BoxContainer.ALIGNMENT_BEGIN
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(spacer)
+	var bottom := HBoxContainer.new()
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(bottom)
+	_bottom_left = _column(bottom, true)
+	_bottom_left.alignment = BoxContainer.ALIGNMENT_END
+	_bottom_center = VBoxContainer.new()
+	_bottom_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bottom_center.alignment = BoxContainer.ALIGNMENT_END
+	_bottom_center.add_theme_constant_override("separation", 8)
+	bottom.add_child(_bottom_center)
+	_column(bottom, true)
+
+
+func _column(parent: Control, expand: bool) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if expand:
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.size_flags_stretch_ratio = 1.0
+	parent.add_child(v)
+	return v
+
+
+# ------------------------------------------------------------------ top: time pill
+
+func _build_time_pill() -> void:
+	var pill := PanelContainer.new()
+	pill.add_theme_stylebox_override("panel", UITheme.card_style(UITheme.BG, 20, 6))
+	_top_center.add_child(pill)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	pill.add_child(row)
+
+	var left_pad := Control.new()
+	left_pad.custom_minimum_size = Vector2(6, 0)
+	row.add_child(left_pad)
+	_day_icon = UIIcon.new("sun", 18)
+	_day_icon.color = UITheme.ACCENT
+	row.add_child(_day_icon)
+	_time_label = UITheme.label("—", 15)
+	_time_label.custom_minimum_size = Vector2(190, 0)
+	_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	row.add_child(_time_label)
+	row.add_child(VSeparator.new())
+
+	_pause_button = _icon_button("pause", "暂停 / 继续（空格）")
+	_pause_button.pressed.connect(Game.toggle_pause)
+	row.add_child(_pause_button)
+	var labels := ["1×", "2×", "5×", "20×"]
+	for i in Game.SPEEDS.size():
+		var b := Button.new()
+		b.text = labels[i]
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(40, 30)
+		b.tooltip_text = "模拟速度 %s" % labels[i]
+		var sp: float = Game.SPEEDS[i]
+		b.pressed.connect(func() -> void: Game.set_speed(sp))
+		row.add_child(b)
+		_speed_buttons.append(b)
+	var right_pad := Control.new()
+	right_pad.custom_minimum_size = Vector2(2, 0)
+	row.add_child(right_pad)
+
+
+func _icon_button(icon: String, tip: String, size_px := 30.0) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(size_px + 4, size_px)
+	b.tooltip_text = tip
+	var ic := UIIcon.new(icon, size_px * 0.6)
+	ic.set_anchors_preset(Control.PRESET_CENTER)
+	ic.position = -ic.custom_minimum_size * 0.5
+	b.add_child(ic)
+	b.set_meta("icon", ic)
+	return b
+
+
+func _on_speed_changed(speed: float, paused: bool) -> void:
+	for i in _speed_buttons.size():
+		_speed_buttons[i].button_pressed = (not paused) and is_equal_approx(Game.SPEEDS[i], speed)
+	var ic: UIIcon = _pause_button.get_meta("icon")
+	ic.set_icon("play" if paused else "pause")
+	ic.set_color(UITheme.ACCENT if paused else UITheme.TEXT)
+
+
+# ------------------------------------------------------------------ top-left: status
+
+func _build_status() -> void:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", UITheme.card_style(UITheme.BG, 12, 8))
+	card.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_top_left.add_child(card)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	card.add_child(col)
+	var title := UITheme.label("空岛 · 伊卡洛斯", 13, UITheme.TEXT_DIM)
+	col.add_child(title)
+	_status_box = HBoxContainer.new()
+	_status_box.add_theme_constant_override("separation", 14)
+	col.add_child(_status_box)
+	for key in ["cells", "water", "fire"]:
+		var l := UITheme.label("", 13, UITheme.TEXT)
+		_status_box.add_child(l)
+		_status_labels[key] = l
+
+
+func _process(_delta: float) -> void:
+	if Game.sim == null or not Game.sim.has_game():
+		return
+	var ci: Dictionary = Game.sim.clock_info()
+	_time_label.text = ci.get("text", "")
+	var night: bool = ci.get("night", false)
+	_day_icon.set_icon("moon" if night else "sun")
+	if Engine.get_process_frames() % 15 == 0:
+		var st: Dictionary = Game.sim.world_stats()
+		_status_labels["cells"].text = "地格 活跃 %d · 休眠 %d · 未生成 %d" % [st.get("active", 0), st.get("dormant", 0), st.get("ungenerated", 0)]
+		_status_labels["water"].text = "流动水 %d" % st.get("water_active", 0)
+		_status_labels["fire"].text = "燃烧 %d" % st.get("fire_active", 0)
+
+
+# ------------------------------------------------------------------ bottom: tool dock
+
+func _build_dock() -> void:
+	var dock := PanelContainer.new()
+	dock.add_theme_stylebox_override("panel", UITheme.card_style(UITheme.BG, 16, 6))
+	dock.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_bottom_center.add_child(dock)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)
+	dock.add_child(row)
+	for t in TOOLS:
+		if t.has("sep"):
+			var s := VSeparator.new()
+			s.custom_minimum_size = Vector2(10, 0)
+			row.add_child(s)
+			continue
+		var b := Button.new()
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(62, 58)
+		b.tooltip_text = t["tip"]
+		var v := VBoxContainer.new()
+		v.set_anchors_preset(Control.PRESET_FULL_RECT)
+		v.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_theme_constant_override("separation", 2)
+		var ic := UIIcon.new(t["icon"], 24)
+		ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		v.add_child(ic)
+		var l := UITheme.label(t["label"], 12, UITheme.TEXT_DIM)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(l)
+		b.add_child(v)
+		b.set_meta("icon", ic)
+		b.set_meta("label", l)
+		var id: String = t["id"]
+		b.pressed.connect(func() -> void: Game.set_tool(id))
+		row.add_child(b)
+		_tool_buttons[id] = b
+
+	# Options popover sits just above the dock.
+	_options_panel = PanelContainer.new()
+	_options_panel.add_theme_stylebox_override("panel", UITheme.card_style(UITheme.BG, 12, 10))
+	_options_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_bottom_center.add_child(_options_panel)
+	_bottom_center.move_child(_options_panel, 0)
+	_options_box = VBoxContainer.new()
+	_options_box.add_theme_constant_override("separation", 8)
+	_options_panel.add_child(_options_box)
+
+
+func _on_tool_changed(tool: String) -> void:
+	for id in _tool_buttons:
+		var b: Button = _tool_buttons[id]
+		var on: bool = id == tool
+		b.button_pressed = on
+		(b.get_meta("icon") as UIIcon).set_color(UITheme.ACCENT if on else UITheme.TEXT)
+		(b.get_meta("label") as Label).add_theme_color_override("font_color", UITheme.ACCENT if on else UITheme.TEXT_DIM)
+	_rebuild_options(tool)
+
+
+func _rebuild_options(tool: String) -> void:
+	for c in _options_box.get_children():
+		c.queue_free()
+	var show := tool in ["dig", "place", "meteor", "ignite", "flood"]
+	_options_panel.visible = show
+	if not show:
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	_options_box.add_child(row)
+	row.add_child(UITheme.label("范围", 13, UITheme.TEXT_DIM))
+	var slider := HSlider.new()
+	slider.min_value = 0.5
+	slider.max_value = 12.0 if tool != "meteor" else 14.0
+	slider.step = 0.5
+	slider.custom_minimum_size = Vector2(180, 18)
+	slider.value = Game.tool_params.get("radius", 3.0)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(slider)
+	var val := UITheme.label("%.1f" % slider.value, 13, UITheme.ACCENT)
+	val.custom_minimum_size = Vector2(32, 0)
+	row.add_child(val)
+	slider.value_changed.connect(func(v: float) -> void:
+		Game.tool_params["radius"] = v
+		val.text = "%.1f" % v)
+	if tool == "place":
+		var mats := HBoxContainer.new()
+		mats.add_theme_constant_override("separation", 4)
+		_options_box.add_child(mats)
+		for m in PLACE_MATERIALS:
+			var b := Button.new()
+			b.text = m[1]
+			b.toggle_mode = true
+			b.focus_mode = Control.FOCUS_NONE
+			b.button_pressed = Game.tool_params.get("material", "stone") == m[0]
+			var key: String = m[0]
+			b.pressed.connect(func() -> void:
+				Game.tool_params["material"] = key
+				for other in mats.get_children():
+					(other as Button).button_pressed = other == b)
+			mats.add_child(b)
+
+
+# ------------------------------------------------------------------ hover card
+
+func _build_hover_card() -> void:
+	_hover_card = PanelContainer.new()
+	_hover_card.add_theme_stylebox_override("panel", UITheme.card_style(UITheme.BG, 10, 10))
+	_hover_card.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_hover_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bottom_left.add_child(_hover_card)
+	_hover_label = RichTextLabel.new()
+	_hover_label.bbcode_enabled = true
+	_hover_label.fit_content = true
+	_hover_label.scroll_active = false
+	_hover_label.custom_minimum_size = Vector2(240, 0)
+	_hover_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hover_label.add_theme_font_size_override("normal_font_size", 13)
+	_hover_label.add_theme_font_override("bold_font", UITheme.font_bold())
+	_hover_label.add_theme_font_size_override("bold_font_size", 14)
+	_hover_card.add_child(_hover_label)
+	_hover_card.visible = false
+
+
+func show_hover(info: Dictionary) -> void:
+	if info.is_empty():
+		_hover_card.visible = false
+		return
+	_hover_card.visible = true
+	var cell: Dictionary = info.get("cell", {})
+	var states := {"ungenerated": "未生成", "dormant": "休眠", "active": "活跃"}
+	var t := "[b]%s[/b]" % info.get("material_name", "")
+	if info.get("burning", false):
+		t += "  [color=#f0a050]燃烧中[/color]"
+	if info.get("material", "") == "water":
+		t += "  [color=#8fb8d8]水量 %d/15[/color]" % info.get("level", 0)
+	t += "\n[color=#9aa3b5]方块 %s[/color]" % str(info.get("cube", ""))
+	if not cell.is_empty():
+		t += "\n[color=#9aa3b5]地格 %s · %s · %s[/color]" % [str(cell.get("coord")), cell.get("biome", ""), states.get(cell.get("state", ""), "")]
+	_hover_label.text = t
+
+
+# ------------------------------------------------------------------ toasts
+
+func _build_toasts() -> void:
+	_toasts = VBoxContainer.new()
+	_toasts.size_flags_horizontal = Control.SIZE_SHRINK_END
+	_toasts.custom_minimum_size = Vector2(320, 0)
+	_toasts.add_theme_constant_override("separation", 6)
+	_toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_top_right.add_child(_toasts)
+
+
+func _on_event(ev: Dictionary) -> void:
+	var sev: int = ev.get("severity", 0)
+	if sev < 3:
+		return
+	var card := PanelContainer.new()
+	var accent := UITheme.BAD if sev >= 4 else UITheme.ACCENT
+	var sb := UITheme.card_style(UITheme.BG, 10, 10)
+	sb.border_width_left = 3
+	sb.border_color = accent
+	card.add_theme_stylebox_override("panel", sb)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	card.add_child(v)
+	v.add_child(UITheme.label(ev.get("time", ""), 11, UITheme.TEXT_FAINT))
+	var l := UITheme.label(ev.get("text", ""), 14)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size = Vector2(300, 0)
+	v.add_child(l)
+	_toasts.add_child(card)
+	while _toasts.get_child_count() > 5:
+		_toasts.get_child(0).queue_free()
+		_toasts.remove_child(_toasts.get_child(0))
+	var tw := create_tween()
+	tw.tween_interval(6.0)
+	tw.tween_property(card, "modulate:a", 0.0, 0.8)
+	tw.tween_callback(card.queue_free)

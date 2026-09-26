@@ -5,8 +5,10 @@
 #include <string>
 
 #include "icarus/data/registry.h"
+#include "icarus/util/binio.h"
 #include "icarus/util/image.h"
 #include "icarus/util/log.h"
+#include "icarus/sim/simulation.h"
 #include "icarus/world/world.h"
 
 using namespace icarus;
@@ -19,6 +21,9 @@ struct Args {
     std::string out = "map.png";
     std::string data = "game/data";
     int scale = 1;
+    double days = 1.0;
+    std::string scenario = "village";
+    std::string save;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -31,6 +36,9 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--out") a.out = next();
         else if (k == "--data") a.data = next();
         else if (k == "--scale") a.scale = std::stoi(next());
+        else if (k == "--days") a.days = std::stod(next());
+        else if (k == "--scenario") a.scenario = next();
+        else if (k == "--save") a.save = next();
     }
     return a;
 }
@@ -92,12 +100,49 @@ int cmd_map(const Args& a) {
     return 0;
 }
 
+int cmd_run(const Args& a) {
+    Registry reg;
+    reg.load_from_dir(a.data);
+    Simulation sim(reg);
+    GameConfig cfg;
+    cfg.world.seed = a.seed;
+    cfg.scenario = a.scenario;
+    sim.new_game(cfg);
+    Tick total = (Tick)(a.days * (double)kTicksPerDay);
+    double max_us = 0, sum_us = 0;
+    for (Tick t = 0; t < total; ++t) {
+        sim.step();
+        const auto& pr = sim.profile();
+        max_us = std::max(max_us, pr.total_us);
+        sum_us += pr.total_us;
+        if (sim.now() % kTicksPerHour == 0) {
+            const PhysicsStats& ps = sim.physics().stats();
+            WorldStats ws = sim.world().stats();
+            std::printf("%s  water_active=%zu fire=%zu debris=%zu spring=%lld void=%lld evap=%lld | cells act=%d dorm=%d ungen=%d | avg %.0fus max %.0fus\n",
+                        format_time_zh(sim.now()).c_str(), ps.water_active, ps.fire_active, ps.debris,
+                        (long long)ps.water_units_spring, (long long)ps.water_units_to_void,
+                        (long long)ps.water_units_evaporated, ws.active, ws.dormant, ws.ungenerated,
+                        sum_us / (double)kTicksPerHour, max_us);
+            sum_us = 0;
+            max_us = 0;
+        }
+    }
+    std::printf("final hash %016llx, events %zu\n", (unsigned long long)sim.state_hash(), sim.chronicle().events().size());
+    if (!a.save.empty()) {
+        auto blob = sim.save();
+        write_file(a.save, blob.data(), blob.size());
+        std::printf("saved %s (%zu KB)\n", a.save.c_str(), blob.size() / 1024);
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     Args a = parse_args(argc, argv);
     try {
         if (a.cmd == "map") return cmd_map(a);
+        if (a.cmd == "run") return cmd_run(a);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "error: %s\n", e.what());
         return 2;

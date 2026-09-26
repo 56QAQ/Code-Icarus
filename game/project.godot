@@ -19,8 +19,11 @@ window/size/viewport_width=1600
 window/size/viewport_height=900
 window/stretch/aspect="expand"
 
-[gui]
+[autoload]
 
+Game="*res://scripts/game.gd"
+
+[gui]
 
 theme/custom_font="res://assets/fonts/NotoSansSC-Regular.woff2"
 
