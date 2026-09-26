@@ -14,6 +14,11 @@ const FLAG_NATURAL := 2   # large-scale colour drift across the landscape
 const FLAG_GLOW := 4      # bright texels glow (levistone veins, magma)
 const FLAG_SHINY := 8     # texture alpha < 1 marks glossy texels (ore, glass)
 const FLAG_WINDOW := 16   # panes glow warm at night
+# Bits 5-6 of the flags: extra variants of each face (consecutive layers), picked per
+# cube so natural ground and rock never show the same stamp twice in a row.
+const VARIANT_SHIFT := 5
+const VARIED := ["grass", "dirt", "stone", "sand", "gravel", "clay", "leaves", "basalt", "path", "farmland", "rubble",
+	"ash", "copper_ore", "iron_ore", "coal", "log"]
 const CRACK_STAGES := 4
 
 var _layers: Array[Image] = []
@@ -31,16 +36,28 @@ func _build(materials: Array) -> Dictionary:
 	for m in materials:
 		var key: String = m["key"]
 		var col: Color = m["color"]
-		_rng.seed = hash(key) & 0x7fffffff
-		var faces := _paint(key, col, m)
-		var top := _add(faces[0])
-		var side := _add(faces[1]) if faces[1] != faces[0] else top
+		var nvar := 3 if key in VARIED else 1
+		var sets: Array = []
+		for vi in nvar:
+			_rng.seed = hash("%s#%d" % [key, vi]) & 0x7fffffff
+			sets.append(_paint(key, col, m))
+		# Each face kind gets its run of variants; faces that look alike share one.
+		var top := _layers.size()
+		for vi in nvar:
+			_add(sets[vi][0])
+		var side := top
+		if sets[0][1] != sets[0][0]:
+			side = _layers.size()
+			for vi in nvar:
+				_add(sets[vi][1])
 		var bottom := top
-		if faces[2] == faces[1]:
+		if sets[0][2] == sets[0][1]:
 			bottom = side
-		elif faces[2] != faces[0]:
-			bottom = _add(faces[2])
-		map.set_pixel(int(m["id"]), 0, Color8(top, side, bottom, _flags(key, m)))
+		elif sets[0][2] != sets[0][0]:
+			bottom = _layers.size()
+			for vi in nvar:
+				_add(sets[vi][2])
+		map.set_pixel(int(m["id"]), 0, Color8(top, side, bottom, _flags(key, m) | ((nvar - 1) << VARIANT_SHIFT)))
 	var crack_base := _layers.size()
 	for s in CRACK_STAGES:
 		_rng.seed = 7001 + s

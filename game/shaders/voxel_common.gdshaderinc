@@ -12,7 +12,7 @@ const int FLAG_TINTED = 1;
 const int FLAG_NATURAL = 2;
 const int FLAG_GLOW = 4;
 const int FLAG_SHINY = 8;
-const int FLAG_WINDOW = 16;
+const int FLAG_WINDOW = 16;  // bits 5-6: extra variants
 
 vec3 srgb_to_linear(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
@@ -21,6 +21,12 @@ vec3 srgb_to_linear(vec3 c) {
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
 	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+
+float hash13(vec3 p3) {
+	p3 = fract(p3 * 0.1031);
+	p3 += dot(p3, p3.zyx + 31.32);
 	return fract((p3.x + p3.y) * p3.z);
 }
 
@@ -82,8 +88,23 @@ VoxelSurface voxel_surface(vec2 uv_in, vec4 color, vec3 lpos, vec3 lnrm, vec3 wp
 	int dmg = code / 3;
 	ivec4 li = ivec4(round(texelFetch(layer_map, ivec2(mat, 0), 0) * 255.0));
 	int layer = face == 0 ? li.r : (face == 1 ? li.g : li.b);
-	vec4 t = textureGrad(atlas, vec3(uv, float(layer)), gx, gy);
 	int flags = li.a;
+	// Per-cube variety: one of the painted variants, turned or mirrored.
+	float h = hash13(floor(lpos - lnrm * 0.5 + 1e-3) + 17.0);
+	int variants = ((flags >> 5) & 3) + 1;
+	layer += min(int(h * float(variants)), variants - 1);
+	float h2 = fract(h * 13.37);
+	if (face != 1) {
+		int r = int(h2 * 4.0);
+		if (r == 1) { uv = vec2(uv.y, 1.0 - uv.x); gx = vec2(gx.y, -gx.x); gy = vec2(gy.y, -gy.x); }
+		else if (r == 2) { uv = 1.0 - uv; gx = -gx; gy = -gy; }
+		else if (r == 3) { uv = vec2(1.0 - uv.y, uv.x); gx = vec2(-gx.y, gx.x); gy = vec2(-gy.y, gy.x); }
+	} else if (h2 > 0.5) {
+		uv.x = 1.0 - uv.x;
+		gx.x = -gx.x;
+		gy.x = -gy.x;
+	}
+	vec4 t = textureGrad(atlas, vec3(uv, float(layer)), gx, gy);
 	vec3 c = t.rgb;
 	if ((flags & FLAG_TINTED) != 0) {
 		c *= srgb_to_linear(color.rgb) * 1.6;
