@@ -278,6 +278,28 @@ void Decisions::consider(Polity& p) {
             ruler_busy = true;
         }
     }
+    // Choosing what to study next, whenever no research direction is set.
+    if (!ruler_busy && p.policies.research.empty() && now_ > kTicksPerDay / 3 &&
+        !ctx_.society->available_techs(p).empty()) {
+        bool open_research = false;
+        for (size_t i = list_.size() > 64 ? list_.size() - 64 : 1; i < list_.size(); ++i)
+            if (list_[i].polity == p.id && list_[i].kind == "research" &&
+                (list_[i].status == DecisionStatus::Pending || list_[i].status == DecisionStatus::AwaitingRemote ||
+                 now_ - list_[i].created < kTicksPerHour * 6))
+                open_research = true;
+        if (!open_research) {
+            Decision d;
+            d.girl = p.ruler;
+            d.polity = p.id;
+            d.kind = "research";
+            d.topic = "确定研究方向";
+            build_research_options(d, p, *ruler);
+            d.situation = describe_situation(p, *ruler, d.topic);
+            gather_proposals(d, p);
+            open(std::move(d));
+            ruler_busy = true;
+        }
+    }
     // Routine governance every two days when calm.
     if (!ruler_busy && now_ - ruler->girl->last_decision > kTicksPerDay * 2 && now_ > kTicksPerDay / 2) {
         Decision d;

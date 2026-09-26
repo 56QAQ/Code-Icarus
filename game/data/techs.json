@@ -1,0 +1,42 @@
+// Technology: from stone tools to a medieval iron age. Knowledge comes from research
+// work (at the hall, faster in a study) and from practice. A tech unlocks recipes,
+// buildings and decision options that name it in their "tech" field.
+//   era: 0 蒙昧 · 1 部落 · 2 青铜 · 3 铁器
+//   effects: optional numeric effects read by the kernel
+{
+  "eras": ["蒙昧时代", "部落时代", "青铜时代", "铁器时代"],
+  "techs": [
+    {"key": "stone_tools", "name": "石器", "era": 0, "cost": 0, "desc": "打制石器，劈木成板。"},
+    {"key": "fire", "name": "用火", "era": 0, "cost": 0, "desc": "烹饪与取暖。"},
+    {"key": "gathering", "name": "采集", "era": 0, "cost": 0, "desc": "采集野果与草秆。"},
+    {"key": "farming", "name": "农耕", "era": 0, "cost": 0, "desc": "翻耕、播种、灌溉与收割。"},
+    {"key": "thatching", "name": "茅草屋", "era": 0, "cost": 0, "desc": "以茅草与木板搭建屋舍。"},
+
+    {"key": "carpentry", "name": "木工", "era": 1, "cost": 40, "values": {"growth": 0.6, "welfare": 0.2}, "requires": ["stone_tools"],
+     "desc": "工坊与长屋；木器加工更快。", "effects": {"craft_speed": 0.2}},
+    {"key": "hunting_weapons", "name": "猎具", "era": 1, "cost": 40, "values": {"military": 0.7, "food_security": 0.2}, "requires": ["stone_tools"],
+     "desc": "长矛与弓，既能狩猎也能作战。"},
+    {"key": "pottery", "name": "制陶", "era": 1, "cost": 50, "values": {"food_security": 0.5, "growth": 0.3}, "requires": ["fire"],
+     "desc": "陶器与砖；粮仓能让粮食更耐存。"},
+    {"key": "masonry", "name": "石工", "era": 1, "cost": 70, "values": {"growth": 0.5, "military": 0.2}, "requires": ["stone_tools"],
+     "desc": "开采与加工石料。"},
+    {"key": "irrigation", "name": "水利", "era": 1, "cost": 60, "values": {"food_security": 0.8, "growth": 0.3}, "requires": ["farming"],
+     "desc": "更远的水也能灌溉田地。", "effects": {"irrigation_radius": 2}},
+
+    {"key": "writing", "name": "文字", "era": 2, "cost": 100, "values": {"growth": 0.6, "order": 0.3}, "requires": ["pottery"],
+     "desc": "智者小屋；研究更快。", "effects": {"research_speed": 0.5}},
+    {"key": "copper_working", "name": "炼铜", "era": 2, "cost": 120, "values": {"growth": 0.5, "military": 0.5}, "requires": ["pottery", "masonry"],
+     "desc": "把铜矿石炼成铜锭，打造铜工具、铜剑与铜甲。"},
+    {"key": "fortification", "name": "筑城", "era": 2, "cost": 110, "values": {"military": 0.7, "order": 0.3}, "requires": ["masonry"],
+     "desc": "瞭望塔与防御工事。"},
+    {"key": "militia", "name": "民兵", "era": 2, "cost": 90, "values": {"military": 0.8, "order": 0.2}, "requires": ["hunting_weapons"],
+     "desc": "有组织的征召与操练，士兵更不易溃散。", "effects": {"morale": 0.2}},
+
+    {"key": "iron_working", "name": "炼铁", "era": 3, "cost": 220, "values": {"military": 0.7, "growth": 0.5}, "requires": ["copper_working"],
+     "desc": "铁工具、铁剑与铁甲。"},
+    {"key": "law", "name": "律法", "era": 3, "cost": 180, "values": {"order": 0.6, "fairness": 0.6, "harshness": 0.2}, "requires": ["writing"],
+     "desc": "成文的法度：惩罚更公正，民众较少感到冤屈。", "effects": {"fair_punishment": 0.5}},
+    {"key": "feudalism", "name": "封建制度", "era": 3, "cost": 240, "values": {"self_power": 0.6, "order": 0.5, "cooperation": 0.3}, "requires": ["law", "militia"],
+     "desc": "封臣与领主：魔法少女可以受封领地，忠诚更稳固。", "effects": {"loyalty_drift": 0.3}}
+  ]
+}

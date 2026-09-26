@@ -83,9 +83,9 @@ int Farming::harvest(Plot& p, EventId cause) {
     return stage >= 5 ? 1 : 0;
 }
 
-bool Farming::check_irrigation(const Plot& p) {
+bool Farming::check_irrigation(const Plot& p, int bonus) {
     const CoreMats& M = w_.reg().m();
-    const int R = 4;
+    const int R = 4 + bonus;
     for (int dy = 0; dy >= -1; --dy)
         for (int dz = -R; dz <= R; ++dz)
             for (int dx = -R; dx <= R; ++dx) {
@@ -115,7 +115,7 @@ void Farming::step(Tick now, Rng& rng) {
             // Irrigation is re-checked hourly.
             if ((now / kPeriod) % (kTicksPerHour / kPeriod) == (i % (kTicksPerHour / kPeriod))) {
                 bool was = p.irrigated;
-                p.irrigated = check_irrigation(p);
+                p.irrigated = check_irrigation(p, irrigation_bonus ? irrigation_bonus(f.polity) : 0);
                 if (!p.irrigated && (was || p.dry_since == 0)) p.dry_since = now;
                 if (p.irrigated) p.dry_since = 0;
             }

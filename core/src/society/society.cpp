@@ -162,6 +162,93 @@ void Society::daily(Tick now) {
     (void)now;
 }
 
+const Json* Society::tech(const std::string& key) const {
+    for (const Json& t : ctx_.reg->doc("techs")["techs"].items())
+        if (t.str("key") == key) return &t;
+    return nullptr;
+}
+
+bool Society::tech_available(const Polity& p, const std::string& key) const {
+    const Json* t = tech(key);
+    if (!t || p.has_tech(key)) return false;
+    for (const Json& r : (*t)["requires"].items())
+        if (!p.has_tech(r.as_str())) return false;
+    return true;
+}
+
+std::vector<std::string> Society::available_techs(const Polity& p) const {
+    std::vector<std::string> out;
+    for (const Json& t : ctx_.reg->doc("techs")["techs"].items())
+        if (tech_available(p, t.str("key"))) out.push_back(t.str("key"));
+    return out;
+}
+
+float Society::tech_effect(u16 polity, const std::string& effect) const {
+    const Polity* p = this->polity(polity);
+    if (!p) return 0.0f;
+    float v = 0;
+    for (const std::string& k : p->techs)
+        if (const Json* t = tech(k)) v += (*t)["effects"].flt(effect, 0.0f);
+    return v;
+}
+
+int Society::era(const Polity& p) const {
+    int e = 0;
+    for (const std::string& k : p.techs)
+        if (const Json* t = tech(k)) e = std::max(e, t->integer("era", 0));
+    return e;
+}
+
+void Society::add_research(u16 id, float points, EntityId by) {
+    Polity* p = polity(id);
+    if (!p || p->policies.research.empty()) return;
+    const std::string key = p->policies.research;
+    const Json* t = tech(key);
+    if (!t || p->has_tech(key)) {
+        p->policies.research.clear();
+        return;
+    }
+    float* prog = nullptr;
+    for (auto& r : p->research)
+        if (r.first == key) prog = &r.second;
+    if (!prog) {
+        p->research.push_back({key, 0.0f});
+        prog = &p->research.back().second;
+    }
+    *prog += points * (1.0f + tech_effect(id, "research_speed"));
+    if (*prog >= t->flt("cost", 100.0f)) discover(*p, key, by, 0);
+}
+
+void Society::discover(Polity& p, const std::string& key, EntityId by, EventId cause) {
+    if (p.has_tech(key)) return;
+    const Json* t = tech(key);
+    int era_before = era(p);
+    p.techs.push_back(key);
+    if (p.policies.research == key) p.policies.research.clear();
+    Event e;
+    e.type = EventType::TechDiscovered;
+    e.severity = 3;
+    e.polity = p.id;
+    e.actor = by;
+    e.causes[0] = cause;
+    e.text = strfmt("「%s」掌握了%s：%s", p.name.c_str(), t ? t->str("name").c_str() : key.c_str(),
+                    t ? t->str("desc").c_str() : "");
+    e.data.set("tech", key);
+    EventId ev = ctx_.chron->emit(std::move(e));
+    int era_after = era(p);
+    if (era_after > era_before) {
+        Event a;
+        a.type = EventType::TechDiscovered;
+        a.severity = 4;
+        a.polity = p.id;
+        a.causes[0] = ev;
+        const Json& eras = ctx_.reg->doc("techs")["eras"];
+        a.text = strfmt("「%s」迈入了%s", p.name.c_str(),
+                        era_after < (int)eras.size() ? eras[(size_t)era_after].as_str().c_str() : "新的时代");
+        ctx_.chron->emit(std::move(a));
+    }
+}
+
 void Society::refresh_passives(Polity& p) {
     p.passives.clear();
     const Json& drives = ctx_.reg->doc("drives")["drives"];
@@ -458,6 +545,7 @@ void Society::save(BinWriter& w) const {
         w.f32(q.pri_military);
         w.f32(q.wage);
         w.str(q.research);
+        w.vari(q.army);
         w.u32v(p.seat);
         w.u64v(p.founded);
         w.u16v(p.parent);
@@ -556,6 +644,7 @@ void Society::load(BinReader& outer) {
         q.pri_military = r.f32();
         q.wage = r.f32();
         q.research = r.str();
+        q.army = (int)r.vari();
         p.seat = r.u32v();
         p.founded = r.u64v();
         p.parent = r.u16v();

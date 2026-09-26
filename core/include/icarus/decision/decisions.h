@@ -126,6 +126,7 @@ private:
     void build_governance_options(Decision& d, Polity& p, Character& girl);
     void build_stance_options(Decision& d, Polity& p, Character& girl);
     void build_petition_options(Decision& d, Polity& p, Character& ruler);
+    void build_research_options(Decision& d, Polity& p, Character& ruler);
     std::string describe_situation(const Polity& p, const Character& girl, const std::string& focus) const;
     u64 context_of(const Decision& d) const;
     std::vector<float> weights(const Character& g) const;

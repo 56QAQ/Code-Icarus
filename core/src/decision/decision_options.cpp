@@ -696,6 +696,36 @@ void Decisions::build_petition_options(Decision& d, Polity& p, Character& ruler)
     }
 }
 
+void Decisions::build_research_options(Decision& d, Polity& p, Character& ruler) {
+    (void)ruler;
+    std::vector<std::string> keys = ctx_.society->available_techs(p);
+    std::sort(keys.begin(), keys.end(), [&](const std::string& a, const std::string& b) {
+        float ca = ctx_.society->tech(a)->flt("cost"), cb = ctx_.society->tech(b)->flt("cost");
+        return ca != cb ? ca < cb : a < b;
+    });
+    if (keys.size() > 5) keys.resize(5);
+    const float per_day = 40.0f;  // rough research output of a village
+    for (const std::string& k : keys) {
+        const Json* t = ctx_.society->tech(k);
+        float cost = t->flt("cost", 100.0f), done = 0;
+        for (auto& r : p.research)
+            if (r.first == k) done = r.second;
+        DecisionOption o;
+        o.key = "research_" + k;
+        o.title = "研究「" + t->str("name") + "」";
+        o.desc = strfmt("%s 需要约 %.0f 点知识（已有 %.0f），约 %.1f 天。", t->str("desc").c_str(), cost, done,
+                        std::max(0.2f, (cost - done) / per_day));
+        for (const auto& [fk, fv] : (*t)["values"].members())
+            for (int f = 0; f < kFeatureCount; ++f)
+                if (fk == feature_key(f)) o.f[f] = fv.as_float();
+        o.f[kSpeed] = clampv(0.6f - cost / 200.0f, -0.6f, 0.6f);
+        o.action = act("research");
+        o.action.set("tech", k);
+        o.facts.set("cost", cost);
+        d.options.push_back(o);
+    }
+}
+
 // ------------------------------------------------------------------------------ finalize / execute
 
 void Decisions::finalize(Decision& d, int idx, const std::string& rationale, const std::string& source) {
@@ -918,6 +948,10 @@ void Decisions::execute(Decision& d) {
         pr.params = Json::object();
         pr.params.set("cubes", a["cubes"]);
         d.project = ctx_.society->add_project(pr);
+    } else if (what == "research") {
+        p->policies.research = a.str("tech");
+        p->policies.pri_research = std::max(p->policies.pri_research, 0.6f);
+        if (const Json* t = ctx_.society->tech(p->policies.research)) policy_event("确定研究方向：" + t->str("name"));
     } else if (what == "expedite") {
         if (Project* pr = ctx_.society->project((u32)a.num("project"))) {
             pr->priority = std::max(pr->priority, 2.0f);

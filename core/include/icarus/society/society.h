@@ -36,6 +36,15 @@ public:
     void finish_project(u32 id, bool success, EventId cause);
 
     void compute_stats(Polity& p);
+    // Technology.
+    const Json* tech(const std::string& key) const;
+    bool tech_available(const Polity& p, const std::string& key) const;  // requirements met, not known
+    std::vector<std::string> available_techs(const Polity& p) const;
+    float tech_effect(u16 polity, const std::string& effect) const;
+    int era(const Polity& p) const;
+    // Adds research points to the current target; discovers it when complete.
+    void add_research(u16 polity, float points, EntityId by);
+    void discover(Polity& p, const std::string& key, EntityId by, EventId cause);
     void refresh_passives(Polity& p);
     // Convenience for systems that only know a polity id.
     float passive(u16 polity, const std::string& effect) const {

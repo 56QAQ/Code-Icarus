@@ -120,6 +120,11 @@ private:
     bool is_work_time(const Character& c) const;
     float carried_weight(const Character& c) const;
     void deposit_all(Character& c, StoreId to);
+    // Keeps tool/weapon/armour slots consistent with the inventory and picks up better
+    // gear from nearby public stores (weapons and armour only when drafted).
+    void update_equipment(Character& c);
+    // Craft, chop, quarry and mine jobs from what the polity needs (agents_production.cpp).
+    void production_jobs();
     void say(Character& c, const std::string& s) { c.status_text = s; }
 
     SimContext& ctx_;

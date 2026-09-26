@@ -694,7 +694,7 @@ bool Agents::task_work(Character& c) {
     auto work_ticks = [&](float base) {
         float skill = j ? c.skills[job_skill(j->type)] : 0.3f;
         float f = (0.6f + 0.8f * skill) * std::max(0.2f, c.body.manipulation());
-        if (c.tool != kNoItem) f *= 1.35f;
+        if (c.tool != kNoItem) f *= std::max(1.0f, reg.item(c.tool).power);
         return (Tick)std::max(10.0f, base / f);
     };
     auto fail = [&](const char* msg) {
@@ -887,6 +887,11 @@ bool Agents::task_work(Character& c) {
                         break;
                     }
                     default: break;
+                }
+                // Tools wear out with use.
+                if (c.tool != kNoItem && rng_.chance(0.004f)) {
+                    ctx_.econ->remove(c.inv, c.tool, 1, "worn_out");
+                    c.tool = kNoItem;
                 }
                 JobType done_type = j->type;
                 Vec3i done_pos = j->pos;
@@ -1107,6 +1112,30 @@ bool Agents::task_work(Character& c) {
             }
             return true;
         }
+        case JobType::Research: {
+            Building* b = ctx_.buildings->get(j->building);
+            if (!b || !b->functional) return fail("研究的地方不能用了");
+            if (t.step == 0) {
+                say(c, "去研究");
+                Move m = move_to(c, b->inside, true);
+                if (m == Move::Failed) return fail("到不了研究的地方");
+                if (m != Move::Arrived) return true;
+                t.until = now_ + work_ticks(300);
+                t.step = 1;
+            }
+            if (t.step == 1) {
+                const Polity* p = ctx_.society->polity(c.polity);
+                say(c, p && !p->policies.research.empty() ? "钻研新知" : "整理见闻");
+                if (now_ < t.until) return true;
+                float pts = 3.0f * (0.6f + c.skills[kResearch]) * (b->def == "study" ? 1.5f : 1.0f);
+                ctx_.society->add_research(c.polity, pts, c.id);
+                c.skills[kResearch] = std::min(1.0f, c.skills[kResearch] + 0.01f);
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                end_task(c, true);
+            }
+            return true;
+        }
         case JobType::Craft: {
             // Work the recipe at the store that holds the inputs; outputs go back in.
             const Json& recipes = reg.doc("recipes")["recipes"];
@@ -1136,6 +1165,7 @@ bool Agents::task_work(Character& c) {
                     if (b.alive && b.functional && b.def == r.str("station") && b.polity == c.polity &&
                         b.entrance.dist2(c.foot) < 16 * 16)
                         speed = 0.6f;
+                speed /= 1.0f + ctx_.society->tech_effect(c.polity, "craft_speed");
                 t.until = now_ + work_ticks(r.flt("ticks", 100.0f) * (float)std::max(1, j->count) * speed);
                 t.step = 2;
             }

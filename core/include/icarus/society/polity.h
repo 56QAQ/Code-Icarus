@@ -21,6 +21,7 @@ struct Policies {
     float pri_food = 1.0f, pri_build = 1.0f, pri_gather = 0.7f, pri_research = 0.4f, pri_military = 0.3f;
     float wage = 0.0f;         // extra food paid to diligent workers (0 .. 1)
     std::string research;      // current research target
+    int army = 0;              // soldiers wanted (drafted residents)
 };
 
 struct Culture {

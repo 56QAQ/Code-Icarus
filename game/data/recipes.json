@@ -1,16 +1,52 @@
 // Crafting recipes. A craft job consumes the inputs from a public store and puts the
 // outputs back into the same store (both logged in the ledger). Jobs are created on
-// demand: construction sites short of an item, or stock below a policy target.
+// demand: construction sites short of an item, stock targets per resident, or arms for
+// the soldiers a polity wants.
 //   ticks: work per batch at average skill; station: building def that speeds it up.
+//   group: within a group (tool / weapon / armor) only the best available recipe is
+//          made for stock targets, so a bronze-age village stops knapping stone axes.
+//   stock_per_resident: keep this many per resident in public stores.
+//   military: keep one per wanted soldier.
 {
   "recipes": [
     {"key": "split_planks", "name": "劈木成板", "inputs": {"wood": 1}, "outputs": {"planks": 2},
      "ticks": 70, "batch": 6, "station": "workshop", "tech": "stone_tools"},
-    {"key": "stone_tools", "name": "打制石器", "inputs": {"stone": 2, "wood": 1}, "outputs": {"stone_tools": 1},
-     "ticks": 160, "batch": 2, "station": "workshop", "tech": "stone_tools", "stock_per_resident": 0.5},
+    {"key": "stone_blocks", "name": "凿制石块", "inputs": {"stone": 2}, "outputs": {"stone_block": 1},
+     "ticks": 120, "batch": 4, "station": "workshop", "tech": "masonry"},
     {"key": "fired_bricks", "name": "烧制砖块", "inputs": {"clay": 2, "wood": 1}, "outputs": {"brick": 2},
      "ticks": 200, "batch": 3, "station": "workshop", "tech": "pottery"},
     {"key": "pottery", "name": "烧制陶器", "inputs": {"clay": 2, "wood": 1}, "outputs": {"pottery": 1},
-     "ticks": 180, "batch": 2, "station": "workshop", "tech": "pottery"}
+     "ticks": 180, "batch": 2, "station": "workshop", "tech": "pottery"},
+
+    {"key": "stone_tools", "name": "打制石器", "inputs": {"stone": 2, "wood": 1}, "outputs": {"stone_tools": 1},
+     "ticks": 160, "batch": 2, "station": "workshop", "tech": "stone_tools", "group": "tool", "stock_per_resident": 0.5},
+    {"key": "copper_tools", "name": "打造铜工具", "inputs": {"copper": 1, "wood": 1}, "outputs": {"copper_tools": 1},
+     "ticks": 200, "batch": 2, "station": "workshop", "tech": "copper_working", "group": "tool", "stock_per_resident": 0.5},
+    {"key": "iron_tools", "name": "打造铁工具", "inputs": {"iron": 1, "wood": 1}, "outputs": {"iron_tools": 1},
+     "ticks": 220, "batch": 2, "station": "workshop", "tech": "iron_working", "group": "tool", "stock_per_resident": 0.5},
+
+    {"key": "smelt_copper", "name": "炼铜", "inputs": {"copper_ore": 2, "coal": 1}, "outputs": {"copper": 1},
+     "ticks": 240, "batch": 3, "station": "workshop", "tech": "copper_working"},
+    {"key": "smelt_copper_wood", "name": "以木炭炼铜", "inputs": {"copper_ore": 2, "wood": 3}, "outputs": {"copper": 1},
+     "ticks": 300, "batch": 2, "station": "workshop", "tech": "copper_working"},
+    {"key": "smelt_iron", "name": "炼铁", "inputs": {"iron_ore": 2, "coal": 2}, "outputs": {"iron": 1},
+     "ticks": 320, "batch": 3, "station": "workshop", "tech": "iron_working"},
+    {"key": "forge_meteoric_iron", "name": "锻打陨铁", "inputs": {"meteoric_iron": 1}, "outputs": {"iron": 2},
+     "ticks": 260, "batch": 3, "station": "workshop", "tech": "iron_working"},
+
+    {"key": "spear", "name": "制作长矛", "inputs": {"wood": 1, "stone": 1}, "outputs": {"spear": 1},
+     "ticks": 120, "batch": 3, "station": "workshop", "tech": "hunting_weapons", "group": "weapon", "military": true},
+    {"key": "bow", "name": "制作弓", "inputs": {"wood": 2, "fiber": 2}, "outputs": {"bow": 1},
+     "ticks": 160, "batch": 2, "station": "workshop", "tech": "hunting_weapons", "group": "ranged", "military": true},
+    {"key": "fiber_armor", "name": "编织草甲", "inputs": {"fiber": 6}, "outputs": {"hide_armor": 1},
+     "ticks": 150, "batch": 2, "station": "workshop", "tech": "hunting_weapons", "group": "armor", "military": true},
+    {"key": "copper_sword", "name": "铸造铜剑", "inputs": {"copper": 2, "wood": 1}, "outputs": {"copper_sword": 1},
+     "ticks": 240, "batch": 2, "station": "workshop", "tech": "copper_working", "group": "weapon", "military": true},
+    {"key": "bronze_armor", "name": "打造铜甲", "inputs": {"copper": 4}, "outputs": {"bronze_armor": 1},
+     "ticks": 300, "batch": 1, "station": "workshop", "tech": "copper_working", "group": "armor", "military": true},
+    {"key": "iron_sword", "name": "锻造铁剑", "inputs": {"iron": 2, "wood": 1}, "outputs": {"iron_sword": 1},
+     "ticks": 280, "batch": 2, "station": "workshop", "tech": "iron_working", "group": "weapon", "military": true},
+    {"key": "iron_armor", "name": "锻造铁甲", "inputs": {"iron": 4}, "outputs": {"iron_armor": 1},
+     "ticks": 340, "batch": 1, "station": "workshop", "tech": "iron_working", "group": "armor", "military": true}
   ]
 }

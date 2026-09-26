@@ -195,6 +195,7 @@ void Agents::update_physics(Character& c) {
 }
 
 void Agents::hourly(Character& c) {
+    update_equipment(c);
     // Regeneration costs food: missing voxels regrow slowly when fed and not bleeding.
     if (c.needs.food > 0.3f && c.needs.water > 0.3f && c.body.bleeding < 0.05f) {
         int missing = c.body.total_voxels() - c.body.total_alive();
@@ -289,7 +290,7 @@ void Agents::kill(Character& c, const std::string& cause, EventId ev_cause) {
 void Agents::damage(Character& c, float fraction, int part, const std::string& what, EventId cause) {
     if (!c.alive || fraction <= 0) return;
     // Armour absorbs part of the harm.
-    if (c.armor != kNoItem) fraction *= 0.6f;
+    if (c.armor != kNoItem) fraction *= 1.0f - ctx_.reg->item(c.armor).armor;
     DamageReport r = c.body.damage_spread(fraction, rng_, part);
     if (r.removed == 0) return;
     float frac = (float)r.removed / (float)std::max(1, c.body.total_voxels());
@@ -372,7 +373,22 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
     if (!c.path.valid() || c.path_goal != goal) {
         c.path.clear();
         if (blacklisted(c, goal)) return Move::Failed;
-        if (!nav.find_path(c.foot, goal, adjacent_ok, c.path)) {
+        // The region survey tells cheaply whether the goal can be reached at all.
+        int budget = 40000;
+        if (auto rf = region_map_.find(c.foot); rf != region_map_.end()) {
+            bool same = false, other = false;
+            const int r = adjacent_ok ? 1 : 0;
+            for (int dy = adjacent_ok ? -3 : 0; dy <= (adjacent_ok ? 2 : 0) && !same; ++dy)
+                for (int dz = -r; dz <= r && !same; ++dz)
+                    for (int dx = -r; dx <= r && !same; ++dx) {
+                        auto it = region_map_.find(goal + Vec3i{dx, dy, dz});
+                        if (it == region_map_.end()) continue;
+                        if (it->second == rf->second) same = true;
+                        else other = true;
+                    }
+            if (!same) budget = other ? 0 : 6000;
+        }
+        if (budget == 0 || !nav.find_path(c.foot, goal, adjacent_ok, c.path, budget)) {
             blacklist(c, goal, kTicksPerHour * 3);
             day.path_failures++;
             if (debug_path_failures.size() < 200) debug_path_failures.push_back({c.id, c.foot, goal, now_});
@@ -425,8 +441,77 @@ float Agents::carried_weight(const Character& c) const {
 void Agents::deposit_all(Character& c, StoreId to) {
     Store* s = ctx_.econ->store(c.inv);
     if (!s || s->empty()) return;
-    ctx_.econ->transfer_all(c.inv, to);
-    if (!ctx_.econ->store(c.inv)->empty()) ctx_.econ->drop(c.inv, c.foot);
+    // Everything except one of each piece of equipment in use.
+    std::vector<ItemStack> items = s->items;
+    for (const ItemStack& st : items) {
+        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor) ? 1 : 0;
+        if (st.count > keep) ctx_.econ->transfer(c.inv, to, st.item, st.count - keep);
+    }
+    // What the store could not take is set down here.
+    s = ctx_.econ->store(c.inv);
+    bool leftovers = false;
+    for (const ItemStack& st : s->items) {
+        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor) ? 1 : 0;
+        if (st.count > keep) leftovers = true;
+    }
+    if (leftovers) {
+        StoreId pile = ctx_.econ->pile_at(c.foot);
+        items = ctx_.econ->store(c.inv)->items;
+        for (const ItemStack& st : items) {
+            i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor) ? 1 : 0;
+            if (st.count > keep) ctx_.econ->transfer(c.inv, pile, st.item, st.count - keep);
+        }
+    }
+}
+
+void Agents::update_equipment(Character& c) {
+    const Registry& reg = *ctx_.reg;
+    Store* inv = ctx_.econ->store(c.inv);
+    auto verify = [&](ItemId& slot) {
+        if (slot != kNoItem && (!inv || inv->count(slot) <= 0)) slot = kNoItem;
+    };
+    verify(c.tool);
+    verify(c.weapon);
+    verify(c.armor);
+    if (c.is_girl() || !c.body.can_hold()) return;
+    // Pick up better gear from a public store within reach.
+    for (StoreId sid : ctx_.society->public_stores(c.polity)) {
+        const Store* st = ctx_.econ->store(sid);
+        if (!st || st->pos.dist2(c.foot) > 5 * 5) continue;
+        auto upgrade = [&](ItemId& slot, const char* tag, bool want) {
+            if (!want) return;
+            float cur = slot != kNoItem ? std::max(reg.item(slot).power, reg.item(slot).armor) : 0.0f;
+            ItemId best = kNoItem;
+            float bv = cur;
+            for (const ItemStack& is : st->items) {
+                const ItemDef& d = reg.item(is.item);
+                if (!d.has_tag(tag) || ctx_.econ->available(sid, is.item, c.id) <= 0) continue;
+                float v = std::max(d.power, d.armor);
+                if (v > bv + 1e-4f) {
+                    bv = v;
+                    best = is.item;
+                }
+            }
+            if (best == kNoItem) return;
+            if (ctx_.econ->transfer(sid, c.inv, best, 1) == 1) {
+                if (slot != kNoItem) ctx_.econ->transfer(c.inv, sid, slot, 1);  // return the old one
+                slot = best;
+            }
+        };
+        upgrade(c.tool, "tool", true);
+        upgrade(c.weapon, "weapon", c.drafted);
+        upgrade(c.armor, "armor", c.drafted);
+        break;
+    }
+    // Discharged soldiers hand their arms back when they pass a store.
+    if (!c.drafted && (c.weapon != kNoItem || c.armor != kNoItem))
+        for (StoreId sid : ctx_.society->public_stores(c.polity)) {
+            const Store* st = ctx_.econ->store(sid);
+            if (!st || st->kind != StoreKind::Stockpile || st->pos.dist2(c.foot) > 5 * 5) continue;
+            if (c.weapon != kNoItem && ctx_.econ->transfer(c.inv, sid, c.weapon, 1) == 1) c.weapon = kNoItem;
+            if (c.armor != kNoItem && ctx_.econ->transfer(c.inv, sid, c.armor, 1) == 1) c.armor = kNoItem;
+            break;
+        }
 }
 
 // ------------------------------------------------------------------------------ persistence

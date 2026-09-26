@@ -3,6 +3,7 @@
 // and young crops wither — which is how losing a water source reaches the harvest.
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -58,6 +59,9 @@ public:
     FarmStats stats(u32 farm_id);
     FarmStats stats_polity(u16 polity);
 
+    // Extra irrigation reach for a polity (technology), provided by the simulation.
+    std::function<int(u16)> irrigation_bonus;
+
     // Tunables.
     float growth_days = 2.2f;       // irrigated days from sowing to maturity
     float dry_factor = 0.08f;       // growth multiplier without irrigation
@@ -69,7 +73,7 @@ public:
     u64 hash() const;
 
 private:
-    bool check_irrigation(const Plot& p);
+    bool check_irrigation(const Plot& p, int bonus = 0);
 
     World& w_;
     Chronicle& chron_;

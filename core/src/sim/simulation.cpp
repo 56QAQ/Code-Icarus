@@ -85,6 +85,7 @@ Simulation::Simulation(const Registry& reg)
     ctx_.decisions = &decisions_;
     buildings_.load_defs(reg);
     buildings_.set_physics(&physics_);
+    farming_.irrigation_bonus = [this](u16 polity) { return (int)society_.tech_effect(polity, "irrigation_radius"); };
 }
 
 Simulation::~Simulation() = default;
