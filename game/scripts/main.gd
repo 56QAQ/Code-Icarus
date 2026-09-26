@@ -170,6 +170,11 @@ func _build_environment() -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
+	# Daylight and weather change this sky continuously. Automatic selects the
+	# incremental GGX filter, which produces black radiance on some Vulkan GPUs
+	# (reproduced on RTX 5090); both reflections and aerial fog sample that map.
+	sky.process_mode = Sky.PROCESS_MODE_REALTIME
+	sky.radiance_size = Sky.RADIANCE_SIZE_256  # Required by the realtime filter.
 	var sm := ProceduralSkyMaterial.new()
 	sky_mat = sm
 	sm.sky_top_color = Color(0.22, 0.42, 0.72)
