@@ -751,6 +751,7 @@ void WorldGen::place_plants_continent(const Vec3i& cc, Voxel* out) const {
                     chance(0.002f, M.flint);
                     break;
                 case Biome::Forest:
+                    chance(0.05f * stand * stand * stand, M.wild_grain);  // meadows in the clearings
                     chance(0.016f, M.mushroom);
                     chance(0.012f, M.berry_bush);
                     chance(0.006f, M.herb_plant);
@@ -771,7 +772,10 @@ void WorldGen::place_plants_continent(const Vec3i& cc, Voxel* out) const {
                     chance(0.012f, M.mushroom);
                     chance(0.010f, M.herb_plant);
                     break;
-                case Biome::Lakeshore: chance(0.08f * stand, M.reeds); break;
+                case Biome::Lakeshore:
+                    chance(0.08f * stand, M.reeds);
+                    chance(0.04f * stand * stand, M.wild_grain);
+                    break;
                 case Biome::Desert:
                     chance(0.012f, M.cactus);
                     chance(0.004f, M.sandstone);

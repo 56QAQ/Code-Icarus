@@ -104,6 +104,7 @@ void Agents::step(Tick now) {
         fail_ring_pos_ = (fail_ring_pos_ + 1) % (int)fail_ring_.size();
         fail_ring_[(size_t)fail_ring_pos_] = 0;
     }
+    if (now % kTicksPerHour == kTicksPerHour / 2) assign_homes();
     if (now % 600 == 0) refresh_water_spots();
     if (now % 50 == 0) {
         ctx_.jobs->expire(now);
@@ -204,6 +205,41 @@ void Agents::update_physics(Character& c) {
     }
     // Standing in fire.
     if (vburning(w.get(c.foot)) || vburning(w.get(below))) damage(c, 0.004f, -1, "烧伤", 0);
+}
+
+void Agents::assign_homes() {
+    // Who lives where: homes list their living occupants; people without a (standing)
+    // home of their own polity move into the nearest one with a free bed.
+    std::vector<Building*> homes;
+    for (const Building& bc : ctx_.buildings->all()) {
+        if (!bc.alive || !bc.complete || bc.beds <= 0) continue;
+        Building* b = ctx_.buildings->get(bc.id);
+        b->residents.clear();
+        homes.push_back(b);
+    }
+    for (auto& cp : chars_) {
+        if (!cp || !cp->alive || cp->departed || cp->is_girl() || !cp->home) continue;
+        Building* h = ctx_.buildings->get(cp->home);
+        if (h && h->complete && h->beds > 0 && h->polity == cp->polity && h->functional) h->residents.push_back(cp->id);
+        else if (!h || h->beds > 0) cp->home = 0;  // gone, ruined or lost to another polity
+    }
+    for (auto& cp : chars_) {
+        if (!cp || !cp->alive || cp->departed || cp->is_girl() || cp->home) continue;
+        Building* best = nullptr;
+        i64 bd = 0;
+        for (Building* b : homes) {
+            if (b->polity != cp->polity || !b->functional || (int)b->residents.size() >= b->beds) continue;
+            const i64 d = b->entrance.dist2(cp->foot);
+            if (!best || d < bd) {
+                best = b;
+                bd = d;
+            }
+        }
+        if (!best) continue;
+        cp->home = best->id;
+        best->residents.push_back(cp->id);
+        cp->remember(now_, MemoryKind::Helped, kNoEntity, 0.15f, 0);
+    }
 }
 
 void Agents::hourly(Character& c) {

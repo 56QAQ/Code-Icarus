@@ -36,7 +36,15 @@ void Society::reset(u64 seed) {
     last_merge_ = unification_ = 0;
 }
 
-u16 Society::create_polity(const std::string& name, u32 color, u16 parent) {
+std::vector<std::string> Society::start_techs(const std::string& era) const {
+    std::vector<std::string> out;
+    for (const Json& t : ctx_.reg->doc("techs")["start_eras"][era].items()) out.push_back(t.as_str());
+    if (out.empty()) out = {"gathering", "fire", "stone_tools", "hunting", "shelter", "hide_working",
+                            "weaving", "farming", "thatching", "storage"};
+    return out;
+}
+
+u16 Society::create_polity(const std::string& name, u32 color, u16 parent, const std::string& era) {
     Polity p;
     p.id = (u16)polities_.size();
     p.alive = true;
@@ -44,7 +52,7 @@ u16 Society::create_polity(const std::string& name, u32 color, u16 parent) {
     p.color = color;
     p.founded = ctx_.now;
     p.parent = parent;
-    p.techs = {"stone_tools", "fire", "gathering", "farming", "thatching"};
+    p.techs = start_techs(era);
     polities_.push_back(p);
     return p.id;
 }
@@ -101,6 +109,14 @@ std::vector<StoreId> Society::public_stores(u16 id) const {
     return out;
 }
 
+bool Society::foraging_band(const Polity& p) const {
+    if (!p.has_tech("farming")) return true;
+    int plots = 0;
+    for (const Farm& f : ctx_.farming->all())
+        if (f.alive && f.polity == p.id) plots += (int)f.plots.size();
+    return plots < 2 * std::max(1, p.stats.population);
+}
+
 float Society::public_food(u16 id) const {
     float n = 0;
     for (StoreId s : public_stores(id)) n += ctx_.econ->food_nutrition_in(s);
@@ -155,6 +171,22 @@ void Society::hourly(Tick now) {
         update_crises(p);
         update_wars(p);
         tidy_pacts(p);
+        // A people that has built a hall moves its seat there from the campfire.
+        if (const Building* seat = ctx_.buildings->get(p.seat); seat && seat->def == "campfire")
+            for (const Building& b : ctx_.buildings->all())
+                if (b.alive && b.complete && b.functional && b.polity == p.id && b.def == "hall") {
+                    p.seat = b.id;
+                    Event e;
+                    e.type = EventType::Construction;
+                    e.severity = 3;
+                    e.polity = p.id;
+                    e.pos = b.entrance;
+                    e.text = "「" + p.name + "」的魔法少女们从篝火旁迁入了新建的议事厅";
+                    ctx_.chron->emit(std::move(e));
+                    for (auto& cp : ctx_.agents->all())
+                        if (cp && cp->alive && cp->is_girl() && cp->polity == p.id && cp->home == 0) cp->home = b.id;
+                    break;
+                }
         // A polity without any magical girl cannot hold together: after a few hours its
         // people rejoin the polity it came from (or the nearest other).
         bool has_girl = false;
@@ -304,7 +336,27 @@ void Society::grant_research(u16 id, const std::string& key, float points, Event
     if (*prog >= t->flt("cost", 100.0f)) discover(*p, key, kNoEntity, cause);
 }
 
-void Society::discover(Polity& p, const std::string& key, EntityId by, EventId cause) {
+void Society::practice(u16 id, const std::string& activity, float amount, EntityId by) {
+    Polity* p = polity(id);
+    if (!p) return;
+    for (const Json& t : ctx_.reg->doc("techs")["techs"].items()) {
+        const float per = t["practice"].flt(activity, 0.0f);
+        if (per <= 0.0f) continue;
+        const std::string key = t.str("key");
+        if (p->has_tech(key) || !tech_available(*p, key)) continue;
+        float* prog = nullptr;
+        for (auto& r : p->research)
+            if (r.first == key) prog = &r.second;
+        if (!prog) {
+            p->research.push_back({key, 0.0f});
+            prog = &p->research.back().second;
+        }
+        *prog += per * amount;
+        if (*prog >= t.flt("cost", 100.0f)) discover(*p, key, by, 0, true);
+    }
+}
+
+void Society::discover(Polity& p, const std::string& key, EntityId by, EventId cause, bool by_practice) {
     if (p.has_tech(key)) return;
     const Json* t = tech(key);
     int era_before = era(p);
@@ -316,9 +368,10 @@ void Society::discover(Polity& p, const std::string& key, EntityId by, EventId c
     e.polity = p.id;
     e.actor = by;
     e.causes[0] = cause;
-    e.text = strfmt("「%s」掌握了%s：%s", p.name.c_str(), t ? t->str("name").c_str() : key.c_str(),
-                    t ? t->str("desc").c_str() : "");
+    e.text = strfmt("「%s」%s掌握了%s：%s", p.name.c_str(), by_practice ? "在劳作中摸索" : "",
+                    t ? t->str("name").c_str() : key.c_str(), t ? t->str("desc").c_str() : "");
     e.data.set("tech", key);
+    if (by_practice) e.data.set("practice", true);
     EventId ev = ctx_.chron->emit(std::move(e));
     int era_after = era(p);
     if (era_after > era_before) {
@@ -498,7 +551,10 @@ void Society::update_crises(Polity& p) {
 
     // Food.
     const Crisis* lg = p.crisis(CrisisKind::Logistics);
-    if (s.food_days < 0.8f || s.food_access < 0.65f) {
+    // Foragers live from day to day: an empty larder is normal for them, hungry people not.
+    const bool band = foraging_band(p);
+    const float low_days = band ? 0.2f : 0.8f, ok_days = band ? 0.5f : 1.5f;
+    if (s.food_days < low_days || s.food_access < 0.65f) {
         float sev = clampv(std::max((1.2f - s.food_days) / 1.2f, (0.85f - s.food_access) / 0.85f), 0.1f, 1.0f);
         EventId cause = recent_cause({EventType::CropFailure, EventType::WaterSourceLost, EventType::StructureDestroyed,
                                       EventType::MeteorImpact, EventType::FireStarted},
@@ -507,7 +563,7 @@ void Society::update_crises(Polity& p) {
         declare(CrisisKind::Food, sev, cause,
                 s.food_access < 0.95f ? strfmt("粮食短缺：公共存粮仅够 %.1f 天，%.0f%% 的居民吃不饱", s.food_days, (1.0f - s.food_access) * 100.0f)
                                       : strfmt("粮食短缺：公共存粮仅够 %.1f 天", s.food_days));
-    } else if (s.food_days > 1.5f && s.food_access > 0.85f) {
+    } else if (s.food_days > ok_days && s.food_access > 0.85f) {
         resolve(CrisisKind::Food, "粮食短缺缓解");
     }
 

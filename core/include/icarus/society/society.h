@@ -42,7 +42,10 @@ public:
     void reset(u64 seed);
     void step(Tick now);
 
-    u16 create_polity(const std::string& name, u32 color, u16 parent = 0);
+    // The knowledge a people starts with in an era (techs.json start_eras): wild,
+    // tribal or village (the default).
+    std::vector<std::string> start_techs(const std::string& era) const;
+    u16 create_polity(const std::string& name, u32 color, u16 parent = 0, const std::string& era = "village");
     Polity* polity(u16 id) { return (id > 0 && id < polities_.size() && polities_[id].alive) ? &polities_[id] : nullptr; }
     const Polity* polity(u16 id) const {
         return (id > 0 && id < polities_.size() && polities_[id].alive) ? &polities_[id] : nullptr;
@@ -54,6 +57,8 @@ public:
     // Public stores of a polity (stockpiles and workshops).
     std::vector<StoreId> public_stores(u16 polity) const;
     float public_food(u16 polity) const;  // nutrition units
+    // Still living mostly by gathering and hunting: too few fields to feed everyone.
+    bool foraging_band(const Polity& p) const;
 
     u32 add_project(Project p);
     Project* project(u32 id) { return (id > 0 && id < projects_.size() && projects_[id].alive) ? &projects_[id] : nullptr; }
@@ -69,7 +74,10 @@ public:
     int era(const Polity& p) const;
     // Adds research points to the current target; discovers it when complete.
     void add_research(u16 polity, float points, EntityId by);
-    void discover(Polity& p, const std::string& key, EntityId by, EventId cause);
+    void discover(Polity& p, const std::string& key, EntityId by, EventId cause, bool by_practice = false);
+    // Learning by doing: everyday work (activity keys such as "forage", "chop", "hunt")
+    // slowly teaches the techs whose "practice" lists it, whatever is being researched.
+    void practice(u16 polity, const std::string& activity, float amount, EntityId by);
     // Knowledge given from outside (a god's revelation) goes to the current research,
     // or the cheapest open tech when nobody is researching ("" if nothing is open).
     std::string grant_target(u16 polity) const;

@@ -29,6 +29,8 @@ Json config_to_json(const GameConfig& c) {
     w.set("islet_count", c.world.islet_count);
     j.set("world", w);
     j.set("scenario", c.scenario);
+    j.set("era", c.era);
+    j.set("civs", c.civs);
     j.set("residents", c.residents);
     Json drives = Json::array();
     for (auto& d : c.girl_drives) drives.push(d);
@@ -53,6 +55,8 @@ GameConfig config_from_json(const Json& j) {
     c.world.base_height = w.integer("base_height", 160);
     c.world.islet_count = w.integer("islet_count", 4);
     c.scenario = j.str("scenario", "village");
+    c.era = j.str("era", "village");
+    c.civs = j.integer("civs", 1);
     c.residents = j.integer("residents", 18);
     for (const Json& d : j["girl_drives"].items()) c.girl_drives.push_back(d.as_str());
     for (const Json& p : j["girl_personalities"].items()) c.girl_personalities.push_back(p);
@@ -129,7 +133,23 @@ void Simulation::new_game(const GameConfig& cfg) {
     e.severity = 3;
     e.text = "空岛纪元开始";
     chronicle_.emit(std::move(e));
-    if (cfg.scenario == "village") build_village_scenario(ctx_, cfg_, scenario_rng_);
+    // Shorthands for the acceptance scenarios.
+    if (cfg_.scenario == "wild") {
+        cfg_.era = "wild";
+        cfg_.scenario = "village";
+        if (cfg_.residents == 18) cfg_.residents = 14;  // a band, not a village
+    } else if (cfg_.scenario == "three_realms") {
+        cfg_.civs = 3;
+        cfg_.scenario = "village";
+    }
+    if (cfg_.scenario == "village") {
+        // The first version's village on the classic island; any other start is built at
+        // the world's sites.
+        if (cfg_.world.layout == WorldLayout::Classic && cfg_.era == "village" && cfg_.civs <= 1)
+            build_village_scenario(ctx_, cfg_, scenario_rng_);
+        else
+            build_settlements(ctx_, cfg_, scenario_rng_);
+    }
     fauna_.populate();
     dispatch_changes();
     fx_.clear();  // building the starting village is not an event to animate

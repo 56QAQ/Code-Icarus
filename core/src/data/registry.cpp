@@ -89,6 +89,7 @@ void Registry::load(const std::map<std::string, std::string>& files) {
     core_.mushroom = opt("mushroom");
     core_.herb_plant = opt("herb_plant");
     core_.sapling = opt("sapling");
+    core_.campfire = opt("campfire");
 }
 
 void Registry::load_from_dir(const std::string& dir) {

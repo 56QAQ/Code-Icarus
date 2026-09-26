@@ -3,27 +3,49 @@
 // buildings and decision options that name it in their "tech" field.
 //   era: 0 蒙昧 · 1 部落 · 2 青铜 · 3 铁器
 //   effects: optional numeric effects read by the kernel
+//   practice: knowledge gained per unit of everyday work (activity -> points): forage,
+//             forage_<item>, chop, mine, hunt, build, craft, cook, till, sow, harvest,
+//             sleep_rough (a night in the open)
 {
   "eras": ["蒙昧时代", "部落时代", "青铜时代", "铁器时代"],
+  // What a people already know when a game starts in each era (开局时代).
+  "start_eras": {
+    "wild": ["gathering", "fire"],
+    "tribal": ["gathering", "fire", "stone_tools", "hunting", "shelter", "hide_working"],
+    "village": ["gathering", "fire", "stone_tools", "hunting", "shelter", "hide_working", "weaving", "farming", "thatching", "storage"]
+  },
   "techs": [
-    {"key": "stone_tools", "name": "石器", "era": 0, "cost": 0, "desc": "打制石器，劈木成板。"},
-    {"key": "fire", "name": "用火", "era": 0, "cost": 0, "desc": "烹饪与取暖。"},
-    {"key": "gathering", "name": "采集", "era": 0, "cost": 0, "desc": "采集野果与草秆。"},
-    {"key": "farming", "name": "农耕", "era": 0, "cost": 0, "desc": "翻耕、播种、灌溉与收割。"},
-    {"key": "thatching", "name": "茅草屋", "era": 0, "cost": 0, "desc": "以茅草与木板搭建屋舍。"},
+    {"key": "gathering", "name": "采集", "era": 0, "cost": 0, "desc": "采集野果、蘑菇、野麦与草秆。"},
+    {"key": "fire", "name": "用火", "era": 0, "cost": 0, "desc": "篝火：取暖、烤肉，夜里围火而眠。"},
+    {"key": "stone_tools", "name": "打制石器", "era": 0, "cost": 14, "practice": {"chop": 0.3, "mine": 0.5, "craft": 0.3}, "values": {"growth": 0.7, "speed": 0.3, "military": 0.1},
+     "desc": "打制石斧、石镐、石锤与燧石刀镰；有了斧头才伐得动树，有了镐才采得动石。"},
+    {"key": "hunting", "name": "狩猎", "era": 0, "cost": 14, "practice": {"forage": 0.03}, "values": {"food_security": 0.6, "military": 0.3},
+     "desc": "削木为矛，结伴追猎野兽，带回肉、兽皮与骨头。"},
+    {"key": "shelter", "name": "窝棚", "era": 0, "cost": 18, "practice": {"chop": 0.3, "build": 0.4, "sleep_rough": 0.08}, "values": {"welfare": 0.8, "growth": 0.2}, "requires": ["stone_tools"],
+     "desc": "用原木和茅草搭起窝棚，不再露宿荒野。"},
+    {"key": "hide_working", "name": "制皮", "era": 0, "cost": 20, "practice": {"hunt": 1.2}, "values": {"welfare": 0.6, "food_security": 0.1}, "requires": ["hunting"],
+     "desc": "刮净鞣制兽皮，缝制兽皮衣，抵御寒夜与风雪。"},
+    {"key": "weaving", "name": "编织", "era": 0, "cost": 26, "practice": {"forage": 0.02, "chop": 0.15, "craft": 0.3}, "values": {"welfare": 0.5, "growth": 0.3}, "requires": ["gathering"],
+     "desc": "搓草成绳、织麻为布，缝制布衣。"},
+    {"key": "farming", "name": "农耕", "era": 0, "cost": 32, "practice": {"forage": 0.02, "forage_grain": 0.6}, "values": {"food_security": 1.0, "growth": 0.5}, "requires": ["gathering", "stone_tools"],
+     "desc": "把野麦的种子种进翻好的土里：翻耕、播种、灌溉与收割。"},
+    {"key": "thatching", "name": "茅草屋", "era": 0, "cost": 28, "practice": {"build": 0.6}, "values": {"welfare": 0.7, "growth": 0.4}, "requires": ["shelter"],
+     "desc": "木骨茅顶的小屋，一家人可以安居。"},
+    {"key": "storage", "name": "储藏", "era": 0, "cost": 24, "practice": {"build": 0.3, "forage": 0.01}, "values": {"food_security": 0.5, "frugality": 0.4}, "requires": ["stone_tools", "weaving"],
+     "desc": "木构仓库，储存公共物资，减缓腐坏。"},
 
-    {"key": "carpentry", "name": "木工", "era": 1, "cost": 40, "values": {"growth": 0.6, "welfare": 0.2}, "requires": ["stone_tools"],
+    {"key": "carpentry", "name": "木工", "era": 1, "cost": 40, "practice": {"chop": 0.2, "craft": 0.3, "build": 0.2}, "values": {"growth": 0.6, "welfare": 0.2}, "requires": ["stone_tools"],
      "desc": "工坊与长屋；木器加工更快。", "effects": {"craft_speed": 0.2}},
-    {"key": "hunting_weapons", "name": "猎具", "era": 1, "cost": 40, "values": {"military": 0.7, "food_security": 0.2}, "requires": ["stone_tools"],
+    {"key": "hunting_weapons", "name": "猎具", "era": 1, "cost": 40, "practice": {"hunt": 0.8, "craft": 0.1}, "values": {"military": 0.7, "food_security": 0.2}, "requires": ["stone_tools", "hunting"],
      "desc": "长矛与弓，既能狩猎也能作战。"},
-    {"key": "pottery", "name": "制陶", "era": 1, "cost": 50, "values": {"food_security": 0.5, "growth": 0.3}, "requires": ["fire"],
+    {"key": "pottery", "name": "制陶", "era": 1, "cost": 50, "practice": {"cook": 0.8}, "values": {"food_security": 0.5, "growth": 0.3}, "requires": ["fire"],
      "desc": "陶器与砖；粮仓能让粮食更耐存。"},
-    {"key": "masonry", "name": "石工", "era": 1, "cost": 70, "values": {"growth": 0.5, "military": 0.2}, "requires": ["stone_tools"],
+    {"key": "masonry", "name": "石工", "era": 1, "cost": 70, "practice": {"mine": 0.3, "build": 0.1}, "values": {"growth": 0.5, "military": 0.2}, "requires": ["stone_tools"],
      "desc": "开采与加工石料。"},
-    {"key": "irrigation", "name": "水利", "era": 1, "cost": 60, "values": {"food_security": 0.8, "growth": 0.3}, "requires": ["farming"],
+    {"key": "irrigation", "name": "水利", "era": 1, "cost": 60, "practice": {"till": 0.1, "sow": 0.1}, "values": {"food_security": 0.8, "growth": 0.3}, "requires": ["farming"],
      "desc": "更远的水也能灌溉田地。", "effects": {"irrigation_radius": 2}},
 
-    {"key": "herbalism", "name": "草药学", "era": 1, "cost": 45, "values": {"welfare": 0.8, "growth": 0.2}, "requires": ["gathering"],
+    {"key": "herbalism", "name": "草药学", "era": 1, "cost": 45, "practice": {"forage_herbs": 1.0}, "values": {"welfare": 0.8, "growth": 0.2}, "requires": ["gathering"],
      "desc": "辨识与采集草药、包扎伤口；药庐让伤者更快痊愈。"},
     {"key": "writing", "name": "文字", "era": 2, "cost": 100, "values": {"growth": 0.6, "order": 0.3}, "requires": ["pottery"],
      "desc": "智者小屋；研究更快。", "effects": {"research_speed": 0.5}},

@@ -161,8 +161,10 @@ void Agents::production_jobs() {
             return n;
         };
         const ItemId wood = reg.find_item("wood"), stone = reg.find_item("stone");
-        const bool need_wood = stock(wood) < 40 + raw_short[wood];
-        const bool need_stone = stock(stone) < 16 + raw_short[stone];
+        // A band without stone tools keeps only a little wood by the fire and no stone.
+        const bool toolmakers = pc.has_tech("stone_tools");
+        const bool need_wood = stock(wood) < (toolmakers ? 40 : 12) + raw_short[wood];
+        const bool need_stone = stock(stone) < (toolmakers ? 16 : 0) + raw_short[stone];
         std::vector<std::pair<MatId, i64>> ores;  // ore material -> units short
         for (auto& [it, n] : raw_short) {
             if (n <= 0 || it == wood || it == stone) continue;
@@ -204,6 +206,17 @@ void Agents::production_jobs() {
                 for (int k = 0; k < 4; ++k) {
                     ColumnInfo n = w.gen().column(x + kDir4H[k].x, z + kDir4H[k].z);
                     lowest = std::min(lowest, n.land ? (int)n.top : 0);
+                }
+                // Boulders lying on the ground come first: nothing to dig, no hole left.
+                {
+                    const Vec3i p{x, col.top + 1, z};
+                    const MatId m = vmat(w.peek(p));
+                    const Material& bm = reg.mat(m);
+                    if (m != M.air && bm.solid && !bm.trunk && !ctx_.buildings->at(p)) {
+                        for (size_t oi = 0; oi < ores.size(); ++oi)
+                            if (m == ores[oi].first) spots.push_back({d / 2, p, 2 + (int)oi});
+                        if (need_stone && bm.drop_item_id == stone) spots.push_back({d / 2, p, 1});
+                    }
                 }
                 for (int y = col.top; y > lowest && y > col.top - 24 && y > 1; --y) {
                     Vec3i p{x, y, z};
@@ -274,7 +287,7 @@ void Agents::production_jobs() {
         int stone_spots = 0;
         for (const Spot& sp : spots)
             if (sp.kind == 1) ++stone_spots;
-        if (need_stone && stone_spots < 2) {
+        if (need_stone && stone_spots < 2 && toolmakers) {
             bool running = false;
             for (const Project& pr : ctx_.society->projects())
                 if (pr.alive && pr.status == 0 && pr.polity == pc.id && pr.kind == "dig" && pr.title == "开采石料")

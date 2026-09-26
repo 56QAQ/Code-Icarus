@@ -253,6 +253,29 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                             push_sprite(out.decor, cx, (float)wy, cz, size * 0.5f, size, 0.785f * hash_to_unit(hh >> 17),
                                         m.sprite_layer, RGBf{g, g, g});
                         }
+                    } else if (mid == M.campfire && mid != M.air) {
+                        // A ring of stones, logs leaning together and the flames between.
+                        const u64 hh = hash3(cseed + 17, wx, wy, wz);
+                        const RGBf stone_c{0.52f, 0.5f, 0.47f};
+                        for (int k = 0; k < 7; ++k) {
+                            const float a = (float)k / 7.0f * 6.2831853f + 0.4f * hash_to_unit(hh >> k);
+                            const float sx = wx + 0.5f + std::cos(a) * 0.4f, sz = wz + 0.5f + std::sin(a) * 0.4f;
+                            const float r = 0.07f + 0.03f * hash_to_unit(hh >> (k + 8));
+                            push_box(out.foliage, sx - r, (float)wy, sz - r, sx + r, wy + r * 1.3f, sz + r,
+                                     scalec(stone_c, 0.85f + 0.3f * hash_to_unit(hh >> (k + 3))), 0.0f, M.stone);
+                        }
+                        const RGBf wood_c{0.42f, 0.29f, 0.18f};
+                        push_box(out.foliage, wx + 0.2f, (float)wy, wz + 0.44f, wx + 0.8f, wy + 0.1f, wz + 0.56f, wood_c,
+                                 0.0f, M.log);
+                        push_box(out.foliage, wx + 0.44f, (float)wy, wz + 0.2f, wx + 0.56f, wy + 0.1f, wz + 0.8f, wood_c,
+                                 0.0f, M.log);
+                        const RGBf ember{0.95f, 0.35f, 0.08f}, flame{1.0f, 0.62f, 0.18f}, core_c{1.0f, 0.85f, 0.45f};
+                        push_box(out.foliage, wx + 0.33f, wy + 0.08f, wz + 0.33f, wx + 0.67f, wy + 0.16f, wz + 0.67f, ember,
+                                 0.9f);
+                        push_box(out.foliage, wx + 0.38f, wy + 0.14f, wz + 0.38f, wx + 0.62f, wy + 0.46f, wz + 0.62f, flame,
+                                 1.0f);
+                        push_box(out.foliage, wx + 0.44f, wy + 0.3f, wz + 0.44f, wx + 0.56f, wy + 0.66f, wz + 0.56f, core_c,
+                                 1.0f);
                     } else if (mid == M.cactus) {
                         // A ribbed column; the top of the stack is rounded off.
                         const bool top = vmat(at(x, y + 1, z)) != mid;

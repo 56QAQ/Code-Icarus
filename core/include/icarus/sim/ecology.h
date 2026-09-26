@@ -31,8 +31,9 @@ public:
     // Trees that grew from saplings and still stand.
     int regrown_standing() const;
     size_t saplings() const { return saplings_.size(); }
-    // A fruit was picked here (the cube is bare leaves now); it ripens again later.
-    void picked(const Vec3i& p, Tick now);
+    // A wild plant was gathered here (fruit picked, a bush stripped, grain cut); it
+    // grows back after a few days if the spot is still free.
+    void picked(const Vec3i& p, Tick now, MatId plant);
 
     void save(BinWriter& w) const;
     void load(BinReader& r);
@@ -52,7 +53,12 @@ private:
     Rng rng_;
     std::vector<Sapling> saplings_;
     std::vector<Vec3i> regrown_;
-    std::vector<Sapling> picked_;  // fruit picked (pos, when)
+    struct Picked {
+        Vec3i pos;
+        Tick when = 0;
+        MatId plant = 0;
+    };
+    std::vector<Picked> picked_;  // gathered plants waiting to grow back
 };
 
 }  // namespace icarus

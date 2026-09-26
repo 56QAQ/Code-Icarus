@@ -28,6 +28,8 @@ struct Args {
     int scale = 1;
     double days = 1.0;
     std::string scenario = "village";
+    std::string era;  // 开局时代 override (wild / tribal / village)
+    int civs = 0;
     std::string layout = "classic";  // classic | continent
     std::string save;
     bool verbose = false;
@@ -50,6 +52,8 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--scale") a.scale = std::stoi(next());
         else if (k == "--days") a.days = std::stod(next());
         else if (k == "--scenario") a.scenario = next();
+        else if (k == "--era") a.era = next();
+        else if (k == "--civs") a.civs = std::stoi(next());
         else if (k == "--layout" || k == "--island") a.layout = next();
         else if (k == "--save") a.save = next();
         else if (k == "-v" || k == "--verbose") a.verbose = true;
@@ -261,6 +265,8 @@ int cmd_waterdump(const Args& a) {
     GameConfig cfg;
     cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
     cfg.scenario = a.scenario;
+    if (!a.era.empty()) cfg.era = a.era;
+    if (a.civs > 0) cfg.civs = a.civs;
     Simulation sim(reg);
     sim.new_game(cfg);
     sim.run((Tick)(a.days * (double)kTicksPerDay));
@@ -327,6 +333,8 @@ int cmd_run(const Args& a) {
     GameConfig cfg;
     cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
     cfg.scenario = a.scenario;
+    if (!a.era.empty()) cfg.era = a.era;
+    if (a.civs > 0) cfg.civs = a.civs;
     sim.new_game(cfg);
     std::vector<Scheduled> sched = parse_admin(a, sim);
     size_t shown = sim.chronicle().events().size();
@@ -385,9 +393,29 @@ int cmd_run(const Args& a) {
             std::printf("  #%u %-6s %s food %.2f water %.2f rest %.2f mood %.2f task %s [%s] %s\n", c.id, c.name.c_str(),
                         c.alive ? "" : "(dead)", c.needs.food, c.needs.water, c.needs.rest, c.mood,
                         task_name_zh(c.task.type), c.status_text.c_str(), c.task.label.c_str());
+            if (c.task.job)
+                if (const Job* j = sim.jobs().get(c.task.job)) std::printf("      job %s step %d\n", job_name_zh(j->type), c.task.step);
         }
         for (const Event& e : sim.chronicle().events())
             if (e.severity >= 2) std::printf("  [%s] %s\n", format_time_zh(e.tick).c_str(), e.text.c_str());
+        for (const Store& st : sim.economy().stores()) {
+            if (!st.alive || st.items.empty() || (st.kind != StoreKind::Stockpile && st.kind != StoreKind::Workshop &&
+                                                  st.kind != StoreKind::Pile))
+                continue;
+            std::printf("  store %u %s (%d,%d,%d):", st.id, store_kind_key(st.kind), st.pos.x, st.pos.y, st.pos.z);
+            for (const ItemStack& is : st.items) std::printf(" %s=%d", sim.reg().item(is.item).key.c_str(), is.count);
+            std::printf("\n");
+        }
+        std::map<std::string, int> open_jobs;
+        for (const Job& j : sim.jobs().all())
+            if (j.alive) open_jobs[std::string(job_name_zh(j.type)) + (j.claimed_by ? "*" : "")]++;
+        std::printf("  jobs:");
+        for (const auto& [k, v] : open_jobs) std::printf(" %s=%d", k.c_str(), v);
+        std::printf("\n");
+        // Where the items came from and went (the ledger's sources and sinks).
+        std::printf("  ledger:");
+        for (const auto& [k, v] : sim.economy().reasons()) std::printf(" %s=%lld", k.c_str(), (long long)v);
+        std::printf("\n");
     }
     std::printf("final hash %016llx, events %zu\n", (unsigned long long)sim.state_hash(), sim.chronicle().events().size());
     if (!a.save.empty()) {
@@ -447,6 +475,10 @@ int cmd_experiment(const Args& a) {
         GameConfig cfg;
         cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), seed);
         cfg.scenario = a.scenario;
+        if (!a.era.empty()) cfg.era = a.era;
+        if (a.civs > 0) cfg.civs = a.civs;
+    if (!a.era.empty()) cfg.era = a.era;
+    if (a.civs > 0) cfg.civs = a.civs;
         sim.new_game(cfg);
         std::vector<Scheduled> sched = parse_admin(a, sim);
         RunSummary r;

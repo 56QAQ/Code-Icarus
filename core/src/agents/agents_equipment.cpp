@@ -188,6 +188,26 @@ void Agents::wear_tool(Character& c) {
     c.tool_wear = 0;
 }
 
+void Agents::drop_cargo(Character& c) {
+    const Store* s = ctx_.econ->store(c.inv);
+    if (!s) return;
+    const std::vector<ItemStack> items = s->items;
+    StoreId pile = kNoStore;
+    for (const ItemStack& st : items) {
+        const i32 keep = (st.item == c.tool) + (st.item == c.weapon) + (st.item == c.armor) + (st.item == c.cart) +
+                         (st.item == c.clothes);
+        if (st.count <= keep) continue;
+        if (!pile) pile = ctx_.econ->pile_at(c.foot);
+        ctx_.econ->transfer(c.inv, pile, st.item, st.count - keep);
+    }
+}
+
+bool Agents::near_campfire(const Vec3i& p) const {
+    for (const Building& b : ctx_.buildings->all())
+        if (b.alive && b.functional && b.def == "campfire" && b.inside.chebyshev(p) <= 8) return true;
+    return false;
+}
+
 float Agents::exposure(const Character& c) const {
     const World& w = *ctx_.world;
     // Climate of the place (the classic island is mild).
@@ -196,9 +216,10 @@ float Agents::exposure(const Character& c) const {
     float cold = saturate((0.45f - temp) * 2.5f);
     if (is_night(now_)) cold += 0.2f;
     if (ctx_.physics && ctx_.physics->raining()) cold += 0.15f;
-    // Under a roof it hardly matters.
+    // Under a roof it hardly matters; by a campfire it is much warmer.
     const Building* h = ctx_.buildings->get(c.home);
     if (h && h->functional && c.foot.chebyshev(h->inside) <= 3) cold *= 0.2f;
+    else if (near_campfire(c.foot)) cold = std::max(0.0f, cold - 0.3f);
     const float warmth = c.clothes != kNoItem ? ctx_.reg->item(c.clothes).warmth : 0.0f;
     return saturate(cold - warmth);
 }

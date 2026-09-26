@@ -109,10 +109,11 @@ TEST("equipment: clothes keep out the cold of the night") {
     const Registry& reg = test_registry();
     Character* c = first_resident(sim);
     REQUIRE(c != nullptr);
-    // Outdoors at night, away from home.
-    c->home = 0;
+    // Outdoors at night, away from home (homes are handed out again as people settle,
+    // so take it away only once night has fallen).
     while (!is_night(sim.now())) sim.step();
     sim.run(10);
+    c->home = 0;
     Economy& econ = sim.economy();
     auto wear = [&](const char* key) {
         if (c->clothes != kNoItem) econ.remove(c->inv, c->clothes, 1, "test");

@@ -110,7 +110,7 @@ MatId Ecology::wild_plant_for(const Vec3i& p) {
     }
 }
 
-void Ecology::picked(const Vec3i& p, Tick now) { picked_.push_back({p, now}); }
+void Ecology::picked(const Vec3i& p, Tick now, MatId plant) { picked_.push_back({p, now, plant}); }
 
 void Ecology::daily(Tick now, const Buildings& buildings) {
     const CoreMats& M = reg_->m();
@@ -149,14 +149,22 @@ void Ecology::daily(Tick now, const Buildings& buildings) {
     }
     for (const Vec3i& t : regrown_)
         if (reg_->mat(mat(t)).trunk) parents.push_back(t);
-    // Picked fruit ripens again after a few days.
+    // Gathered plants grow back: fruit ripens on the same branch, bushes and stalks
+    // re-sprout where the ground is still open.
     if (!picked_.empty()) {
-        std::vector<Sapling> keep;
-        for (const Sapling& f : picked_) {
-            if (now - f.planted < kTicksPerDay * 4) {
+        std::vector<Picked> keep;
+        for (const Picked& f : picked_) {
+            const Material& pm = reg_->mat(f.plant);
+            const bool fruit = pm.foliage;
+            if (now - f.when < kTicksPerDay * (fruit ? 4 : 5)) {
                 keep.push_back(f);
-            } else if (M.fruit_leaves != M.air && mat(f.pos) == M.leaves) {
-                w_.set(f.pos, make_voxel(M.fruit_leaves), 0);
+                continue;
+            }
+            const MatId here = mat(f.pos);
+            if (fruit) {
+                if (here == pm.forage_to) w_.set(f.pos, make_voxel(f.plant), 0);
+            } else if (here == M.air && reg_->mat(mat(f.pos + Vec3i{0, -1, 0})).fertile && !buildings.at(f.pos)) {
+                w_.set(f.pos, make_voxel(f.plant), 0);
             }
         }
         picked_ = std::move(keep);
@@ -211,9 +219,10 @@ void Ecology::save(BinWriter& w) const {
     w.varu(regrown_.size());
     for (const Vec3i& p : regrown_) w.vec3i(p);
     w.varu(picked_.size());
-    for (const Sapling& p : picked_) {
+    for (const Picked& p : picked_) {
         w.vec3i(p.pos);
-        w.u64v(p.planted);
+        w.u64v(p.when);
+        w.str(reg_->mat(p.plant).key);
     }
     w.end_section(s);
 }
@@ -237,9 +246,12 @@ void Ecology::load(BinReader& outer) {
     if (!r.at_end()) {
         const u64 np = r.varu();
         for (u64 i = 0; i < np; ++i) {
-            Sapling s;
+            Picked s;
             s.pos = r.vec3i();
-            s.planted = r.u64v();
+            s.when = r.u64v();
+            const std::string key = r.str();
+            if (!reg_->has_mat(key)) continue;
+            s.plant = reg_->mat_id(key);
             picked_.push_back(s);
         }
     }

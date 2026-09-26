@@ -53,6 +53,7 @@
     {"key": "reeds", "name": "芦苇", "color": "#9fae5a", "color_var": 0.08, "solid": false, "opaque": false, "hardness": 4, "toughness": 1, "density": 0.1, "flammability": 0.6, "burn_ticks": 20, "burn_to": "air", "rigid": false, "forage": "fiber", "forage_count": 3, "sprite": "reeds"},
     {"key": "wild_grain", "name": "野麦", "color": "#c8b25c", "color_var": 0.08, "solid": false, "opaque": false, "hardness": 4, "toughness": 1, "density": 0.1, "flammability": 0.6, "burn_ticks": 20, "burn_to": "air", "rigid": false, "forage": "grain", "forage_count": 2, "sprite": "wild_grain"},
     {"key": "mushroom", "name": "蘑菇", "color": "#c46a4a", "color_var": 0.08, "solid": false, "opaque": false, "hardness": 2, "toughness": 1, "density": 0.1, "rigid": false, "forage": "mushroom", "forage_count": 2, "sprite": "mushroom"},
-    {"key": "herb_plant", "name": "野生草药", "color": "#6aa86a", "color_var": 0.08, "solid": false, "opaque": false, "hardness": 3, "toughness": 1, "density": 0.1, "flammability": 0.5, "burn_ticks": 20, "burn_to": "air", "rigid": false, "forage": "herbs", "forage_count": 2, "sprite": "herb_plant"}
+    {"key": "herb_plant", "name": "野生草药", "color": "#6aa86a", "color_var": 0.08, "solid": false, "opaque": false, "hardness": 3, "toughness": 1, "density": 0.1, "flammability": 0.5, "burn_ticks": 20, "burn_to": "air", "rigid": false, "forage": "herbs", "forage_count": 2, "sprite": "herb_plant"},
+    {"key": "campfire", "name": "篝火", "color": "#e07a2c", "color_var": 0.05, "solid": false, "opaque": false, "hardness": 20, "toughness": 2, "density": 0.5, "drop": "wood", "rigid": false}
   ]
 }

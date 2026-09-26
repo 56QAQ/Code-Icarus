@@ -21,12 +21,32 @@ bool Agents::food_plant_at(int x, int z, Vec3i& out) {
     // The ground may have been dug or built on since generation: look a little around.
     for (int y = col.top + 1; y <= col.top + 4; ++y) {
         const Vec3i p{x, y, z};
-        const Material& m = reg.mat(w.mat(p));
+        const Material& m = reg.mat(vmat(w.peek(p)));  // looking only: no cells woken
         if (m.forage_item == kNoItem || reg.item(m.forage_item).nutrition <= 0.0f) continue;
         // Fruit hangs in the crown: pickable only from the ground below.
         if (m.foliage && y > col.top + 3) continue;
         out = p;
         return true;
+    }
+    return false;
+}
+
+bool Agents::wild_food_near(const Vec3i& from, int radius, Vec3i& out) {
+    for (int r = 1; r <= radius; ++r) {
+        // Close by every column; further out every other one (the eye skips a little).
+        const int stride = r <= 16 ? 1 : 2;
+        for (int dz = -r; dz <= r; dz += stride)
+            for (int dx = -r; dx <= r; dx += (std::abs(dz) == r ? stride : 2 * r)) {
+                Vec3i p;
+                if (!food_plant_at(from.x + dx, from.z + dz, p)) continue;
+                if (std::abs(p.y - from.y) > 12) continue;
+                bool taken = false;
+                for (const Job& j : ctx_.jobs->all())
+                    if (j.alive && j.type == JobType::Forage && j.pos == p && j.claimed_by != kNoEntity) taken = true;
+                if (taken) continue;
+                out = p;
+                return true;
+            }
     }
     return false;
 }
@@ -277,20 +297,29 @@ void Agents::generate_jobs() {
         }
     }
 
-    // Kitchens: turn grain into bread when there is grain to spare.
-    for (const Building& k : ctx_.buildings->all()) {
-        if (!k.alive || !k.complete || !k.functional || k.def != "kitchen" || !k.store) continue;
-        const Polity* p = ctx_.society->polity(k.polity);
-        if (!p) continue;
-        ItemId bread = reg.find_item("bread");
-        const Store* ks = econ.store(k.store);
-        if (!ks || ks->count(bread) > 30) continue;
-        i64 grain_total = 0;
-        for (StoreId sid : ctx_.society->public_stores(k.polity)) grain_total += econ.available(sid, grain);
-        if (grain_total < 12) continue;
-        if (has(JobType::Cook, k.inside)) continue;
-        Job& j = add(JobType::Cook, k.polity, k.inside, 0.9f);
-        j.building = k.id;
+    // Cooking: kitchens bake bread from spare grain; kitchens and campfires roast meat.
+    {
+        const ItemId bread = reg.find_item("bread"), meat = reg.find_item("meat"), roast = reg.find_item("cooked_meat");
+        for (const Building& k : ctx_.buildings->all()) {
+            if (!k.alive || !k.complete || !k.functional || !k.store) continue;
+            if (k.def != "kitchen" && k.def != "campfire") continue;
+            const Polity* p = ctx_.society->polity(k.polity);
+            if (!p || has(JobType::Cook, k.inside)) continue;
+            const Store* ks = econ.store(k.store);
+            if (!ks) continue;
+            auto spare = [&](ItemId it) {
+                i64 n = 0;
+                for (StoreId sid : ctx_.society->public_stores(k.polity)) n += econ.available(sid, it);
+                return n;
+            };
+            ItemId in = kNoItem;
+            if (meat != kNoItem && roast != kNoItem && spare(meat) >= 3 && ks->count(roast) < 30) in = meat;
+            else if (k.def == "kitchen" && ks->count(bread) <= 30 && spare(grain) >= 12) in = grain;
+            if (in == kNoItem) continue;
+            Job& j = add(JobType::Cook, k.polity, k.inside, in == meat ? 1.0f : 0.9f);
+            j.building = k.id;
+            j.item = in;
+        }
     }
 
     // Herbs for the wounded: gatherers look for medicinal plants among the bushes when
@@ -395,22 +424,72 @@ void Agents::generate_jobs() {
         }
     }
 
-    // Foraging when food is short.
+    // Foraging: the main work of a band without fields; for farmers a stopgap when food
+    // is short.
     for (auto& pc : ctx_.society->polities()) {
-        if (!pc.alive || pc.stats.food_days > 3.0f) continue;
         const Building* seat = ctx_.buildings->get(pc.seat);
-        if (!seat) continue;
+        if (!pc.alive || !seat) continue;
+        int people = 0;
+        for (const auto& cp : chars_)
+            if (cp && cp->alive && !cp->departed && cp->polity == pc.id) ++people;
+        const bool band = ctx_.society->foraging_band(pc);
+        if (pc.stats.food_days > (band ? 5.0f : 3.0f)) continue;
+        const int max_open = band ? std::max(4, people * 2 / 3) : 4;
+        const int max_r = band ? 90 : 60;
         int open = 0;
         for (const Job& j : jobs.all())
             if (j.alive && j.type == JobType::Forage && j.polity == pc.id) ++open;
-        for (int r = 4; r <= 60 && open < 4; r += 4) {
-            for (int i = 0; i < 24 && open < 4; ++i) {
-                float a = (float)i / 24.0f * 6.2831853f;
-                int x = seat->entrance.x + (int)std::lround(std::cos(a) * (float)r);
-                int z = seat->entrance.z + (int)std::lround(std::sin(a) * (float)r);
-                Vec3i p;
-                if (!food_plant_at(x, z, p) || has(JobType::Forage, p)) continue;
-                add(JobType::Forage, pc.id, p, 1.0f);
+        // Look about at scattered spots, nearer ones more often (a pure hash of the time:
+        // the same run always looks at the same places).
+        std::vector<std::pair<i64, Vec3i>> found;
+        const int samples = band ? 220 : 90;
+        for (int i = 0; i < samples && open + (int)found.size() < max_open * 2; ++i) {
+            const u64 h = hash3(0x0F0A6Eull + pc.id, (i32)(now_ / 50), i, 7);
+            const float u = (float)(h & 0xFFFF) / 65535.0f, v = (float)((h >> 16) & 0xFFFF) / 65535.0f;
+            const float r = 3.0f + (float)(max_r - 3) * u * (0.35f + 0.65f * u);
+            const float a = v * 6.2831853f;
+            const int x = seat->entrance.x + (int)std::lround(std::cos(a) * r);
+            const int z = seat->entrance.z + (int)std::lround(std::sin(a) * r);
+            Vec3i p;
+            if (!food_plant_at(x, z, p) || has(JobType::Forage, p)) continue;
+            found.push_back({p.dist2(seat->entrance), p});
+        }
+        std::sort(found.begin(), found.end());
+        for (const auto& [d, p] : found) {
+            if (open >= max_open) break;
+            if (has(JobType::Forage, p)) continue;
+            add(JobType::Forage, pc.id, p, 1.0f);
+            existing[{(int)JobType::Forage, p}] = 1;
+            ++open;
+        }
+    }
+
+    // Seed grain: farmers-to-be gather wild grain whatever the larder holds.
+    if (now_ % 300 == 0) {
+        const MatId wild_grain = reg.m().wild_grain;
+        for (auto& pc : ctx_.society->polities()) {
+            if (!pc.alive || !pc.has_tech("farming") || wild_grain == reg.m().air) continue;
+            const Building* seat = ctx_.buildings->get(pc.seat);
+            if (!seat) continue;
+            i64 have = 0;
+            for (StoreId sid : ctx_.society->public_stores(pc.id)) have += econ.available(sid, grain);
+            if (have >= 40) continue;
+            int open = 0;
+            for (const Job& j : jobs.all())
+                if (j.alive && j.type == JobType::Forage && j.polity == pc.id &&
+                    ctx_.world->mat(j.pos) == wild_grain)
+                    ++open;
+            for (int i = 0; i < 400 && open < 5; ++i) {
+                const u64 h = hash3(0x5EEDull + pc.id, (i32)(now_ / 300), i, 3);
+                const float u = (float)(h & 0xFFFF) / 65535.0f, v = (float)((h >> 16) & 0xFFFF) / 65535.0f;
+                const float r = 4.0f + 100.0f * u;
+                const int x = seat->entrance.x + (int)std::lround(std::cos(v * 6.2831853f) * r);
+                const int z = seat->entrance.z + (int)std::lround(std::sin(v * 6.2831853f) * r);
+                const ColumnInfo col = ctx_.world->gen().column(x, z);
+                if (!col.land) continue;
+                const Vec3i p{x, col.top + 1, z};
+                if (vmat(ctx_.world->peek(p)) != wild_grain || has(JobType::Forage, p)) continue;
+                add(JobType::Forage, pc.id, p, 0.95f);
                 existing[{(int)JobType::Forage, p}] = 1;
                 ++open;
             }

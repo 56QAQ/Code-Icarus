@@ -226,7 +226,8 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
     switch (c.kind) {
         case CrisisKind::Food: {
             float days = s.food_days;
-            if (q.ration > 0.75f) {
+            // A foraging band has no larder to ration: it lives from what it finds each day.
+            if (q.ration > 0.75f && !ctx_.society->foraging_band(p)) {
                 DecisionOption o = make("ration", "实行口粮配给（×0.7）",
                                         strfmt("存粮约够 %.1f 天，配给后约 %.1f 天；居民会更常挨饿，不满会上升。", days, days / 0.8f),
                                         {{kFoodSecurity, 0.5f}, {kWelfare, -0.5f}, {kFairness, 0.3f}, {kHarshness, 0.15f}, {kFrugality, 0.6f}, {kSpeed, 0.8f}},
@@ -467,11 +468,19 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         if (b.alive && b.polity == p.id && b.functional) beds += b.beds;
     for (auto& rp : ctx_.agents->all())
         if (rp && rp->alive && !rp->is_girl() && rp->polity == p.id) ++residents;
-    if (beds < residents) {
+    // The best home the polity knows how to build.
+    std::string home_def, home_name;
+    for (const char* k : {"lean_to", "hut", "longhouse"})
+        if (const BuildingDef* hd = ctx_.buildings->def(k); hd && (hd->tech.empty() || p.has_tech(hd->tech))) {
+            home_def = k;
+            home_name = hd->name;
+        }
+    if (beds < residents && !home_def.empty()) {
         const Building* seat = ctx_.buildings->get(p.seat);
-        DecisionOption o = make("build_housing", strfmt("兴建茅屋（缺 %d 个床位）", residents - beds), "让无家可归者有地方住。",
+        DecisionOption o = make("build_housing", strfmt("兴建%s（缺 %d 个床位）", home_name.c_str(), residents - beds),
+                                beds == 0 ? "大家至今露宿在外：搭起住处，夜里不再受冻。" : "让无家可归者有地方住。",
                                 {{kWelfare, 0.5f}, {kGrowth, 0.6f}, {kFrugality, -0.4f}}, act("build"));
-        o.action.set("def", "hut");
+        o.action.set("def", home_def);
         if (seat) {
             Json near = Json::array();
             near.push(seat->entrance.x);
@@ -481,16 +490,56 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         }
         O.push_back(o);
     }
-    // Buildings a known technology allows but the polity does not have yet.
+    // Once people know how to farm: the first fields, sown with gathered wild grain.
+    if (p.has_tech("farming")) {
+        int plots = 0;
+        for (const Farm& f : ctx_.farming->all())
+            if (f.alive && f.polity == p.id) plots += (int)f.plots.size();
+        const int grain = public_count(ctx_, p.id, "grain");
+        if (plots == 0) {
+            DecisionOption o = make("found_farm", "开垦第一片田地",
+                                    strfmt("把采来的野麦（%d 份）当作种子，种进水边翻好的土里；从此不必只靠采集和狩猎。", grain),
+                                    {{kFoodSecurity, 0.9f}, {kGrowth, 0.9f}, {kWelfare, 0.2f}, {kSpeed, -0.4f}},
+                                    act("found_farm"));
+            o.action.set("n", std::clamp(grain - 2, 4, 24));
+            if (grain < 6) {
+                o.feasible = false;
+                o.why_not = "还没攒下足够的野麦种子";
+            }
+            O.push_back(o);
+        }
+    }
+    // Buildings a known technology allows but the polity does not have yet (homes are
+    // offered above; the hall only as the step up from a campfire), the most basic first.
     {
-        int offered = 0;
+        const Building* seat_b = ctx_.buildings->get(p.seat);
+        const bool camp = seat_b && seat_b->def == "campfire";
+        std::vector<const Json*> cands;
         for (const Json& bd : ctx_.reg->doc("buildings")["buildings"].items()) {
-            if (offered >= 2 || !bd.has("tech") || !p.has_tech(bd.str("tech"))) continue;
+            if (!bd.has("tech") || !p.has_tech(bd.str("tech"))) continue;
             const std::string key = bd.str("key");
+            if (bd.str("category") == "housing") continue;
+            if (bd.boolean("seat", false) && !(key == "hall" && camp)) continue;
             bool have = false;
             for (const Building& b : ctx_.buildings->all())
                 if (b.alive && b.polity == p.id && b.def == key) have = true;
-            if (have) continue;
+            if (!have) cands.push_back(&bd);
+        }
+        auto rank = [](const std::string& cat) {
+            if (cat == "storage") return 0;
+            if (cat == "production") return 1;
+            if (cat == "civic") return 2;
+            if (cat == "research") return 3;
+            if (cat == "medicine") return 4;
+            return 5;
+        };
+        std::stable_sort(cands.begin(), cands.end(),
+                         [&](const Json* a, const Json* b) { return rank(a->str("category")) < rank(b->str("category")); });
+        int offered = 0;
+        for (const Json* bdp : cands) {
+            if (offered >= 3) break;
+            const Json& bd = *bdp;
+            const std::string key = bd.str("key");
             const std::string cat = bd.str("category");
             std::vector<std::pair<int, float>> vals = {{kGrowth, 0.5f}, {kFrugality, -0.3f}};
             if (cat == "production") vals = {{kGrowth, 0.8f}, {kSpeed, 0.2f}, {kFrugality, -0.3f}};
@@ -499,6 +548,7 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
             else if (cat == "defense") vals = {{kMilitary, 0.8f}, {kOrder, 0.3f}, {kFrugality, -0.3f}};
             else if (cat == "medicine") vals = {{kWelfare, 0.9f}, {kGrowth, 0.2f}, {kFrugality, -0.2f}};
             else if (cat == "housing") vals = {{kWelfare, 0.5f}, {kGrowth, 0.5f}, {kFrugality, -0.4f}};
+            else if (cat == "civic") vals = {{kOrder, 0.6f}, {kSelfPower, 0.4f}, {kGrowth, 0.3f}, {kFrugality, -0.5f}};
             DecisionOption o = make("build_" + key, "兴建" + bd.str("name"), bd.str("description"), {}, act("build"));
             for (const auto& [f, v] : vals) o.f[f] = v;
             o.action.set("def", key);
@@ -548,8 +598,13 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         O.push_back(o);
     }
     if (q.ration < 1.0f) {
-        DecisionOption o = make("full_rations", "恢复足额口粮", "让大家吃饱。",
-                                {{kWelfare, 0.6f}, {kFoodSecurity, -0.3f}, {kFairness, 0.2f}, {kFrugality, -0.4f}}, act("policy"));
+        // Once the shortage is over, lifting the ration costs little.
+        const Crisis* fc = p.crisis(CrisisKind::Food);
+        const bool short_now = fc && fc->active;
+        DecisionOption o = make("full_rations", "恢复足额口粮", short_now ? "让大家吃饱。" : "粮荒已过，让大家吃饱。",
+                                {{kWelfare, short_now ? 0.6f : 0.9f}, {kFoodSecurity, short_now ? -0.3f : 0.0f},
+                                 {kFairness, 0.2f}, {kFrugality, short_now ? -0.4f : -0.1f}},
+                                act("policy"));
         o.action.set("ration", 1.0);
         O.push_back(o);
     }
@@ -722,8 +777,13 @@ void Decisions::build_petition_options(Decision& d, Polity& p, Character& ruler)
 void Decisions::build_research_options(Decision& d, Polity& p, Character& ruler) {
     (void)ruler;
     std::vector<std::string> keys = ctx_.society->available_techs(p);
+    // The basics of the present age come before the wonders of the next.
     std::sort(keys.begin(), keys.end(), [&](const std::string& a, const std::string& b) {
-        float ca = ctx_.society->tech(a)->flt("cost"), cb = ctx_.society->tech(b)->flt("cost");
+        const Json* ta = ctx_.society->tech(a);
+        const Json* tb = ctx_.society->tech(b);
+        const int ea = ta->integer("era", 0), eb = tb->integer("era", 0);
+        if (ea != eb) return ea < eb;
+        float ca = ta->flt("cost"), cb = tb->flt("cost");
         return ca != cb ? ca < cb : a < b;
     });
     if (keys.size() > 5) keys.resize(5);
@@ -997,6 +1057,12 @@ void Decisions::execute(Decision& d) {
         Vec3i from = seat ? seat->entrance : g->foot;
         const IslandFeatures& ft = ctx_.world->gen().features();
         std::vector<Vec3i> sites = {ft.pond, ft.lake};
+        for (const Site& st : ft.sites) sites.push_back(st.water);
+        for (const Vec3i& wv : ft.waters) sites.push_back(wv);
+        // Only water within a morning's walk of home.
+        sites.erase(std::remove_if(sites.begin(), sites.end(),
+                                   [&](const Vec3i& wv) { return wv.y <= 0 || wv.dist2(from) > 110 * 110; }),
+                    sites.end());
         std::sort(sites.begin(), sites.end(), [&](const Vec3i& a2, const Vec3i& b2) {
             return a2.dist2(from) != b2.dist2(from) ? a2.dist2(from) < b2.dist2(from) : a2 < b2;
         });

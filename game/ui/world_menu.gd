@@ -13,7 +13,16 @@ const LAYOUTS := [
 	["classic", "经典小岛", "一座小岛：村落、田地、峡谷上的桥与山泉。"],
 	["continent", "广袤大陆", "远大于经典小岛的空岛：山脉、湖泊与多种生态群系（森林、草原、针叶林、雪原、荒漠、稀树草原、沼泽）。"],
 ]
-var _options := {"layout": "classic"}
+const ERAS := [
+	["wild", "蛮荒", "一群衣不蔽体的人造人围着篝火：露宿、采集野果、赤手狩猎。科技与村落要从零摸索。"],
+	["tribal", "部落", "篝火旁的窝棚、石器、兽皮与木矛：会打猎、会搭窝棚的部落。"],
+	["village", "村落", "茅屋、仓库、灶房与水边的麦田：已经会耕种的村落（第一版的开局）。"],
+]
+const CIVS := [
+	["1", "一个文明", "空岛上只有一个文明。"],
+	["3", "三个文明", "三个彼此敌视的文明各据一方（需要「广袤大陆」）。"],
+]
+var _options := {"layout": "classic", "era": "village", "civs": "1"}
 var _status: Label
 var _slot_box: VBoxContainer
 var _resume: Button
@@ -83,11 +92,16 @@ func _ready() -> void:
 	var start := _button("开辟这片空岛", UITheme.ACCENT)
 	start.pressed.connect(_new_world)
 	row.add_child(start)
-	var opts := HBoxContainer.new()
-	opts.add_theme_constant_override("separation", 8)
+	var opts := GridContainer.new()
+	opts.columns = 2
+	opts.add_theme_constant_override("h_separation", 10)
+	opts.add_theme_constant_override("v_separation", 6)
 	_col.add_child(opts)
-	opts.add_child(UITheme.label("空岛", 13, UITheme.TEXT_DIM))
-	opts.add_child(_choice(LAYOUTS, "layout"))
+	for entry in [["空岛", LAYOUTS, "layout"], ["开局时代", ERAS, "era"], ["文明", CIVS, "civs"]]:
+		var l := UITheme.label(entry[0], 13, UITheme.TEXT_DIM)
+		l.custom_minimum_size = Vector2(64, 0)
+		opts.add_child(l)
+		opts.add_child(_choice(entry[1], entry[2]))
 	_col.add_child(UITheme.label("同一个种子总会生成同一座岛与同样的开局；之后的历史由魔法少女与你的干预写成。", 11, UITheme.TEXT_FAINT))
 
 	# Slots.
@@ -174,6 +188,7 @@ func _new_world() -> void:
 	var seed := int(s) if s.is_valid_int() else (hash(s) & 0x7fffffff)
 	var config := {"seed": maxi(1, seed)}
 	config.merge(_options, true)
+	config["civs"] = int(config.get("civs", "1"))
 	if Game.start_new_game(config):
 		_was_paused = false
 		close()

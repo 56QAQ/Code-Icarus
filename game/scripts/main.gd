@@ -65,6 +65,10 @@ func _ready() -> void:
 		config["layout"] = String(_cli["layout"])
 	if _cli.has("scenario"):
 		config["scenario"] = String(_cli["scenario"])
+	if _cli.has("era"):
+		config["era"] = String(_cli["era"])
+	if _cli.has("civs"):
+		config["civs"] = int(_cli["civs"])
 	if not Game.start_new_game(config):
 		push_error("could not start game")
 		return

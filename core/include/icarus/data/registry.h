@@ -96,7 +96,7 @@ struct CoreMats {
     // Version 2 world (optional: absent materials resolve to air).
     MatId snow = 0, ice = 0, mud = 0, red_sand = 0, sandstone = 0, granite = 0, limestone = 0, flint = 0,
           dry_grass = 0, pine_log = 0, pine_leaves = 0, birch_log = 0, birch_leaves = 0, fruit_leaves = 0,
-          cactus = 0, reeds = 0, wild_grain = 0, mushroom = 0, herb_plant = 0, sapling = 0;
+          cactus = 0, reeds = 0, wild_grain = 0, mushroom = 0, herb_plant = 0, sapling = 0, campfire = 0;
 };
 
 class Registry {

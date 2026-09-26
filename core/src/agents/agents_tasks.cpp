@@ -263,6 +263,13 @@ bool Agents::task_eat(Character& c) {
         }
         StoreId s = find_food_store(c, true, false);
         if (s == kNoStore) {
+            // Nothing put by: pick something growing wild nearby and eat it on the spot.
+            Vec3i p;
+            if (wild_food_near(c.foot, 28, p)) {
+                t.target = p;
+                t.step = 5;
+                return true;
+            }
             day.hungry_no_food++;
             say(c, "找不到可以吃的东西");
             end_task(c, false);
@@ -270,6 +277,28 @@ bool Agents::task_eat(Character& c) {
         }
         t.store = s;
         t.step = 1;
+    }
+    if (t.step == 5) {
+        say(c, "去摘野果充饥");
+        Move m = move_to(c, t.target, true);
+        if (m == Move::Failed) {
+            day.hungry_no_food++;
+            end_task(c, false);
+            return false;
+        }
+        if (m != Move::Arrived) return true;
+        const MatId fm = ctx_.world->mat(t.target);
+        const Material& mm = reg.mat(fm);
+        if (mm.forage_item == kNoItem || reg.item(mm.forage_item).nutrition <= 0.0f) {
+            t.step = 0;  // someone else got there first: look again
+            return true;
+        }
+        ctx_.world->set(t.target, make_voxel(mm.forage_to), 0);
+        if (ctx_.ecology) ctx_.ecology->picked(t.target, now_, fm);
+        ctx_.econ->add(c.inv, mm.forage_item, std::max(1, mm.forage_count), "forage");
+        t.step = 2;
+        t.until = now_ + 60;
+        return true;
     }
     if (t.step == 1) {
         const Store* s = ctx_.econ->store(t.store);
@@ -301,7 +330,7 @@ bool Agents::task_eat(Character& c) {
             StoreId here = t.store;
             const Store* hs = ctx_.econ->store(here);
             if (hs && hs->kind == StoreKind::Stockpile) deposit_all(c, here);
-            if (carried_weight(c) > carry_capacity(c) - 2.0f) ctx_.econ->drop(c.inv, c.foot);
+            if (carried_weight(c) > carry_capacity(c) - 2.0f) drop_cargo(c);
             s = ctx_.econ->store(t.store);
             if (!s) {
                 end_task(c, false);
@@ -309,6 +338,15 @@ bool Agents::task_eat(Character& c) {
             }
         }
         std::vector<ItemStack> avail = s->items;
+        // Farmers without enough seed keep the grain for sowing unless someone is starving.
+        if (p && p->has_tech("farming") && c.needs.food > 0.15f) {
+            const ItemId grain = reg.find_item("grain");
+            i64 seed = 0;
+            for (StoreId sid : ctx_.society->public_stores(c.polity)) seed += ctx_.econ->available(sid, grain);
+            if (seed < 40)
+                avail.erase(std::remove_if(avail.begin(), avail.end(), [&](const ItemStack& is) { return is.item == grain; }),
+                            avail.end());
+        }
         std::stable_sort(avail.begin(), avail.end(), [&](const ItemStack& a, const ItemStack& b) {
             return reg.item(a.item).nutrition + reg.item(a.item).joy > reg.item(b.item).nutrition + reg.item(b.item).joy;
         });
@@ -445,14 +483,20 @@ Vec3i Agents::sleep_spot(const Character& c, const Building* home, const Vec3i& 
             }
         }
     }
-    // Outdoors (or a full house): the nearest free standable cube around.
-    for (int r = 0; r <= 3; ++r)
+    // Outdoors (or a full house): the nearest free standable cube around (a ring around
+    // a campfire, keeping a cube away from the flames).
+    for (int r = 0; r <= 7; ++r)
         for (int dz = -r; dz <= r; ++dz)
             for (int dx = -r; dx <= r; ++dx) {
                 if (std::max(std::abs(dx), std::abs(dz)) != r) continue;
                 for (int dy : {0, 1, -1}) {
                     const Vec3i p = near + Vec3i{dx, dy, dz};
-                    if (free_at(p) && nav.standable(p)) return p;
+                    if (!free_at(p) || !nav.standable(p)) continue;
+                    bool by_flames = false;
+                    for (int k = 0; k < 4 && !by_flames; ++k)
+                        by_flames = ctx_.world->material(p + kDir4H[k]).key == "campfire" ||
+                                    ctx_.world->material(p).key == "campfire";
+                    if (!by_flames) return p;
                 }
             }
     return near;
@@ -464,7 +508,16 @@ bool Agents::task_sleep(Character& c) {
         const Building* h = ctx_.buildings->get(c.home);
         // Exhausted people far from home just lie down where they are.
         const bool go_home = h && h->functional && !(c.needs.rest < 0.3f && c.foot.chebyshev(h->inside) > 45);
-        t.target = sleep_spot(c, go_home ? h : nullptr, go_home ? h->inside : c.foot);
+        Vec3i near = go_home ? h->inside : c.foot;
+        // No roof of their own: the band sleeps around its campfire.
+        if (!go_home) {
+            const Polity* p = ctx_.society->polity(c.polity);
+            const Building* seat = p ? ctx_.buildings->get(p->seat) : nullptr;
+            if (seat && seat->functional && seat->def == "campfire" && c.foot.chebyshev(seat->inside) < 80 &&
+                c.needs.rest > 0.15f)
+                near = seat->inside;
+        }
+        t.target = sleep_spot(c, go_home ? h : nullptr, near);
         t.step = 1;
     }
     if (t.step == 1) {
@@ -480,11 +533,14 @@ bool Agents::task_sleep(Character& c) {
         const Building* h = ctx_.buildings->get(c.home);
         bool at_home = h && h->functional && c.foot.chebyshev(h->inside) <= 3;
         say(c, at_home ? "在家睡觉" : "露宿");
+        if (!at_home && near_campfire(c.foot)) say(c, "在篝火边睡觉");
         c.needs.comfort = clampv(c.needs.comfort + (at_home ? 0.0004f : -0.0003f), 0.0f, 1.0f);
         bool night = is_night(now_);
         bool rested = c.needs.rest >= 0.98f && (!night || now_ - t.started > kTicksPerHour * 8);
         bool urgent = c.needs.food < 0.12f || c.needs.water < 0.12f || danger_at(c) > 0.3f;
         if (rested || urgent) {
+            // A night in the open sets people thinking about a roof.
+            if (!at_home && now_ - t.started > kTicksPerHour * 4) ctx_.society->practice(c.polity, "sleep_rough", 1.0f, c.id);
             c.last_slept = now_;
             end_task(c, true);
         }
@@ -730,12 +786,24 @@ bool Agents::task_govern(Character& c) {
         end_task(c, false);
         return false;
     }
+    const bool fire = hall->def == "campfire";
     if (t.step == 0) {
         t.target = hall->inside;
+        // Not in the flames: a seat on the ring around the fire.
+        if (fire) {
+            const Vec3i ring[6] = {{2, 0, 0}, {-2, 0, 1}, {1, 0, -2}, {-1, 0, 2}, {2, 0, -1}, {-2, 0, -1}};
+            for (int k = 0; k < 6; ++k) {
+                const Vec3i p = hall->inside + ring[(c.id + (u32)k) % 6];
+                if (ctx_.nav->standable(p)) {
+                    t.target = p;
+                    break;
+                }
+            }
+        }
         t.step = 1;
     }
     if (t.step == 1) {
-        say(c, "前往议事厅");
+        say(c, fire ? "前往篝火" : "前往议事厅");
         Move m = move_to(c, t.target, true);
         if (m == Move::Failed) {
             end_task(c, false);
@@ -744,7 +812,10 @@ bool Agents::task_govern(Character& c) {
         if (m != Move::Arrived) return true;
         t.step = 2;
     }
-    say(c, "在议事厅处理政务");
+    say(c, fire ? "在篝火旁议事" : "在议事厅处理政务");
+    // Between affairs the girls think over what the people have seen and tried: a
+    // trickle of knowledge toward the chosen research.
+    if ((now_ + c.id) % kTicksPerHour == 0) ctx_.society->add_research(c.polity, 0.5f, c.id);
     if (!is_work_time(c)) end_task(c, true);
     return true;
 }
@@ -798,7 +869,7 @@ bool Agents::task_work(Character& c) {
                 if (!inv->items.empty()) first = inv->items.front().item;
             t.store = nearest_storage(c.polity, c.foot, first);
             if (!t.store) {
-                ctx_.econ->drop(c.inv, c.foot);
+                drop_cargo(c);
                 end_task(c, true);
                 return true;
             }
@@ -813,7 +884,7 @@ bool Agents::task_work(Character& c) {
         Move m = move_to(c, s->pos, true);
         if (m == Move::Failed) {
             // Can't reach storage (e.g. the bridge is gone): leave goods in a pile here.
-            ctx_.econ->drop(c.inv, c.foot);
+            drop_cargo(c);
             say(c, "去不了仓库，只好把东西堆在这里");
             end_task(c, true);
             return true;
@@ -919,6 +990,7 @@ bool Agents::task_work(Character& c) {
                 c.yaw = std::atan2((float)j->pos.x + 0.5f - c.pos.x, (float)j->pos.z + 0.5f - c.pos.z);
                 if (now_ < t.until) return true;
                 bool carrying = false;
+                ItemId gathered = kNoItem;
                 switch (j->type) {
                     case JobType::Till:
                         if (plot) ctx_.farming->till(*plot, j->cause);
@@ -944,9 +1016,10 @@ bool Agents::task_work(Character& c) {
                     case JobType::Forage: {
                         const MatId fm = w.mat(j->pos);
                         const Material& mm = reg.mat(fm);
+                        gathered = mm.forage_item;
                         if (mm.forage_item != kNoItem) {
                             w.set(j->pos, make_voxel(mm.forage_to), j->cause);
-                            if (reg.mat(mm.forage_to).foliage && ctx_.ecology) ctx_.ecology->picked(j->pos, now_);
+                            if (ctx_.ecology) ctx_.ecology->picked(j->pos, now_, fm);
                             // Herb gatherers also look for medicinal plants among the bushes.
                             if (j->item != kNoItem && fm == reg.m().berry_bush) ctx_.econ->add(c.inv, j->item, 3, "forage");
                             else ctx_.econ->add(c.inv, mm.forage_item, std::max(1, mm.forage_count), "forage");
@@ -998,13 +1071,28 @@ bool Agents::task_work(Character& c) {
                                 ctx_.econ->add(c.inv, m.drop_item_id, std::max(1, m.drop_count), "mined");
                         }
                         carrying = carried_weight(c) > 0 && j->type == JobType::Mine;
-                        if (j->type == JobType::Dig && carried_weight(c) > 0) ctx_.econ->drop(c.inv, c.foot);
+                        if (j->type == JobType::Dig && carried_weight(c) > 0) drop_cargo(c);
                         break;
                     }
                     default: break;
                 }
                 // Tools wear out with use.
                 if (!kind.empty() && tool_factor(c, kind) >= 0.99f) wear_tool(c);
+                {
+                    const char* act = nullptr;
+                    switch (j->type) {
+                        case JobType::Till: act = "till"; break;
+                        case JobType::Sow: act = "sow"; break;
+                        case JobType::Harvest: act = "harvest"; break;
+                        case JobType::Forage: act = "forage"; break;
+                        case JobType::Chop: act = "chop"; break;
+                        case JobType::Mine: act = "mine"; break;
+                        default: break;
+                    }
+                    if (act) ctx_.society->practice(c.polity, act, 1.0f, c.id);
+                    if (j->type == JobType::Forage && gathered != kNoItem)
+                        ctx_.society->practice(c.polity, "forage_" + reg.item(gathered).key, 1.0f, c.id);
+                }
                 JobType done_type = j->type;
                 Vec3i done_pos = j->pos;
                 ctx_.jobs->complete(t.job);
@@ -1014,9 +1102,11 @@ bool Agents::task_work(Character& c) {
                 if (done_type == JobType::Sow) can_chain = ctx_.econ->store(c.inv)->count(reg.find_item("grain")) > 0;
                 else if (done_type == JobType::Harvest) can_chain = carried_weight(c) < carry_capacity(c) - 2.0f;
                 else if (done_type == JobType::Till) can_chain = true;
+                else if (done_type == JobType::Forage) can_chain = carried_weight(c) < carry_capacity(c) - 1.0f;
                 if (can_chain && is_work_time(c) && c.needs.food > 0.25f && c.needs.water > 0.25f) {
                     u32 next = 0;
-                    i64 bd = 7 * 7 + 1;
+                    // Gatherers roam on to the next bush in sight before carrying it all home.
+                    i64 bd = done_type == JobType::Forage ? 16 * 16 + 1 : 7 * 7 + 1;
                     for (const Job& o : ctx_.jobs->all()) {
                         if (!o.alive || o.type != done_type || o.polity != c.polity || o.claimed_by != kNoEntity) continue;
                         i64 d = o.pos.dist2(done_pos);
@@ -1181,7 +1271,7 @@ bool Agents::task_work(Character& c) {
                 say(c, j->type == JobType::HaulToSite ? "运送建材" : "搬运入库");
                 Move m = move_to(c, d->pos, true);
                 if (m == Move::Failed) {
-                    ctx_.econ->drop(c.inv, c.foot);
+                    drop_cargo(c);
                     return fail("运不过去，只好卸在路边");
                 }
                 if (m != Move::Arrived) return true;
@@ -1303,6 +1393,7 @@ bool Agents::task_work(Character& c) {
                         ctx_.econ->transfer(c.inv, pile, is.item, is.count / 2 + 1);
                     }
                 }
+                ctx_.society->practice(c.polity, "hunt", 1.0f, c.id);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 t.step = 10;  // home with it
@@ -1371,6 +1462,7 @@ bool Agents::task_work(Character& c) {
                 }
                 if (!ctx_.buildings->place_cell(*b, idx, j->cause)) return fail("材料不足，无法施工");
                 if (tool_factor(c, kind) >= 0.99f) wear_tool(c);
+                ctx_.society->practice(c.polity, "build", 1.0f, c.id);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 if (ctx_.buildings->site_done(*b)) {
@@ -1384,7 +1476,10 @@ bool Agents::task_work(Character& c) {
         case JobType::Cook: {
             Building* k = ctx_.buildings->get(j->building);
             if (!k || !k->functional || !k->store) return fail("灶房不能用了");
-            ItemId grain = reg.find_item("grain"), bread = reg.find_item("bread");
+            // What goes in (grain or meat) and what comes out (bread or roast).
+            const ItemId grain = j->item != kNoItem ? j->item : reg.find_item("grain");
+            const bool roasting = reg.item(grain).key == "meat";
+            const ItemId bread = reg.find_item(roasting ? "cooked_meat" : "bread");
             if (t.step == 0) {
                 // Bring grain to the kitchen if it has none.
                 if (ctx_.econ->available(k->store, grain, c.id) >= 2) {
@@ -1394,14 +1489,14 @@ bool Agents::task_work(Character& c) {
                     float bd = 1e30f;
                     for (StoreId sid : ctx_.society->public_stores(c.polity)) {
                         const Store* s = ctx_.econ->store(sid);
-                        if (!s || s->kind != StoreKind::Stockpile || ctx_.econ->available(sid, grain, c.id) < 4) continue;
+                        if (!s || sid == k->store || ctx_.econ->available(sid, grain, c.id) < (roasting ? 2 : 4)) continue;
                         float d = (float)s->pos.dist2(k->inside);
                         if (d < bd) {
                             bd = d;
                             src = sid;
                         }
                     }
-                    if (!src) return fail("没有谷物可烹饪");
+                    if (!src) return fail(roasting ? "没有肉可烤" : "没有谷物可烹饪");
                     ctx_.econ->reserve(src, grain, 6, c.id, now_ + kTicksPerHour);
                     t.store = src;
                     t.step = 1;
@@ -1410,16 +1505,16 @@ bool Agents::task_work(Character& c) {
             if (t.step == 1) {
                 const Store* s = ctx_.econ->store(t.store);
                 if (!s) return fail("仓库不见了");
-                say(c, "去取谷物");
+                say(c, roasting ? "去取肉" : "去取谷物");
                 Move m = move_to(c, s->pos, true);
-                if (m == Move::Failed) return fail("取不到谷物");
+                if (m == Move::Failed) return fail(roasting ? "取不到肉" : "取不到谷物");
                 if (m != Move::Arrived) return true;
                 ctx_.econ->transfer(t.store, c.inv, grain, 6);
                 ctx_.econ->release(t.store, c.id);
                 t.step = 2;
             }
             if (t.step == 2) {
-                say(c, "去灶房");
+                say(c, k->def == "campfire" ? "去篝火边" : "去灶房");
                 Move m = move_to(c, k->inside, true);
                 if (m == Move::Failed) return fail("到不了灶房");
                 if (m != Move::Arrived) return true;
@@ -1428,10 +1523,11 @@ bool Agents::task_work(Character& c) {
                 t.step = 3;
             }
             if (t.step == 3) {
-                say(c, "烹饪面包");
+                say(c, roasting ? "烤肉" : "烹饪面包");
                 if (now_ < t.until) return true;
                 i32 n = ctx_.econ->remove(k->store, grain, 4, "cooked");
                 if (n > 0) ctx_.econ->add(k->store, bread, n, "cooked");
+                if (n > 0) ctx_.society->practice(c.polity, "cook", 1.0f, c.id);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 end_task(c, true);
@@ -1512,6 +1608,7 @@ bool Agents::task_work(Character& c) {
                 ctx_.econ->release(j->from, c.id);
                 c.skills[kCrafting] = std::min(1.0f, c.skills[kCrafting] + 0.01f * (float)done);
                 if (done > 0 && tool_factor(c, kind) >= 0.99f) wear_tool(c);
+                if (done > 0) ctx_.society->practice(c.polity, "craft", (float)done, c.id);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 end_task(c, done > 0);

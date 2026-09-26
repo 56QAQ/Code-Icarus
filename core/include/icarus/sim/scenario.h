@@ -13,6 +13,10 @@ struct GameConfig;
 // lake, and the plank bridge that connects them.
 void build_village_scenario(SimContext& ctx, const GameConfig& cfg, Rng& rng);
 
+// Settlements at the world's sites in the configured starting era (cfg.era: wild,
+// tribal, village) for cfg.civs civilisations (up to the number of sites).
+void build_settlements(SimContext& ctx, const GameConfig& cfg, Rng& rng);
+
 // Default persona for a magical girl of a drive (randomised around the drive's temper).
 void make_girl(SimContext& ctx, EntityId id, const std::string& drive, Rng& rng, const Json& persona_override);
 

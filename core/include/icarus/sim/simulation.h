@@ -29,8 +29,12 @@ namespace icarus {
 
 struct GameConfig {
     WorldConfig world;
-    std::string scenario = "village";  // "village" or "empty"
-    int residents = 18;
+    // "village": the settlement(s) in `era`; "wild" = village in the wild era;
+    // "three_realms" = three civilisations; anything else: an empty world.
+    std::string scenario = "village";
+    std::string era = "village";  // 开局时代: wild / tribal / village
+    int civs = 1;                 // civilisations at the start (one per site)
+    int residents = 18;           // per civilisation
     // Optional overrides for the three starting magical girls (drive keys).
     std::vector<std::string> girl_drives;
     std::vector<Json> girl_personalities;

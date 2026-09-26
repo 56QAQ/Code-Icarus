@@ -45,6 +45,10 @@ void Buildings::load_defs(const Registry& reg) {
         d.storage = b.flt("storage", 0);
         d.spoil_factor = b.flt("spoil_factor", 1.0f);
         d.seat = b.boolean("seat", false);
+        if (b["inside"].is_array() && b["inside"].size() >= 2)
+            d.inside_local = {b["inside"][0].as_int(), 0, b["inside"][1].as_int()};
+        if (b["entrance"].is_array() && b["entrance"].size() >= 2)
+            d.entrance_local = {b["entrance"][0].as_int(), 0, b["entrance"][1].as_int()};
         const Json& layers = b["layers"];
         d.h = (int)layers.size();
         for (int y = 0; y < d.h; ++y) {
@@ -178,6 +182,8 @@ u32 Buildings::start_site(const std::string& key, const Vec3i& origin, u8 rot, u
         b.entrance = to_world(*d, origin, rot, {d->w / 2, 0, d->d});
         b.inside = to_world(*d, origin, rot, {d->w / 2, 0, d->d / 2});
     }
+    if (d->inside_local.x >= 0) b.inside = to_world(*d, origin, rot, d->inside_local);
+    if (d->entrance_local.x >= 0) b.entrance = to_world(*d, origin, rot, d->entrance_local);
     b.site = econ_.create_store(StoreKind::Site, b.entrance, polity);
     econ_.store(b.site)->building = b.id;
     list_.push_back(b);
@@ -369,8 +375,10 @@ void Buildings::finish(Building& b, EventId cause) {
         b.site = kNoStore;
     }
     if (d && d->storage > 0 && !econ_.store(b.store)) {
-        b.store = econ_.create_store(d->workstation.empty() ? StoreKind::Stockpile : StoreKind::Workshop, b.inside,
-                                     b.polity, kNoEntity, d->storage);
+        // A seat with a workstation (the band's campfire) is also where everything is kept.
+        const bool stockpile = d->workstation.empty() || d->seat;
+        b.store = econ_.create_store(stockpile ? StoreKind::Stockpile : StoreKind::Workshop, b.inside, b.polity,
+                                     kNoEntity, d->storage);
         Store* s = econ_.store(b.store);
         s->building = b.id;
         s->spoil_factor = d->spoil_factor;

@@ -31,6 +31,9 @@ struct BuildingDef {
     std::vector<PlanCell> cells;
     std::map<ItemId, int> cost;
     Vec3i door_local{-1, -1, -1};
+    // Optional (x, z) overrides for where people stand inside and come in (open
+    // structures like a campfire have no door).
+    Vec3i inside_local{-1, -1, -1}, entrance_local{-1, -1, -1};
 };
 
 struct Building {

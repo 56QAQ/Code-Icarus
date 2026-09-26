@@ -65,6 +65,8 @@ public:
     // A wild food plant in column (x, z) within reach from the ground: a bush, grain,
     // mushrooms on the surface, or fruit in the lowest layers of a crown.
     bool food_plant_at(int x, int z, Vec3i& out);
+    // The nearest wild food plant within radius of p (not already someone's job).
+    bool wild_food_near(const Vec3i& p, int radius, Vec3i& out);
 
     // Equipment (agents_equipment.cpp). The tool a job is done with ("" = none helps).
     std::string tool_kind_for(const Job& j) const;
@@ -84,6 +86,7 @@ public:
     static const char* occupation_tool(const std::string& occupation);
     // Cold, wet and dark against what c wears: 0 = comfortable .. 1 = freezing.
     float exposure(const Character& c) const;
+    bool near_campfire(const Vec3i& p) const;
 
     AgentTuning tune;
     // Diagnostics (not saved): recent failed routes (who, from, to).
@@ -174,10 +177,13 @@ private:
     float danger_at(const Character& c) const;
     bool is_work_time(const Character& c) const;
     float carried_weight(const Character& c) const;
+    // Set down everything carried except what is worn or held as equipment.
+    void drop_cargo(Character& c);
     void deposit_all(Character& c, StoreId to);
     // Keeps tool/weapon/armour slots consistent with the inventory and picks up better
     // gear from nearby public stores (weapons and armour only when drafted).
     void update_equipment(Character& c);
+    void assign_homes();
     // Craft, chop, quarry and mine jobs from what the polity needs (agents_production.cpp).
     void production_jobs();
     void say(Character& c, const std::string& s) { c.status_text = s; }

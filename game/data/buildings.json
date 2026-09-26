@@ -4,11 +4,28 @@
 {
   "legend": {
     "L": "log", "P": "planks", "T": "thatch", "D": "door", "S": "stone_brick", "B": "brick",
-    "R": "rubble", "G": "glass", "C": "clay", "F": "path"
+    "R": "rubble", "G": "glass", "C": "clay", "F": "path", "E": "campfire"
   },
   "buildings": [
     {
-      "key": "hut", "name": "茅屋", "category": "housing", "beds": 3,
+      "key": "campfire", "name": "篝火", "category": "civic", "seat": true, "workstation": "cooking", "storage": 400,
+      "tech": "fire", "inside": [2, 3], "entrance": [2, 4],
+      "description": "部落的中心：人们在这里烤肉、琢磨新知、把采来的东西堆在一旁，夜里围着火睡。",
+      "layers": [
+        [".....", ".....", "..E..", ".....", "....."]
+      ]
+    },
+    {
+      "key": "lean_to", "name": "窝棚", "category": "housing", "beds": 2, "tech": "shelter",
+      "description": "原木斜撑、茅草覆顶的窝棚，两人可以躲风避雨。",
+      "layers": [
+        ["TTTT", "....", "L..L"],
+        ["TTTT", "....", "L..L"],
+        ["....", "TTTT", "TTTT"]
+      ]
+    },
+    {
+      "key": "hut", "name": "茅屋", "category": "housing", "beds": 3, "tech": "thatching",
       "description": "木骨茅顶的小屋，可供三人居住。",
       "layers": [
         ["LLLLL", "L...L", "L...L", "L...L", "LLDLL"],
@@ -33,7 +50,7 @@
       ]
     },
     {
-      "key": "storehouse", "name": "仓库", "category": "storage", "storage": 900, "spoil_factor": 0.8,
+      "key": "storehouse", "name": "仓库", "category": "storage", "storage": 900, "spoil_factor": 0.8, "tech": "storage",
       "description": "原木仓库，储存公共物资。",
       "layers": [
         ["LLLLLLL", "L.....L", "L.....L", "L.....L", "L.....L", "L.....L", "LLL.LLL"],
@@ -57,7 +74,7 @@
       ]
     },
     {
-      "key": "hall", "name": "议事厅", "category": "civic", "seat": true,
+      "key": "hall", "name": "议事厅", "category": "civic", "seat": true, "tech": "carpentry",
       "description": "统治者议政之所。魔法少女在此制定政策。",
       "layers": [
         ["SSSSSSSSS", "S.......S", "S.......S", "S.......S", "S.......S", "S.......S", "S.......S", "SSSS.SSSS"],
@@ -71,7 +88,7 @@
       ]
     },
     {
-      "key": "kitchen", "name": "灶房", "category": "production", "workstation": "cooking", "storage": 120,
+      "key": "kitchen", "name": "灶房", "category": "production", "workstation": "cooking", "storage": 120, "tech": "farming",
       "description": "把谷物做成面包；饭食比生粮更顶饱，也更令人满足。",
       "layers": [
         ["L...L", ".....", "..R..", ".....", "L...L"],

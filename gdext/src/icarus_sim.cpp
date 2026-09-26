@@ -128,6 +128,8 @@ bool IcarusSim::new_game(const Dictionary& config) {
                                                     (uint64_t)j.num("seed", 1));
         cfg.world.island_radius = j.flt("island_radius", cfg.world.island_radius);
         cfg.scenario = j.str("scenario", cfg.scenario);
+        cfg.era = j.str("era", cfg.era);
+        cfg.civs = j.integer("civs", cfg.civs);
         cfg.residents = j.integer("residents", cfg.residents);
         for (const auto& d : j["girl_drives"].items()) cfg.girl_drives.push_back(d.as_str());
         sim_ = std::make_unique<icarus::Simulation>(*reg_);
@@ -292,6 +294,15 @@ PackedVector3Array IcarusSim::fire_spots(int64_t max_count) const {
         if (!icarus::vburning(w.peek(p))) continue;
         out.push_back(Vector3((float)p.x + 0.5f, (float)p.y + 0.5f, (float)p.z + 0.5f));
     }
+    // Hearths burn too (smaller: a quarter cube lower).
+    const icarus::MatId camp = sim_->reg().m().campfire;
+    if (camp != 0)
+        for (const icarus::Building& b : sim_->buildings().all()) {
+            if ((int64_t)out.size() >= max_count) break;
+            if (!b.alive || !b.functional || b.def != "campfire") continue;
+            for (const icarus::Vec3i& p : b.plan_pos)
+                if (icarus::vmat(w.peek(p)) == camp) out.push_back(Vector3((float)p.x + 0.5f, (float)p.y + 0.25f, (float)p.z + 0.5f));
+        }
     return out;
 }
 

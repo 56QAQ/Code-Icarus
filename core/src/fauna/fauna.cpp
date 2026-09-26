@@ -653,7 +653,7 @@ u32 Fauna::find_prey(const Vec3i& from, int radius, bool dangerous_too) const {
     for (const Animal& a : animals_) {
         if (!a.alive || a.hunted_by != kNoEntity) continue;
         const SpeciesDef& s = species_[a.species];
-        if (!dangerous_too && (s.temper == Temper::Predator || s.temper == Temper::Territorial)) continue;
+        if (!dangerous_too && s.temper != Temper::Shy) continue;
         const i64 d = a.foot.dist2(from);
         if (d < bd) {
             bd = d;
