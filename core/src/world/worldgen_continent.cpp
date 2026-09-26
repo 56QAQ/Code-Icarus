@@ -169,10 +169,10 @@ void WorldGen::init_continent() {
         lakes_.push_back(l);
     }
 
-    // Springs on the mountain slopes feed streams down to lakes: the summit to the
-    // central lake, the western peak to the forest site's lake, a peak east of the
-    // summit north to the taiga site's lake.
-    const int links[3][2] = {{3, 3}, {1, 0}, {4, 2}};
+    // A spring on the summit's slope feeds a stream down to the central lake, which
+    // drains over the rim. (Flowing water is simulated cube by cube; one river keeps
+    // that affordable. The other lakes are still.)
+    const int links[1][2] = {{3, 3}};
     for (const auto& lk : links) {
         const Peak& p = peaks_[(size_t)lk[0]];
         const Lake& l = lakes_[(size_t)lk[1]];
@@ -261,7 +261,7 @@ void WorldGen::init_continent() {
     feat_.pond = home.water;
     feat_.lake_radius = (int)lakes_[0].r;
     feat_.pond_radius = (int)lakes_[0].r;
-    feat_.spring = feat_.springs.empty() ? Vec3i{} : feat_.springs[1 % feat_.springs.size()];
+    feat_.spring = feat_.springs.empty() ? Vec3i{} : feat_.springs[0];
     feat_.bridge_a = feat_.bridge_b = feat_.ravine_end = home.center;
 }
 

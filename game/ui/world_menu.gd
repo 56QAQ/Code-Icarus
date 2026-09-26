@@ -8,6 +8,12 @@ signal closed
 
 var _col: VBoxContainer
 var _seed_edit: LineEdit
+## New-world options: [config value, label, tooltip].
+const LAYOUTS := [
+	["classic", "经典小岛", "一座小岛：村落、田地、峡谷上的桥与山泉。"],
+	["continent", "广袤大陆", "远大于经典小岛的空岛：山脉、湖泊与多种生态群系（森林、草原、针叶林、雪原、荒漠、稀树草原、沼泽）。"],
+]
+var _options := {"layout": "classic"}
 var _status: Label
 var _slot_box: VBoxContainer
 var _resume: Button
@@ -77,6 +83,11 @@ func _ready() -> void:
 	var start := _button("开辟这片空岛", UITheme.ACCENT)
 	start.pressed.connect(_new_world)
 	row.add_child(start)
+	var opts := HBoxContainer.new()
+	opts.add_theme_constant_override("separation", 8)
+	_col.add_child(opts)
+	opts.add_child(UITheme.label("空岛", 13, UITheme.TEXT_DIM))
+	opts.add_child(_choice(LAYOUTS, "layout"))
 	_col.add_child(UITheme.label("同一个种子总会生成同一座岛与同样的开局；之后的历史由魔法少女与你的干预写成。", 11, UITheme.TEXT_FAINT))
 
 	# Slots.
@@ -161,7 +172,9 @@ func close() -> void:
 func _new_world() -> void:
 	var s := _seed_edit.text.strip_edges()
 	var seed := int(s) if s.is_valid_int() else (hash(s) & 0x7fffffff)
-	if Game.start_new_game({"seed": maxi(1, seed)}):
+	var config := {"seed": maxi(1, seed)}
+	config.merge(_options, true)
+	if Game.start_new_game(config):
 		_was_paused = false
 		close()
 	else:
@@ -227,6 +240,27 @@ func _set_renderer(compat: bool) -> bool:
 		return false
 	f.store_string("[rendering]\n\nrenderer/rendering_method=\"gl_compatibility\"\nrenderer/rendering_method.mobile=\"gl_compatibility\"\n")
 	return true
+
+
+## A row of mutually exclusive chips that sets _options[key].
+func _choice(options: Array, key: String) -> Control:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 4)
+	var group := ButtonGroup.new()
+	for o in options:
+		var b := _button(String(o[1]), UITheme.TEXT_DIM)
+		b.toggle_mode = true
+		b.button_group = group
+		b.tooltip_text = String(o[2])
+		b.add_theme_color_override("font_pressed_color", UITheme.ACCENT)
+		b.add_theme_stylebox_override("pressed", UITheme.flat(Color(UITheme.ACCENT, 0.18), 8, 12, 5))
+		b.button_pressed = _options.get(key, "") == o[0]
+		var value: String = o[0]
+		b.toggled.connect(func(on: bool) -> void:
+			if on:
+				_options[key] = value)
+		h.add_child(b)
+	return h
 
 
 func _section(text: String) -> Control:
