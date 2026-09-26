@@ -308,6 +308,10 @@ int cmd_waterdump(const Args& a) {
         }
     }
     const IslandFeatures& f = sim.world().gen().features();
+    for (const SpeciesDef& sp : sim.fauna().species())
+        std::printf("%s %d  ", sp.key.c_str(), sim.fauna().count_alive(sp.id));
+    std::printf("\n");
+    for (auto& [k, n] : sim.fauna().deaths) std::printf("  died %s x%d\n", k.c_str(), n);
     const PhysicsStats& ps = sim.physics().stats();
     std::printf("physics us: water %.0f evap %.0f fire %.0f granular %.0f support %.0f other %.0f\n", ps.us_water,
                 ps.us_evaporation, ps.us_fire, ps.us_granular, ps.us_support, ps.us_other);

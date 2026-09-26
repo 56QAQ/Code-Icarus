@@ -50,6 +50,7 @@ std::string Agents::tool_kind_for(const Job& j) const {
             return (k == "grain" || k == "fiber") ? "sickle" : "";
         }
         case JobType::Build: return "hammer";
+        case JobType::Hunt: return "knife";  // the butchering; the chase is the weapon's
         case JobType::Craft: {
             const Json& recipes = reg.doc("recipes")["recipes"];
             if (j.plot >= recipes.size()) return "hammer";
@@ -126,6 +127,53 @@ bool Agents::swap_tool(Character& c, StoreId sid, const std::string& kind) {
     if (c.tool != kNoItem && c.tool != pick) ctx_.econ->transfer(c.inv, sid, c.tool, 1);
     c.tool = pick;
     c.tool_wear = 0;
+    return true;
+}
+
+StoreId Agents::hunting_weapon_store(Character& c, const Vec3i& work) {
+    if (c.weapon != kNoItem || c.is_girl() || !c.body.can_hold()) return kNoStore;
+    const Registry& reg = *ctx_.reg;
+    const float direct = std::sqrt((float)c.foot.dist2(work));
+    StoreId best = kNoStore;
+    ItemId best_item = kNoItem;
+    float best_cost = (float)kToolDetour;
+    for (StoreId sid : ctx_.society->public_stores(c.polity)) {
+        const Store* st = ctx_.econ->store(sid);
+        if (!st) continue;
+        const float detour =
+            std::sqrt((float)c.foot.dist2(st->pos)) + std::sqrt((float)st->pos.dist2(work)) - direct;
+        if (detour > best_cost) continue;
+        for (const ItemStack& is : st->items) {
+            if (!reg.item(is.item).has_tag("hunting") || ctx_.econ->available(sid, is.item, c.id) <= 0) continue;
+            best = sid;
+            best_item = is.item;
+            best_cost = detour;
+            break;
+        }
+    }
+    if (best != kNoStore) ctx_.econ->reserve(best, best_item, 1, c.id, now_ + kTicksPerHour);
+    return best;
+}
+
+bool Agents::take_hunting_weapon(Character& c, StoreId sid) {
+    const Registry& reg = *ctx_.reg;
+    const Store* st = ctx_.econ->store(sid);
+    if (!st || c.weapon != kNoItem) return false;
+    ctx_.econ->release(sid, c.id);
+    // The one that hits hardest (a bow reaches farther, a spear strikes harder).
+    ItemId pick = kNoItem;
+    float pw = -1.0f;
+    for (const ItemStack& is : st->items) {
+        const ItemDef& d = reg.item(is.item);
+        if (!d.has_tag("hunting") || ctx_.econ->available(sid, is.item, c.id) <= 0) continue;
+        const float v = d.power * (d.range > 3.0f ? 1.3f : 1.0f);
+        if (v > pw) {
+            pw = v;
+            pick = is.item;
+        }
+    }
+    if (pick == kNoItem || ctx_.econ->transfer(sid, c.inv, pick, 1) != 1) return false;
+    c.weapon = pick;
     return true;
 }
 

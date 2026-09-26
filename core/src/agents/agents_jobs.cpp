@@ -5,6 +5,7 @@
 #include <map>
 
 #include "icarus/agents/agents.h"
+#include "icarus/fauna/fauna.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/economy/farming.h"
 #include "icarus/sim/clock.h"
@@ -411,6 +412,51 @@ void Agents::generate_jobs() {
                 if (!food_plant_at(x, z, p) || has(JobType::Forage, p)) continue;
                 add(JobType::Forage, pc.id, p, 1.0f);
                 existing[{(int)JobType::Forage, p}] = 1;
+                ++open;
+            }
+        }
+    }
+
+    // Hunting: game for the pot (and hides for clothes), once people know how. Each hunt
+    // is one animal, spoken for until the hunter gives up or brings it home.
+    if (ctx_.fauna && now_ % 300 == 0) {
+        const ItemId hide = reg.find_item("hide");
+        // Animals spoken for by a hunt that no longer exists are free again.
+        for (const Animal& a : ctx_.fauna->all()) {
+            if (!a.alive || !(a.hunted_by & 0x80000000u)) continue;
+            bool live = false;
+            for (const Job& j : jobs.all())
+                if (j.alive && j.type == JobType::Hunt && j.project == a.id) live = true;
+            if (!live) ctx_.fauna->get(a.id)->hunted_by = kNoEntity;
+        }
+        for (auto& pc : ctx_.society->polities()) {
+            if (!pc.alive || !(pc.has_tech("hunting") || pc.has_tech("hunting_weapons"))) continue;
+            const Building* seat = ctx_.buildings->get(pc.seat);
+            if (!seat) continue;
+            const Vec3i home = seat->entrance;
+            int people = 0, unclothed = 0;
+            for (const auto& cp : chars_)
+                if (cp && cp->alive && !cp->departed && cp->polity == pc.id && !cp->is_girl()) {
+                    ++people;
+                    if (cp->clothes == kNoItem) ++unclothed;
+                }
+            i64 hides = 0;
+            for (StoreId sid : ctx_.society->public_stores(pc.id))
+                if (const Store* st = ctx_.econ->store(sid); st && hide != kNoItem) hides += st->count(hide);
+            const bool want_food = pc.stats.food_days < 6.0f;
+            const bool want_hides = pc.has_tech("hide_working") && hides < unclothed * 2;
+            if (!want_food && !want_hides) continue;
+            int open = 0;
+            for (const Job& j : jobs.all())
+                if (j.alive && j.type == JobType::Hunt && j.polity == pc.id) ++open;
+            const int max_open = std::max(1, people / 5);
+            while (open < max_open) {
+                const u32 prey = ctx_.fauna->find_prey(home, 100, pc.has_tech("hunting_weapons"));
+                Animal* a = ctx_.fauna->get(prey);
+                if (!a) break;
+                Job& j = add(JobType::Hunt, pc.id, a->foot, want_food ? 1.05f : 0.9f);
+                j.project = prey;
+                a->hunted_by = 0x80000000u | pc.id;  // spoken for
                 ++open;
             }
         }

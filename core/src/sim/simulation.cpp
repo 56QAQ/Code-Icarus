@@ -73,7 +73,8 @@ Simulation::Simulation(const Registry& reg)
       agents_(ctx_),
       society_(ctx_),
       decisions_(ctx_),
-      ecology_(world_, reg) {
+      ecology_(world_, reg),
+      fauna_(ctx_) {
     world_.on_wake = [this](Cell& c, Tick last, Tick now) { on_cell_wake(c, last, now); };
     ctx_.reg = reg_;
     ctx_.world = &world_;
@@ -88,6 +89,8 @@ Simulation::Simulation(const Registry& reg)
     ctx_.society = &society_;
     ctx_.decisions = &decisions_;
     ctx_.ecology = &ecology_;
+    ctx_.fauna = &fauna_;
+    fauna_.load_species(reg);
     buildings_.load_defs(reg);
     buildings_.set_physics(&physics_);
     farming_.irrigation_bonus = [this](u16 polity) { return (int)society_.tech_effect(polity, "irrigation_radius"); };
@@ -113,6 +116,7 @@ void Simulation::new_game(const GameConfig& cfg) {
     society_.reset(hash_combine(cfg.world.seed, 0x50));
     decisions_.reset(hash_combine(cfg.world.seed, 0xDE));
     ecology_.reset(hash_combine(cfg.world.seed, 0xEC));
+    fauna_.reset(hash_combine(cfg.world.seed, 0xFA));
     scenario_rng_.seed(pseed, 0x5CE7);
     ctx_.now = tick_;
     econ_.set_now(tick_);
@@ -126,6 +130,7 @@ void Simulation::new_game(const GameConfig& cfg) {
     e.text = "空岛纪元开始";
     chronicle_.emit(std::move(e));
     if (cfg.scenario == "village") build_village_scenario(ctx_, cfg_, scenario_rng_);
+    fauna_.populate();
     dispatch_changes();
     fx_.clear();  // building the starting village is not an event to animate
 }
@@ -197,6 +202,8 @@ void Simulation::step() {
     decisions_.step(tick_);
     dispatch_changes();
     auto t4b = std::chrono::steady_clock::now();
+    fauna_.step(tick_);
+    auto t4c = std::chrono::steady_clock::now();
 
     if (tick_ % kTicksPerDay == kTicksPerDay / 2 && tick_ > 0) {
         ecology_.daily(tick_, buildings_);
@@ -209,6 +216,7 @@ void Simulation::step() {
     profile_.agents_us = std::chrono::duration<double, std::micro>(t3 - t2).count();
     profile_.society_us = std::chrono::duration<double, std::micro>(t4 - t3).count();
     profile_.decisions_us = std::chrono::duration<double, std::micro>(t4b - t4).count();
+    profile_.fauna_us = std::chrono::duration<double, std::micro>(t4c - t4b).count();
     profile_.total_us = std::chrono::duration<double, std::micro>(t5 - t0).count();
     ++tick_;
 }
@@ -474,6 +482,7 @@ std::vector<u8> Simulation::save() const {
     }
     w.end_section(s);
     ecology_.save(w);  // added later: saves without it load with an empty ecology
+    fauna_.save(w);    // version 2: older saves load without animals
     return std::move(w.data_mut());
 }
 
@@ -518,6 +527,8 @@ void Simulation::load(const std::vector<u8>& data) {
     }
     if (!r.at_end()) ecology_.load(r);
     else ecology_.reset(hash_combine(cfg_.world.seed, 0xEC));
+    if (!r.at_end()) fauna_.load(r);
+    else fauna_.reset(hash_combine(cfg_.world.seed, 0xFA));
     world_.changes().clear();
 }
 
@@ -533,6 +544,7 @@ u64 Simulation::state_hash() const {
     h = hash_combine(h, society_.hash());
     h = hash_combine(h, decisions_.hash());
     h = hash_combine(h, ecology_.hash());
+    h = hash_combine(h, fauna_.hash());
     return h;
 }
 

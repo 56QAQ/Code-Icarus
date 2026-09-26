@@ -1,5 +1,6 @@
 // Agents: lifecycle, needs, health, movement and persistence.
 #include "icarus/agents/agents.h"
+#include "icarus/fauna/fauna.h"
 
 #include <algorithm>
 #include <cmath>
@@ -365,6 +366,9 @@ float Agents::danger_at(const Character& c) const {
         float d = (c.pos - p).length();
         if (d < r) worst = std::max(worst, 1.0f - d / r);
     }
+    // Beasts on the prowl (hunters and soldiers stand their ground).
+    if (ctx_.fauna && !c.drafted && !(c.task.type == TaskType::Work && c.weapon != kNoItem))
+        worst = std::max(worst, ctx_.fauna->threat_at(c.pos));
     return worst;
 }
 
@@ -591,8 +595,10 @@ void Agents::update_equipment(Character& c) {
                 }
         break;
     }
-    // Discharged soldiers hand their arms back when they pass a store.
-    if (!c.drafted && (c.weapon != kNoItem || c.armor != kNoItem))
+    // Discharged soldiers hand their arms back when they pass a store (hunters keep
+    // their spear or bow).
+    const bool hunting_gear = c.weapon != kNoItem && reg.item(c.weapon).has_tag("hunting") && c.armor == kNoItem;
+    if (!c.drafted && !hunting_gear && (c.weapon != kNoItem || c.armor != kNoItem))
         for (StoreId sid : ctx_.society->public_stores(c.polity)) {
             const Store* st = ctx_.econ->store(sid);
             if (!st || st->kind != StoreKind::Stockpile || st->pos.dist2(c.foot) > 5 * 5) continue;

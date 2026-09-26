@@ -17,6 +17,7 @@
 #include "icarus/society/society.h"
 #include "icarus/decision/decisions.h"
 #include "icarus/sim/clock.h"
+#include "icarus/fauna/fauna.h"
 #include "icarus/sim/ecology.h"
 #include "icarus/sim/physics.h"
 #include "icarus/util/json.h"
@@ -84,6 +85,8 @@ public:
     const Buildings& buildings() const { return buildings_; }
     Decisions& decisions() { return decisions_; }
     const Ecology& ecology() const { return ecology_; }
+    Fauna& fauna() { return fauna_; }
+    const Fauna& fauna() const { return fauna_; }
     // The islands' forest: generated trees still standing plus those that grew back.
     ForestStats forest() const {
         ForestStats f = world_.forest();
@@ -104,7 +107,7 @@ public:
 
     // Per-tick profiling (microseconds, last tick).
     struct Profile {
-        double physics_us = 0, agents_us = 0, society_us = 0, decisions_us = 0, total_us = 0;
+        double physics_us = 0, agents_us = 0, society_us = 0, decisions_us = 0, fauna_us = 0, total_us = 0;
     };
     const Profile& profile() const { return profile_; }
 
@@ -136,6 +139,7 @@ private:
     Society society_;
     Decisions decisions_;
     Ecology ecology_;
+    Fauna fauna_;
     Rng scenario_rng_;
     std::vector<AdminCommand> admin_queue_;
     Tick tick_ = 0;

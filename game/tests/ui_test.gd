@@ -50,6 +50,12 @@ func _process(_delta: float) -> bool:
 			game.set_tool("inspect")
 			game.admin("bless_food", {"pos": game.sim.world_info()["features"]["village"], "amount": 10})
 			game.sim.step(5)
+			# An animal's card.
+			var beasts: Array = game.sim.animals(Vector3(512, 160, 512), 2000.0)
+			_expect(not beasts.is_empty(), "the island has animals")
+			if not beasts.is_empty():
+				hud.selection.show_animal(int(beasts[0]["id"]))
+				_expect(hud.selection.visible, "animal card opens")
 		6:
 			# A new world through the same path the menu uses.
 			game.start_new_game({"seed": 3})

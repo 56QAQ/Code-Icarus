@@ -37,7 +37,7 @@
     {"key": "magma", "name": "熔岩", "color": "#e8561c", "color_var": 0.12, "hardness": 999, "toughness": 7, "density": 3.0, "diggable": false, "rigid": true},
     {"key": "snow", "name": "积雪", "color": "#eef3f7", "color_var": 0.03, "hardness": 12, "toughness": 1, "density": 0.5},
     {"key": "ice", "name": "冰", "color": "#a9d4ec", "color_var": 0.03, "opaque": false, "transparent": true, "hardness": 45, "toughness": 3, "density": 0.9},
-    {"key": "mud", "name": "泥沼", "color": "#5b4a36", "color_var": 0.06, "hardness": 18, "toughness": 1, "density": 1.7, "drop": "clay", "fertile": true},
+    {"key": "mud", "name": "泥沼", "color": "#6a573f", "color_var": 0.06, "hardness": 18, "toughness": 1, "density": 1.7, "drop": "clay", "fertile": true},
     {"key": "red_sand", "name": "红沙", "color": "#c98a55", "color_var": 0.05, "granular": true, "hardness": 18, "toughness": 1, "density": 1.6, "drop": "sand"},
     {"key": "sandstone", "name": "砂岩", "color": "#d2a877", "color_var": 0.05, "hardness": 70, "toughness": 4, "density": 2.3, "drop": "stone"},
     {"key": "granite", "name": "花岗岩", "color": "#9b8f8a", "color_var": 0.07, "hardness": 130, "toughness": 6, "density": 2.7, "drop": "stone"},

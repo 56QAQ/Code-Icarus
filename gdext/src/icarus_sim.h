@@ -55,6 +55,10 @@ public:
 
     // Characters.
     Array characters() const;               // light per-frame snapshot
+    // Wild animals near a point (per frame), their species' looks, one animal's card.
+    Array animals(const Vector3& center, double radius) const;
+    Array animal_species() const;
+    Dictionary animal_info(int64_t id) const;
     Array character_body(int64_t id) const; // 6 parts: {mesh, pivot}
     Dictionary character_info(int64_t id) const;
     Dictionary polity_info(int64_t id) const;

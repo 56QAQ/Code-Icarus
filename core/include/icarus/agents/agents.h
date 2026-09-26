@@ -75,6 +75,9 @@ public:
     StoreId tool_store_for(Character& c, const std::string& kind, const Vec3i& work);
     // Take the best tool of the kind from the store, handing back the one in hand.
     bool swap_tool(Character& c, StoreId sid, const std::string& kind);
+    // A store not far out of the way with a hunting weapon (reserved), or 0; take it.
+    StoreId hunting_weapon_store(Character& c, const Vec3i& work);
+    bool take_hunting_weapon(Character& c, StoreId sid);
     // One use of the tool in hand; a tool used up breaks.
     void wear_tool(Character& c);
     // What each occupation keeps in hand between jobs.

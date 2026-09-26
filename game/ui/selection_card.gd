@@ -112,6 +112,14 @@ func show_character(id: int) -> void:
 	_refresh()
 
 
+func show_animal(id: int) -> void:
+	kind = "animal"
+	target_id = id
+	_set_tabs([])
+	visible = true
+	_refresh()
+
+
 func show_building(id: int, at_cube: Vector3i) -> void:
 	kind = "building"
 	target_id = id
@@ -169,6 +177,9 @@ func _on_focus() -> void:
 		focus_requested.emit(info.get("pos", Vector3.ZERO))
 	elif kind == "building":
 		focus_requested.emit(Vector3(cube))
+	elif kind == "animal":
+		var info: Dictionary = sim.animal_info(target_id)
+		focus_requested.emit(info.get("pos", Vector3.ZERO))
 
 
 func _clear() -> void:
@@ -265,6 +276,39 @@ func _refresh() -> void:
 			_refresh_character()
 		"building":
 			_refresh_building()
+		"animal":
+			_refresh_animal()
+
+
+func _refresh_animal() -> void:
+	var d: Dictionary = sim.animal_info(target_id)
+	if d.is_empty():
+		visible = false
+		return
+	_title.text = String(d["name"])
+	var age := float(d["age_days"])
+	var sex := "雌" if d.get("female", false) else "雄"
+	_subtitle.text = "野生动物 · %s · %s" % [sex, "幼崽" if age < 5.0 else "%d 天大" % int(age)]
+	if not d["alive"]:
+		_line("已死去：%s" % d.get("death_cause", ""), 14, UITheme.BAD)
+	else:
+		_line("正在%s" % d["state"], 14)
+		if d.has("hunter"):
+			_line("%s 正在追猎它" % d["hunter"], 13, UITheme.WARN)
+		_section("状态")
+		_bar("体力", 1.0 - float(d["tired"]))
+		_bar("生命", float(d["health"]))
+		if float(d["hunger"]) > 0.05:
+			var h := _bar("饥饿", clampf(float(d["hunger"]), 0.0, 1.0))
+			h.fixed_color = UITheme.WARN
+		_line("同群 %d 只" % int(d["herd"]), 13, UITheme.TEXT_DIM)
+	var y: Array = d.get("yield", [])
+	if not y.is_empty():
+		var s := PackedStringArray()
+		for it in y:
+			s.append("%s×%d" % [it["item"], it["count"]])
+		_section("猎获可得")
+		_line("  ".join(s), 13, UITheme.TEXT_DIM)
 
 
 func _refresh_character() -> void:

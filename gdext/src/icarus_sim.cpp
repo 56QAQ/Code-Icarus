@@ -53,6 +53,9 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("meteors"), &IcarusSim::meteors);
     ClassDB::bind_method(D_METHOD("admin", "type", "params"), &IcarusSim::admin);
     ClassDB::bind_method(D_METHOD("characters"), &IcarusSim::characters);
+    ClassDB::bind_method(D_METHOD("animals", "center", "radius"), &IcarusSim::animals);
+    ClassDB::bind_method(D_METHOD("animal_species"), &IcarusSim::animal_species);
+    ClassDB::bind_method(D_METHOD("animal_info", "id"), &IcarusSim::animal_info);
     ClassDB::bind_method(D_METHOD("character_body", "id"), &IcarusSim::character_body);
     ClassDB::bind_method(D_METHOD("character_info", "id"), &IcarusSim::character_info);
     ClassDB::bind_method(D_METHOD("polity_info", "id"), &IcarusSim::polity_info);
@@ -574,6 +577,7 @@ const char* job_key(icarus::JobType t) {
         case J::Research: return "research";
         case J::Forage: return "forage";
         case J::Guard: return "guard";
+        case J::Hunt: return "hunt";
         default: return "work";
     }
 }
@@ -661,6 +665,107 @@ Array IcarusSim::characters() const {
         out.push_back(d);
     }
     return out;
+}
+
+namespace {
+const char* animal_state_zh(icarus::AnimalState s) {
+    switch (s) {
+        case icarus::AnimalState::Idle: return "歇息";
+        case icarus::AnimalState::Graze: return "觅食";
+        case icarus::AnimalState::Wander: return "游荡";
+        case icarus::AnimalState::Flee: return "受惊逃跑";
+        case icarus::AnimalState::Chase: return "追捕猎物";
+        case icarus::AnimalState::Attack: return "发起攻击";
+        case icarus::AnimalState::Eat: return "进食";
+        case icarus::AnimalState::Dead: return "死去";
+    }
+    return "";
+}
+}  // namespace
+
+Array IcarusSim::animals(const Vector3& center, double radius) const {
+    Array out;
+    if (!sim_) return out;
+    const icarus::Fauna& f = sim_->fauna();
+    const float r2 = (float)(radius * radius);
+    const icarus::Tick now = sim_->now();
+    for (const icarus::Animal& a : f.all()) {
+        const float dx = a.pos.x - (float)center.x, dz = a.pos.z - (float)center.z;
+        if (dx * dx + dz * dz > r2) continue;
+        Dictionary d;
+        d["id"] = (int64_t)a.id;
+        d["species"] = to_gd(f.spec(a.species).key);
+        d["pos"] = to_gd(a.pos);
+        d["yaw"] = a.yaw;
+        d["moving"] = a.moving;
+        d["phase"] = a.phase;
+        d["alive"] = a.alive;
+        d["butchered"] = a.butchered;
+        d["female"] = a.female;
+        d["state"] = (int)a.state;
+        d["running"] = a.state == icarus::AnimalState::Flee || a.state == icarus::AnimalState::Chase ||
+                       a.state == icarus::AnimalState::Attack;
+        d["grazing"] = a.state == icarus::AnimalState::Graze || a.state == icarus::AnimalState::Eat;
+        const float age_days = (float)(now - a.born) / (float)icarus::kTicksPerDay;
+        d["grown"] = std::min(1.0, 0.45 + 0.55 * (double)age_days / 5.0);
+        out.push_back(d);
+    }
+    return out;
+}
+
+Array IcarusSim::animal_species() const {
+    Array out;
+    if (!sim_) return out;
+    for (const icarus::SpeciesDef& s : sim_->fauna().species()) {
+        Dictionary d;
+        d["key"] = to_gd(s.key);
+        d["name"] = to_gd(s.name);
+        d["size"] = Vector3(s.size.x, s.size.y, s.size.z);
+        Array cols;
+        for (uint32_t c : s.colors) cols.push_back(col(c));
+        d["colors"] = cols;
+        Array look;
+        for (const std::string& l : s.look) look.push_back(to_gd(l));
+        d["look"] = look;
+        out.push_back(d);
+    }
+    return out;
+}
+
+Dictionary IcarusSim::animal_info(int64_t id) const {
+    Dictionary d;
+    if (!sim_) return d;
+    const icarus::Fauna& f = sim_->fauna();
+    const icarus::Animal* a = f.get((uint32_t)id);
+    if (!a) return d;
+    const icarus::SpeciesDef& s = f.spec(a->species);
+    d["id"] = id;
+    d["name"] = to_gd(s.name);
+    d["species"] = to_gd(s.key);
+    d["alive"] = a->alive;
+    d["female"] = a->female;
+    d["state"] = String::utf8(animal_state_zh(a->state));
+    d["health"] = std::max(0.0f, a->hp);
+    d["tired"] = a->tired;
+    d["hunger"] = a->hunger;
+    d["age_days"] = (double)(sim_->now() - a->born) / (double)icarus::kTicksPerDay;
+    d["pos"] = to_gd(a->pos);
+    d["death_cause"] = to_gd(a->death_cause);
+    int herd = 0;
+    for (const icarus::Animal& o : f.all())
+        if (o.alive && o.herd == a->herd) ++herd;
+    d["herd"] = herd;
+    if (a->hunted_by != icarus::kNoEntity && !(a->hunted_by & 0x80000000u))
+        if (const icarus::Character* h = sim_->agents().get(a->hunted_by)) d["hunter"] = to_gd(h->name);
+    Array yield;
+    for (auto& [it, n] : s.yield) {
+        Dictionary y;
+        y["item"] = to_gd(reg_->item(it).name);
+        y["count"] = n;
+        yield.push_back(y);
+    }
+    d["yield"] = yield;
+    return d;
 }
 
 Array IcarusSim::character_body(int64_t id) const {

@@ -4,12 +4,13 @@ extends Node3D
 ##   godot --path game -- --shot out.png [--seed N | --load FILE] [--layout classic|continent] [--scenario key]
 ##        [--ticks N] [--cam x,y,z,yaw,pitch,dist]
 ##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
-##        [--focus-job job[,dist]]
+##        [--focus-job job[,dist]] [--focus-animal species[,dist]]
 ##        [--hide-ui] [--frames N] [--late-admin type:{json} [--late-frames N] [--late-ticks N] [--late-run]]
 
 var renderer: WorldRenderer
 var fx: FxRenderer
 var chars: CharacterRenderer
+var animals: AnimalRenderer
 var rig: CameraRig
 var hud: HUD
 var sun: DirectionalLight3D
@@ -37,6 +38,8 @@ func _ready() -> void:
 	add_child(fx)
 	chars = CharacterRenderer.new()
 	add_child(chars)
+	animals = AnimalRenderer.new()
+	add_child(animals)
 	_build_brush()
 	var ui_layer := CanvasLayer.new()
 	add_child(ui_layer)
@@ -128,6 +131,22 @@ func _ready() -> void:
 				break
 			Game.sim.step(20)
 		print("focus-job: jobs seen ", seen_jobs.keys())
+	if _cli.has("focus-animal"):
+		# Screenshot helper: look at the nearest animal of a kind (deer, wolf...).
+		var parts2: PackedStringArray = String(_cli["focus-animal"]).split(",")
+		var dist2 := float(parts2[1]) if parts2.size() > 1 else 9.0
+		var best := {}
+		var bd := 1e18
+		for a in Game.sim.animals(rig.target, 2000.0):
+			if String(a["species"]) != parts2[0] or not a["alive"]:
+				continue
+			var d := (a["pos"] as Vector3).distance_squared_to(rig.target)
+			if d < bd:
+				bd = d
+				best = a
+		if not best.is_empty():
+			rig.focus(best["pos"] + Vector3(0, 0.6, 0), dist2, true)
+			animals.focus = best["pos"]
 	if _cli.has("focus-soldiers"):
 		# Screenshot helper: look at the soldiers (select the first one).
 		var sum := Vector3.ZERO
@@ -292,6 +311,7 @@ func _build_brush() -> void:
 
 func _process(delta: float) -> void:
 	renderer.focus = rig.target
+	animals.focus = rig.target
 	_update_daylight()
 	if _shot_path != "":
 		_screenshot_step()
@@ -442,6 +462,8 @@ func _on_world_ready() -> void:
 	renderer.setup(Game.sim, rig.camera)
 	fx.setup(Game.sim, rig.camera)
 	chars.setup(Game.sim, rig.camera)
+	animals.focus = Vector3(v)
+	animals.setup(Game.sim, rig.camera)
 	chars.selected_id = -1
 	Game.select({})
 	hud.on_world_changed()
@@ -465,6 +487,12 @@ func _apply_tool() -> void:
 		var cid := chars.pick(mp)
 		if cid >= 0:
 			_select_character(cid, mp)
+			return
+		var aid := animals.pick(mp)
+		if aid >= 0:
+			chars.selected_id = -1
+			hud.selection.show_animal(aid)
+			hud.place_selection_near(mp)
 			return
 	var hit := _mouse_ray()
 	if not hit.get("hit", false):

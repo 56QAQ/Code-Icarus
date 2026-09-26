@@ -971,7 +971,7 @@ func _mud(c: Color) -> Image:
 		for x in SIZE:
 			if f[y * SIZE + x] > 0.68:
 				var p := img.get_pixel(x, y)
-				img.set_pixel(x, y, Color(_shade(p, 0.8).lerp(Color(0.4, 0.42, 0.44), 0.25), 0.35))
+				img.set_pixel(x, y, Color(_shade(p, 0.85).lerp(Color(0.45, 0.43, 0.4), 0.2), 0.7))
 	_pebbles(img, Color(0.45, 0.4, 0.34), 2)
 	return img
 

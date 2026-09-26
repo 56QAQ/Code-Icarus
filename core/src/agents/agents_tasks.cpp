@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "icarus/agents/agents.h"
+#include "icarus/fauna/fauna.h"
 #include "icarus/sim/ecology.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/economy/farming.h"
@@ -613,6 +614,14 @@ bool Agents::task_flee(Character& c) {
                 worst = foe->pos;
             }
         }
+        if (ctx_.fauna)  // and beasts
+            if (const Animal* beast = ctx_.fauna->get(ctx_.fauna->nearest_threat(c.pos, 16.0f))) {
+                float d = (c.pos - beast->pos).length();
+                if (d < wd) {
+                    wd = d;
+                    worst = beast->pos;
+                }
+            }
         Vec3f dir = (c.pos - worst);
         dir.y = 0;
         dir = dir.normalized();
@@ -1182,6 +1191,121 @@ bool Agents::task_work(Character& c) {
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 end_task(c, true);
+            }
+            return true;
+        }
+        case JobType::Hunt: {
+            // Stalk the animal, strike it down (it flees or fights back; running tires
+            // it), butcher the carcass and bring meat and hide home.
+            Fauna* fauna = ctx_.fauna;
+            Animal* a = fauna ? fauna->get(j->project) : nullptr;
+            auto give_up = [&](const char* msg) {
+                if (a && a->alive && (a->hunted_by & 0x80000000u)) a->hunted_by = kNoEntity;
+                if (a && a->alive && a->hunted_by == c.id) a->hunted_by = kNoEntity;
+                say(c, msg);
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                end_task(c, false);
+                return false;
+            };
+            if (!a || (!a->alive && a->butchered)) return give_up("猎物不见了");
+            if (t.step == 0) {
+                a->hunted_by = c.id;
+                t.until = now_ + kTicksPerHour * 2;  // how long a chase may last
+                t.target = a->foot;
+                t.step = 1;
+                // A spear or a bow from the store on the way, if there is one.
+                if (const StoreId sid = hunting_weapon_store(c, a->foot)) {
+                    t.store = sid;
+                    t.step = 5;
+                }
+            }
+            if (t.step == 5) {
+                const Store* s = ctx_.econ->store(t.store);
+                if (s) {
+                    say(c, "去取猎具");
+                    Move m = move_to(c, s->pos, true);
+                    if (m == Move::Moving) return true;
+                    if (m == Move::Arrived) take_hunting_weapon(c, t.store);
+                }
+                t.step = 1;
+            }
+            if (t.step == 1) {
+                if (!a->alive) {
+                    t.step = 2;
+                } else {
+                    if (now_ > t.until) return give_up("猎物跑远了，只好放弃");
+                    const SpeciesDef& sp = fauna->spec(a->species);
+                    const ItemDef* wd = c.weapon != kNoItem ? &reg.item(c.weapon) : nullptr;
+                    const float reach = wd ? std::max(1.5f, wd->range) : 1.4f;
+                    const float d = std::sqrt(c.pos.dist_sq(a->pos));
+                    say(c, strfmt("追猎%s", sp.name.c_str()));
+                    if (d <= reach) {
+                        c.yaw = std::atan2(a->pos.x - c.pos.x, a->pos.z - c.pos.z);
+                        if (now_ >= t.target2.x) {
+                            t.target2.x = (i32)(now_ + 24);
+                            // Hunting weapons are made for game: their blows count double.
+                            float power = wd ? wd->power * 2.0f : 0.04f;
+                            power *= (0.7f + 0.6f * c.skills[kCombat]) * std::max(0.3f, c.body.manipulation());
+                            if (fauna->strike(*a, power, c.id, j->cause)) {
+                                c.skills[kCombat] = std::min(1.0f, c.skills[kCombat] + 0.02f);
+                                t.step = 2;
+                            }
+                        }
+                        if (t.step == 1) return true;
+                    } else {
+                        // Follow; re-plan when the animal has moved on.
+                        if (a->foot.dist2(t.target) > 9) {
+                            t.target = a->foot;
+                            c.path.nodes.clear();
+                        }
+                        Move m = move_to(c, t.target, true);
+                        if (m == Move::Failed) return give_up("追不上猎物");
+                        return true;
+                    }
+                }
+            }
+            if (t.step == 2) {
+                say(c, "去收拾猎物");
+                Move m = move_to(c, a->foot, true);
+                if (m == Move::Failed) return give_up("够不着猎物");
+                if (m != Move::Arrived) return true;
+                t.until = now_ + work_ticks(90);
+                t.step = 3;
+            }
+            if (t.step == 3) {
+                say(c, "屠宰猎物");
+                c.yaw = std::atan2(a->pos.x - c.pos.x, a->pos.z - c.pos.z);
+                if (now_ < t.until) return true;
+                const SpeciesDef& sp = fauna->spec(a->species);
+                const int n = fauna->butcher(*a, c.inv);
+                if (tool_factor(c, kind) >= 0.99f) wear_tool(c);
+                if (n > 0) {
+                    Event e;
+                    e.type = EventType::Hunt;
+                    e.severity = sp.temper == Temper::Shy ? 1 : 2;
+                    e.pos = c.foot;
+                    e.actor = c.id;
+                    e.polity = c.polity;
+                    e.text = strfmt("%s猎获了一%s%s", c.name.c_str(), sp.size.y > 1.1f ? "头" : "只", sp.name.c_str());
+                    ctx_.chron->emit(std::move(e));
+                    c.remember(now_, MemoryKind::Rewarded, kNoEntity, 0.08f, 0);
+                }
+                // The carcass may be too heavy to carry at once: the rest waits in a pile.
+                const Store* inv = ctx_.econ->store(c.inv);
+                if (inv && ctx_.econ->weight(*inv) > carry_capacity(c)) {
+                    const StoreId pile = ctx_.econ->pile_at(c.foot);
+                    std::vector<ItemStack> items = inv->items;
+                    for (const ItemStack& is : items) {
+                        if (is.item == c.tool || is.item == c.weapon || is.item == c.clothes || is.item == c.armor)
+                            continue;
+                        if (ctx_.econ->weight(*ctx_.econ->store(c.inv)) <= carry_capacity(c)) break;
+                        ctx_.econ->transfer(c.inv, pile, is.item, is.count / 2 + 1);
+                    }
+                }
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                t.step = 10;  // home with it
             }
             return true;
         }

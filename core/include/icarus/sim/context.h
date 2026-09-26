@@ -20,6 +20,7 @@ class Society;
 class Magic;
 class Decisions;
 class Ecology;
+class Fauna;
 
 struct SimContext {
     const Registry* reg = nullptr;
@@ -36,6 +37,7 @@ struct SimContext {
     Magic* magic = nullptr;
     Decisions* decisions = nullptr;
     Ecology* ecology = nullptr;
+    Fauna* fauna = nullptr;
     Tick now = 0;
 };
 

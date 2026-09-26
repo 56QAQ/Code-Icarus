@@ -111,6 +111,8 @@ public:
     // without generating any cell.
     std::vector<Vec3i> tree_bases() const;
     ColumnInfo column(int x, int z) const;
+    // The same, without filling the per-cell column cache (for sparse sampling).
+    ColumnInfo column_uncached(int x, int z) const { return compute_column(x, z); }
     // Macro summary of a cell without generating it.
     Biome cell_biome(const Vec3i& cc) const;
     bool cell_maybe_nonempty(const Vec3i& cc) const;
