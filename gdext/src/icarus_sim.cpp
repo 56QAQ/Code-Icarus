@@ -62,6 +62,18 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("save_bytes"), &IcarusSim::save_bytes);
     ClassDB::bind_method(D_METHOD("load_bytes", "data"), &IcarusSim::load_bytes);
     ClassDB::bind_method(D_METHOD("state_hash"), &IcarusSim::state_hash);
+    ClassDB::bind_method(D_METHOD("decisions", "after_id", "max_count"), &IcarusSim::decisions);
+    ClassDB::bind_method(D_METHOD("decision", "id"), &IcarusSim::decision);
+    ClassDB::bind_method(D_METHOD("last_decision_id"), &IcarusSim::last_decision_id);
+    ClassDB::bind_method(D_METHOD("decision_mode"), &IcarusSim::decision_mode);
+    ClassDB::bind_method(D_METHOD("set_decision_mode", "mode", "budget_per_day", "deadline_ticks"),
+                         &IcarusSim::set_decision_mode);
+    ClassDB::bind_method(D_METHOD("awaiting_remote"), &IcarusSim::awaiting_remote);
+    ClassDB::bind_method(D_METHOD("remote_request", "id"), &IcarusSim::remote_request);
+    ClassDB::bind_method(D_METHOD("submit_decision", "id", "key", "rationale", "source"), &IcarusSim::submit_decision);
+    ClassDB::bind_method(D_METHOD("remote_failed", "id", "why"), &IcarusSim::remote_failed);
+    ClassDB::bind_method(D_METHOD("export_decision_log"), &IcarusSim::export_decision_log);
+    ClassDB::bind_method(D_METHOD("load_decision_replay", "json_text"), &IcarusSim::load_decision_replay);
 }
 
 String IcarusSim::kernel_version() const { return "icarus-kernel 0.2"; }
@@ -626,6 +638,19 @@ Dictionary IcarusSim::character_info(int64_t id) const {
         gd["loyalty"] = g.loyalty;
         gd["stance"] = to_gd(g.stance);
         gd["temperament"] = to_gd(g.temperament);
+        gd["xp_next"] = 40.0 * (double)g.level;
+        PackedInt32Array decs;
+        for (uint32_t id : g.decisions) decs.push_back((int32_t)id);
+        gd["decisions"] = decs;
+        if (const icarus::Character* gr = sim_->agents().get(g.grudge)) gd["grudge"] = to_gd(gr->name);
+        float sup = 0;
+        int n = 0;
+        for (const auto& rp : sim_->agents().all())
+            if (rp && rp->alive && !rp->is_girl() && rp->polity == c.polity) {
+                sup += rp->support_for(c.id);
+                ++n;
+            }
+        gd["popular_support"] = n ? sup / (float)n : 0.0f;
         if (const icarus::Json* dd = drive_doc(*reg_, g.drive)) {
             gd["valence"] = dd->integer("valence", 1);
             gd["category"] = to_gd(dd->str("category"));
@@ -804,3 +829,157 @@ Array IcarusSim::buildings() const {
     }
     return out;
 }
+
+// ------------------------------------------------------------------------------ decisions
+
+namespace godot {
+
+namespace {
+const char* status_key(icarus::DecisionStatus s) {
+    switch (s) {
+        case icarus::DecisionStatus::Pending: return "pending";
+        case icarus::DecisionStatus::AwaitingRemote: return "awaiting";
+        case icarus::DecisionStatus::Decided: return "decided";
+        case icarus::DecisionStatus::Executed: return "executed";
+        case icarus::DecisionStatus::Cancelled: return "cancelled";
+    }
+    return "?";
+}
+}  // namespace
+
+Dictionary IcarusSim::decision_summary(const icarus::Decision& d) const {
+    Dictionary t;
+    t["id"] = (int64_t)d.id;
+    t["girl"] = (int64_t)d.girl;
+    if (const icarus::Character* g = sim_->agents().get(d.girl)) t["girl_name"] = to_gd(g->name);
+    t["polity"] = (int64_t)d.polity;
+    t["kind"] = to_gd(d.kind);
+    t["topic"] = to_gd(d.topic);
+    t["status"] = status_key(d.status);
+    t["created"] = (int64_t)d.created;
+    t["time"] = to_gd(icarus::format_time_zh(d.created));
+    t["source"] = to_gd(d.source);
+    t["chosen"] = d.chosen >= 0 ? to_gd(d.options[(size_t)d.chosen].title) : String();
+    t["chosen_key"] = d.chosen >= 0 ? to_gd(d.options[(size_t)d.chosen].key) : String();
+    t["rationale"] = to_gd(d.rationale);
+    t["outcome"] = to_gd(d.outcome);
+    t["note"] = to_gd(d.note);
+    t["options"] = (int64_t)d.options.size();
+    t["event"] = (int64_t)d.decision_event;
+    return t;
+}
+
+Array IcarusSim::decisions(int64_t after_id, int64_t max_count) const {
+    Array out;
+    if (!sim_) return out;
+    const auto& all = sim_->decisions().all();
+    size_t start = (size_t)std::max<int64_t>(1, after_id + 1);
+    if (max_count > 0 && all.size() > start + (size_t)max_count) start = all.size() - (size_t)max_count;
+    for (size_t i = start; i < all.size(); ++i) out.push_back(decision_summary(all[i]));
+    return out;
+}
+
+Dictionary IcarusSim::decision(int64_t id) const {
+    Dictionary t;
+    if (!sim_) return t;
+    const icarus::Decision* d = sim_->decisions().get((uint32_t)id);
+    if (!d) return t;
+    t = decision_summary(*d);
+    t["situation"] = to_gd(d->situation);
+    t["answered"] = (int64_t)d->answered;
+    t["cause"] = (int64_t)d->cause;
+    Array opts;
+    for (size_t i = 0; i < d->options.size(); ++i) {
+        const icarus::DecisionOption& o = d->options[i];
+        Dictionary od;
+        od["key"] = to_gd(o.key);
+        od["title"] = to_gd(o.title);
+        od["desc"] = to_gd(o.desc);
+        od["feasible"] = o.feasible;
+        od["why_not"] = to_gd(o.why_not);
+        od["chosen"] = (int)i == d->chosen;
+        od["score"] = i < d->local_scores.size() && d->local_scores[i] > -1e8f ? Variant(d->local_scores[i]) : Variant();
+        Dictionary feats;
+        for (int f = 0; f < icarus::kFeatureCount; ++f)
+            if (std::fabs(o.f[f]) > 0.01f) feats[to_gd(icarus::feature_name_zh(f))] = o.f[f];
+        od["features"] = feats;
+        opts.push_back(od);
+    }
+    t["option_list"] = opts;
+    Array props;
+    for (const icarus::Proposal& pr : d->proposals) {
+        Dictionary pd;
+        pd["girl"] = (int64_t)pr.girl;
+        if (const icarus::Character* g = sim_->agents().get(pr.girl)) pd["name"] = to_gd(g->name);
+        String title = to_gd(pr.key);
+        for (const auto& o : d->options)
+            if (o.key == pr.key) title = to_gd(o.title);
+        pd["option"] = title;
+        pd["reason"] = to_gd(pr.reason);
+        pd["adopted"] = pr.adopted;
+        props.push_back(pd);
+    }
+    t["proposals"] = props;
+    return t;
+}
+
+int64_t IcarusSim::last_decision_id() const {
+    if (!sim_) return 0;
+    return (int64_t)sim_->decisions().all().size() - 1;
+}
+
+String IcarusSim::decision_mode() const { return sim_ ? to_gd(sim_->decisions().mode) : String(); }
+
+void IcarusSim::set_decision_mode(const String& mode, int64_t budget_per_day, int64_t deadline_ticks) {
+    if (!sim_) return;
+    icarus::Decisions& d = sim_->decisions();
+    d.mode = to_std(mode);
+    if (budget_per_day > 0) d.remote_budget_per_day = (int)budget_per_day;
+    if (deadline_ticks > 0) d.remote_deadline = (icarus::Tick)deadline_ticks;
+}
+
+PackedInt32Array IcarusSim::awaiting_remote() const {
+    PackedInt32Array out;
+    if (!sim_) return out;
+    for (uint32_t id : sim_->decisions().awaiting_remote()) out.push_back((int32_t)id);
+    return out;
+}
+
+Dictionary IcarusSim::remote_request(int64_t id) const {
+    Dictionary t;
+    if (!sim_) return t;
+    const icarus::Decisions& d = sim_->decisions();
+    t["system"] = to_gd(d.remote_system_prompt((uint32_t)id));
+    t["user"] = to_gd(d.remote_user_prompt((uint32_t)id));
+    t["schema"] = to_gd(d.remote_schema((uint32_t)id).dump());
+    return t;
+}
+
+Dictionary IcarusSim::submit_decision(int64_t id, const String& key, const String& rationale, const String& source) {
+    Dictionary t;
+    if (!sim_) return t;
+    std::string err;
+    bool ok = sim_->decisions().submit((uint32_t)id, to_std(key), to_std(rationale), to_std(source), err);
+    t["ok"] = ok;
+    t["error"] = to_gd(err);
+    return t;
+}
+
+void IcarusSim::remote_failed(int64_t id, const String& why) {
+    if (sim_) sim_->decisions().remote_failed((uint32_t)id, to_std(why));
+}
+
+String IcarusSim::export_decision_log() const { return sim_ ? to_gd(sim_->decisions().export_log().dump(1)) : String(); }
+
+bool IcarusSim::load_decision_replay(const String& json_text) {
+    if (!sim_) return false;
+    try {
+        sim_->decisions().load_replay(icarus::Json::parse(to_std(json_text)));
+        return true;
+    } catch (const std::exception& e) {
+        last_error_ = to_gd(e.what());
+        return false;
+    }
+}
+
+}  // namespace godot

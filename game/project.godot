@@ -22,6 +22,7 @@ window/stretch/aspect="expand"
 [autoload]
 
 Game="*res://scripts/game.gd"
+Jev="*res://scripts/jev_client.gd"
 
 [gui]
 

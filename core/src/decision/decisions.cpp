@@ -216,6 +216,8 @@ void Decisions::girls_politics(Polity& p) {
         g.mana = std::min(1.0f, g.mana + 0.02f * regen);
     }
     if (ruler->girl) {
+        ruler->girl->stance = "loyal";
+        ruler->girl->loyalty = 1.0f;
         float regen = rd ? rd->flt("mana_regen", 1.0f) : 1.0f;
         ruler->girl->mana = std::min(1.0f, ruler->girl->mana + 0.02f * regen);
     }

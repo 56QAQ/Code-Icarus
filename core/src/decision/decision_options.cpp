@@ -177,6 +177,9 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
     auto add_spell = [&](const std::string& effect, const std::string& key, std::initializer_list<F> feats) {
         const Json* sp = castable(*ctx_.reg, girl, effect);
         if (!sp) return;
+        // Magic transforms real matter: no grain, no feast; no growing crops, nothing to hasten.
+        if (effect == "feast" && public_count(ctx_, p.id, "grain") < 6) return;
+        if (effect == "grow" && ctx_.farming->stats_polity(p.id).growing < 4) return;
         DecisionOption o = make(key, "施展魔法「" + sp->str("name") + "」", sp->str("desc"), feats, act("spell"));
         o.action.set("effect", effect);
         o.action.set("mana", sp->flt("mana", 0.3f));
@@ -432,7 +435,7 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         O.push_back(o);
     }
     const Json* sp = castable(*ctx_.reg, girl, "feast");
-    if (sp) {
+    if (sp && public_count(ctx_, p.id, "grain") >= 6) {
         DecisionOption o = make("cast_feast", "举办宴会：施展「" + sp->str("name") + "」", sp->str("desc"),
                                 {{kWelfare, 0.7f}, {kCooperation, 0.3f}, {kFrugality, -0.3f}}, act("spell"));
         o.action.set("effect", "feast");
@@ -1055,6 +1058,7 @@ void Decisions::execute(Decision& d) {
         if (g->girl) {
             g->girl->role = "ruler";
             g->girl->loyalty = 1.0f;
+            g->girl->stance = "loyal";
         }
         ctx_.society->set_ruler(nid, g->id, "secession", cause);
         Polity* np = ctx_.society->polity(nid);
@@ -1168,6 +1172,8 @@ void Decisions::execute(Decision& d) {
             EventId ce = ctx_.chron->emit(std::move(e));
             ctx_.society->set_ruler(p->id, g->id, "coup", ce);
             g->girl->loyalty = 1.0f;
+            g->girl->stance = "loyal";
+            g->girl->role = "ruler";
             if (oldc && oldc->girl) {
                 oldc->girl->role = "none";
                 oldc->girl->loyalty = -0.8f;

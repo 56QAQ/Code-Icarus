@@ -24,6 +24,9 @@ var _bottom_center: VBoxContainer
 var _bottom_right: VBoxContainer
 var civ_card: CivCard
 var selection: SelectionCard
+var council: CouncilPanel
+var _council_wrap: CenterContainer
+var _thinking: HBoxContainer
 
 const TOOLS := [
 	{"id": "inspect", "icon": "inspect", "label": "观察", "tip": "查看方块、地格与居民"},
@@ -51,6 +54,7 @@ func _ready() -> void:
 	_build_dock()
 	_build_hover_card()
 	_build_toasts()
+	_build_council()
 	Game.speed_changed.connect(_on_speed_changed)
 	Game.tool_changed.connect(_on_tool_changed)
 	Game.event_logged.connect(_on_event)
@@ -128,6 +132,15 @@ func _build_time_pill() -> void:
 	_time_label.custom_minimum_size = Vector2(190, 0)
 	_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	row.add_child(_time_label)
+	_thinking = HBoxContainer.new()
+	_thinking.add_theme_constant_override("separation", 2)
+	var th_ic := UIIcon.new("think", 16)
+	th_ic.color = UITheme.MAGIC
+	_thinking.add_child(th_ic)
+	_thinking.add_child(UITheme.label("思考中", 12, UITheme.MAGIC))
+	_thinking.tooltip_text = "一位魔法少女正在等待 Claude 的答复，时间暂时停驻"
+	_thinking.visible = false
+	row.add_child(_thinking)
 	row.add_child(VSeparator.new())
 
 	_pause_button = _icon_button("pause", "暂停 / 继续（空格）")
@@ -183,6 +196,8 @@ func _build_status() -> void:
 	selection.closed.connect(func() -> void:
 		selection.visible = false
 		Game.select({}))
+	civ_card.council_requested.connect(func() -> void: toggle_council())
+	selection.decision_requested.connect(func(id: int) -> void: toggle_council(id))
 
 
 func _process(_delta: float) -> void:
@@ -192,6 +207,7 @@ func _process(_delta: float) -> void:
 	_time_label.text = ci.get("text", "")
 	var night: bool = ci.get("night", false)
 	_day_icon.set_icon("moon" if night else "sun")
+	_thinking.visible = Game.holding
 
 
 # ------------------------------------------------------------------ bottom: tool dock
@@ -338,6 +354,33 @@ func show_hover(info: Dictionary) -> void:
 	_hover_label.text = t
 
 
+# ------------------------------------------------------------------ council overlay
+
+func _build_council() -> void:
+	_council_wrap = CenterContainer.new()
+	_council_wrap.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_council_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_council_wrap)
+	council = CouncilPanel.new()
+	council.sim = Game.sim
+	council.visible = false
+	_council_wrap.add_child(council)
+	get_viewport().size_changed.connect(_size_council)
+	_size_council()
+
+
+func _size_council() -> void:
+	var vp := get_viewport_rect().size
+	council.custom_minimum_size = Vector2(minf(1040.0, vp.x * 0.9), minf(660.0, vp.y * 0.82))
+
+
+func toggle_council(id: int = 0) -> void:
+	if council.visible and id == 0:
+		council.visible = false
+	else:
+		council.open_at(id)
+
+
 # ------------------------------------------------------------------ toasts
 
 func _build_toasts() -> void:
@@ -368,6 +411,17 @@ func _on_event(ev: Dictionary) -> void:
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.custom_minimum_size = Vector2(300, 0)
 	v.add_child(l)
+	var data = ev.get("data", {})
+	if ev.get("type", "") == "decision_made" and typeof(data) == TYPE_DICTIONARY and data.has("decision"):
+		# Decision toasts open the council at that decision.
+		var did := int(data["decision"])
+		var hint := UITheme.label("点击查看她的考量 →", 11, UITheme.MAGIC)
+		v.add_child(hint)
+		card.mouse_filter = Control.MOUSE_FILTER_STOP
+		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		card.gui_input.connect(func(e: InputEvent) -> void:
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+				toggle_council(did))
 	_toasts.add_child(card)
 	while _toasts.get_child_count() > 5:
 		_toasts.get_child(0).queue_free()

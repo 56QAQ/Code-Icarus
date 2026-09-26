@@ -6,6 +6,7 @@ extends PanelContainer
 signal closed
 signal focus_requested(pos: Vector3)
 signal event_requested(id: int)
+signal decision_requested(id: int)
 
 var sim: IcarusSim
 var kind := ""        # "character" | "building" | "cube"
@@ -81,6 +82,7 @@ func show_character(id: int) -> void:
 	var info: Dictionary = sim.character_info(id)
 	var tabs := [["status", "状态"], ["why", "缘由"], ["traits", "性格"], ["social", "关系"], ["memory", "记忆"]]
 	if info.get("girl", false):
+		tabs.append(["politics", "政见"])
 		tabs.append(["magic", "魔法"])
 	_set_tabs(tabs)
 	visible = true
@@ -259,6 +261,39 @@ func _refresh_character() -> void:
 				var who := ("（%s）" % m["subject"]) if m.has("subject") else ""
 				var c := UITheme.GOOD if float(m["valence"]) > 0.0 else UITheme.BAD
 				_line("%s  %s%s" % [m["time"], m["text"], who], 12, c)
+		"politics":
+			if girl.is_empty():
+				return
+			var stances := {"loyal": ["忠诚", UITheme.GOOD], "critical": ["有所不满", UITheme.WARN], "defiant": ["离心", UITheme.WARN], "rebel": ["反叛", UITheme.BAD]}
+			var st: Array = stances.get(girl.get("stance", ""), [girl.get("stance", ""), UITheme.TEXT])
+			if girl.get("role", "") == "ruler":
+				_line("立场：一国之主", 14, UITheme.ACCENT)
+			else:
+				_line("立场：%s" % st[0], 14, st[1])
+				_bar("忠诚", girl["loyalty"], true)
+			_bar("民望", girl.get("popular_support", 0.0), true)
+			_bar("经验", clampf(float(girl["xp"]) / maxf(1.0, float(girl.get("xp_next", 40.0))), 0.0, 1.0), false, "%d/%d" % [int(girl["xp"]), int(girl.get("xp_next", 40.0))])
+			if girl.has("grudge"):
+				_line("心怀芥蒂：%s" % girl["grudge"], 13, UITheme.BAD)
+			_section("她的决策")
+			var ids: PackedInt32Array = girl.get("decisions", PackedInt32Array())
+			if ids.is_empty():
+				_line("尚未做出重大决定", 13, UITheme.TEXT_DIM)
+			for i in range(ids.size() - 1, maxi(-1, ids.size() - 7), -1):
+				var dd: Dictionary = sim.decision(ids[i])
+				if dd.is_empty():
+					continue
+				var b := Button.new()
+				b.focus_mode = Control.FOCUS_NONE
+				b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+				b.clip_text = true
+				b.custom_minimum_size = Vector2(0, 26)
+				b.add_theme_font_size_override("font_size", 12)
+				b.text = "%s  %s → %s" % [String(dd["time"]).get_slice("·", 1).strip_edges(), dd["topic"], dd["chosen"]]
+				b.tooltip_text = String(dd.get("rationale", ""))
+				var did := int(ids[i])
+				b.pressed.connect(func() -> void: decision_requested.emit(did))
+				_body.add_child(b)
 		"magic":
 			if girl.is_empty():
 				return

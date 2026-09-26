@@ -4,12 +4,15 @@ extends PanelContainer
 ## click to expand into an overview of magical girls, policies and trends.
 
 signal girl_selected(id: int)
+signal council_requested
 
 var sim: IcarusSim
 var polity_id := 1
 var expanded := false
 
 var _title: Label
+var _switcher: HBoxContainer
+var _switch_sig := ""
 var _chips: HBoxContainer
 var _badges: HBoxContainer
 var _detail: VBoxContainer
@@ -31,6 +34,13 @@ func _ready() -> void:
 	head.add_child(crown)
 	_title = UITheme.label("—", 16, UITheme.TEXT, true)
 	head.add_child(_title)
+	var council := Button.new()
+	council.text = "议事录"
+	council.focus_mode = Control.FOCUS_NONE
+	council.tooltip_text = "魔法少女的决策记录（J）"
+	council.add_theme_font_size_override("font_size", 12)
+	council.pressed.connect(func() -> void: council_requested.emit())
+	head.add_child(council)
 	var toggle := Button.new()
 	toggle.text = "详情"
 	toggle.focus_mode = Control.FOCUS_NONE
@@ -40,6 +50,11 @@ func _ready() -> void:
 		toggle.text = "收起" if expanded else "详情"
 		_refresh())
 	head.add_child(toggle)
+	# Polity switcher: appears once the island holds more than one civilisation.
+	_switcher = HBoxContainer.new()
+	_switcher.add_theme_constant_override("separation", 4)
+	_switcher.visible = false
+	col.add_child(_switcher)
 	_chips = HBoxContainer.new()
 	_chips.add_theme_constant_override("separation", 12)
 	col.add_child(_chips)
@@ -80,9 +95,44 @@ func _badge(text: String, color: Color) -> void:
 	_badges.add_child(p)
 
 
+func _refresh_switcher() -> void:
+	var ps: Array = sim.polities()
+	var sig := ""
+	for p in ps:
+		sig += "%d:%s|" % [p["id"], p["name"]]
+	sig += str(polity_id)
+	if sig == _switch_sig:
+		return
+	_switch_sig = sig
+	for c in _switcher.get_children():
+		c.queue_free()
+	_switcher.visible = ps.size() > 1
+	if ps.size() <= 1:
+		return
+	for p in ps:
+		var pid: int = p["id"]
+		var b := Button.new()
+		b.focus_mode = Control.FOCUS_NONE
+		b.toggle_mode = true
+		b.button_pressed = pid == polity_id
+		b.text = "    " + String(p["name"])
+		b.add_theme_font_size_override("font_size", 12)
+		b.tooltip_text = String(p["title"])
+		var dot := UIIcon.new("dot", 12)
+		dot.color = p["color"]
+		dot.position = Vector2(6, 7)
+		b.add_child(dot)
+		b.pressed.connect(func() -> void:
+			polity_id = pid
+			_switch_sig = ""
+			_refresh())
+		_switcher.add_child(b)
+
+
 func _refresh() -> void:
 	if sim == null or not sim.has_game():
 		return
+	_refresh_switcher()
 	var d: Dictionary = sim.polity_info(polity_id)
 	if d.is_empty():
 		_title.text = "无主之地"

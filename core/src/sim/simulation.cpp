@@ -254,6 +254,24 @@ EventId Simulation::apply_admin(const AdminCommand& cmd) {
         chronicle_.emit(std::move(f));
         return id;
     }
+    if (cmd.type == "whisper") {
+        // A voice in a magical girl's ear: nudges her next decision toward an option.
+        EntityId gid = (EntityId)p.num("girl");
+        std::string opt = p.str("option");
+        Character* g = agents_.get(gid);
+        if (!g || !g->is_girl() || opt.empty()) {
+            e.text = "低语没有找到对象";
+            e.severity = 0;
+            return chronicle_.emit(std::move(e));
+        }
+        e.actor = gid;
+        e.polity = g->polity;
+        e.severity = 2;
+        e.text = strfmt("管理员向%s低语：「%s」", g->name.c_str(), p.str("label", opt).c_str());
+        EventId id = chronicle_.emit(std::move(e));
+        decisions_.whisper(gid, opt, id);
+        return id;
+    }
     e.text = "未知的管理员指令: " + cmd.type;
     e.severity = 0;
     return chronicle_.emit(std::move(e));

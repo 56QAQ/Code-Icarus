@@ -2,7 +2,7 @@ extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}] [--hide-ui] [--frames N]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--hide-ui] [--frames N]
 
 var renderer: WorldRenderer
 var chars: CharacterRenderer
@@ -53,16 +53,27 @@ func _ready() -> void:
 	hud.civ_card.girl_selected.connect(func(id: int) -> void:
 		_select_character(id)
 		rig.focus(chars.position_of(id), 40.0))
-	if _cli.has("select"):
-		_select_character(int(_cli["select"]))
 	if _cli.has("ticks"):
 		Game.sim.step(int(_cli["ticks"]))
 	for cmd in _cli.get("admin", []):
 		var parts: PackedStringArray = String(cmd).split(":", true, 1)
 		var params: Variant = JSON.parse_string(parts[1]) if parts.size() > 1 else {}
+		if parts[0] == "break_bridge":
+			# Scenario shortcut: blow out the middle of the bridge deck.
+			var f: Dictionary = info["features"]
+			var mid: Vector3i = (Vector3i(f["bridge_a"]) + Vector3i(f["bridge_b"])) / 2
+			Game.sim.admin("dig", {"pos": [mid.x, mid.y, mid.z], "radius": 4.5})
+			continue
 		Game.sim.admin(parts[0], params if params is Dictionary else {})
 	if _cli.has("after-ticks"):
 		Game.sim.step(int(_cli["after-ticks"]))
+	if _cli.has("tab"):
+		hud.selection._tab = _cli["tab"]
+	if _cli.has("select"):
+		_select_character(int(_cli["select"]))
+	if _cli.has("council"):
+		var cid := int(_cli["council"]) if String(_cli["council"]).is_valid_int() else 0
+		hud.toggle_council(cid)
 	if _cli.has("shot"):
 		_shot_path = _cli["shot"]
 		_shot_frames = int(_cli.get("frames", "20"))
@@ -256,7 +267,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_4:
 				Game.set_speed(20.0)
 			KEY_ESCAPE:
-				Game.set_tool("inspect")
+				if hud.council.visible:
+					hud.council.visible = false
+				else:
+					Game.set_tool("inspect")
+			KEY_J:
+				hud.toggle_council()
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_apply_tool()
 

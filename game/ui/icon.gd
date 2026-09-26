@@ -65,9 +65,10 @@ func _draw() -> void:
 		"water":
 			var d := PackedVector2Array()
 			d.append(P.call(0.5, 0.14))
+			# Round bottom: from the upper-left of the circle, down around the bottom, to the upper-right.
 			for i in 17:
-				var a := PI * 0.15 + float(i) / 16.0 * PI * 1.7
-				d.append(P.call(0.5 + cos(a + PI * 0.5) * 0.24, 0.62 + sin(a + PI * 0.5) * 0.24))
+				var a := PI + 0.4 - float(i) / 16.0 * (PI + 0.8)
+				d.append(P.call(0.5 + cos(a) * 0.24, 0.62 + sin(a) * 0.24))
 			draw_colored_polygon(d, color)
 		"save":
 			draw_rect(Rect2(P.call(0.2, 0.2), Vector2(0.6, 0.6) * s), color, false, w)
@@ -134,5 +135,14 @@ func _draw() -> void:
 			for i in 4:
 				var a := float(i) * TAU / 4.0 + PI / 4.0
 				draw_line(P.call(0.5 + cos(a) * 0.18, 0.5 + sin(a) * 0.18), P.call(0.5 + cos(a) * 0.42, 0.5 + sin(a) * 0.42), color, w, true)
+		"scroll":
+			draw_rect(Rect2(P.call(0.24, 0.18), Vector2(0.52, 0.64) * s), Color(color, 0.18))
+			draw_rect(Rect2(P.call(0.24, 0.18), Vector2(0.52, 0.64) * s), color, false, w)
+			for i in 3:
+				var y := 0.34 + float(i) * 0.15
+				draw_line(P.call(0.34, y), P.call(0.66 if i < 2 else 0.54, y), color, w, true)
+		"think":
+			for i in 3:
+				draw_circle(P.call(0.26 + float(i) * 0.24, 0.52), 0.07 * s, Color(color, 0.45 + 0.25 * float(i)))
 		_:
 			draw_circle(P.call(0.5, 0.5), 0.18 * s, color)

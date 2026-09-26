@@ -1,4 +1,4 @@
-# Headless smoke test: verifies the GDExtension loads and the kernel runs.
+# Headless smoke test: the GDExtension loads, a village game starts and advances.
 # Run: godot --headless --path game --script res://tests/smoke.gd
 extends SceneTree
 
@@ -18,10 +18,13 @@ func _init() -> void:
 	if not sim.load_rules(files):
 		push_error("load_rules failed: " + sim.last_error())
 		ok = false
-	elif not sim.new_world(1):
-		push_error("new_world failed: " + sim.last_error())
+	elif not sim.new_game({"seed": 1}):
+		push_error("new_game failed: " + sim.last_error())
 		ok = false
 	else:
-		print("world: ", sim.world_stats())
+		sim.step(200)
+		var p: Dictionary = sim.polity_info(1)
+		print("polity: ", p.get("title", "?"), " pop ", p["stats"]["population"], " tick ", sim.get_tick())
+		ok = int(p["stats"]["population"]) > 0 and sim.characters().size() > 0
 	print("SMOKE ", "PASS" if ok else "FAIL")
 	quit(0 if ok else 1)

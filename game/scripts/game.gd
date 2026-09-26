@@ -21,6 +21,8 @@ var current_tool := "inspect"
 var tool_params := {"radius": 3.0, "material": "stone"}
 var selection := {}
 
+var holding := false  # time held while a magical girl awaits a remote answer
+
 var _tick_accum := 0.0
 var _last_event_id := 0
 var _rules_loaded := false
@@ -87,7 +89,8 @@ func admin(type: String, params: Dictionary) -> void:
 func _process(delta: float) -> void:
 	if sim == null or not sim.has_game():
 		return
-	if not paused:
+	holding = Jev.should_hold()
+	if not paused and not holding:
 		_tick_accum += delta * TICKS_PER_SECOND * speed
 		var want := int(_tick_accum)
 		if want > 0:

@@ -61,6 +61,19 @@ public:
     // Commands.
     void admin(const String& type, const Dictionary& params);
 
+    // Decisions (Jev pipeline).
+    Array decisions(int64_t after_id, int64_t max_count) const;  // summaries, newest last
+    Dictionary decision(int64_t id) const;                       // full record
+    int64_t last_decision_id() const;
+    String decision_mode() const;
+    void set_decision_mode(const String& mode, int64_t budget_per_day, int64_t deadline_ticks);
+    PackedInt32Array awaiting_remote() const;
+    Dictionary remote_request(int64_t id) const;                 // {system, user, schema (json text)}
+    Dictionary submit_decision(int64_t id, const String& key, const String& rationale, const String& source);
+    void remote_failed(int64_t id, const String& why);
+    String export_decision_log() const;
+    bool load_decision_replay(const String& json_text);
+
     // Chronicle.
     int64_t last_event_id() const;
     Array events_since(int64_t after_id, int64_t max_count) const;
@@ -78,6 +91,7 @@ protected:
 
 private:
     Dictionary event_to_dict(const icarus::Event& e) const;
+    Dictionary decision_summary(const icarus::Decision& d) const;
 
     std::unique_ptr<icarus::Registry> reg_;
     std::unique_ptr<icarus::Simulation> sim_;
