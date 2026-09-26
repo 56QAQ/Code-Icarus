@@ -8,6 +8,12 @@ ARGUMENTS.setdefault("disable_exceptions", "no")
 
 env = SConscript("../thirdparty/godot-cpp/SConstruct")
 
+# godot-cpp archives ~1000 objects in one command; with a long checkout path that
+# exceeds the 128 KB single-argument limit of `sh -c`. Pass the list in a temp file.
+if not env.get("is_msvc", False):
+    env["ARCOM"] = "${TEMPFILE('$AR $ARFLAGS $TARGET $SOURCES', '$ARCOMSTR')}"
+    env["MAXLINELENGTH"] = 32000
+
 env.Append(CPPPATH=["src/", "../core/include/"])
 # The kernel is written against C++20 (godot-cpp itself only asks for C++17).
 env["CXXFLAGS"] = [f for f in env["CXXFLAGS"] if f not in ("-std=c++17", "/std:c++17")]
