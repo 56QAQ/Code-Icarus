@@ -1,7 +1,8 @@
 extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
-##   godot --path game -- --shot out.png [--seed N | --load FILE] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
+##   godot --path game -- --shot out.png [--seed N | --load FILE] [--layout classic|continent] [--scenario key]
+##        [--ticks N] [--cam x,y,z,yaw,pitch,dist]
 ##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
 ##        [--hide-ui] [--frames N] [--late-admin type:{json} [--late-frames N] [--late-ticks N] [--late-run]]
 
@@ -55,7 +56,12 @@ func _ready() -> void:
 	var interactive := _cli.is_empty()
 	Game.autosave = interactive
 	var seed := int(_cli.get("seed", "1")) if not interactive else randi_range(1, 999999)
-	if not Game.start_new_game({"seed": seed}):
+	var config := {"seed": seed}
+	if _cli.has("layout"):
+		config["layout"] = String(_cli["layout"])
+	if _cli.has("scenario"):
+		config["scenario"] = String(_cli["scenario"])
+	if not Game.start_new_game(config):
 		push_error("could not start game")
 		return
 	# A saved game (e.g. written by `icarus_cli run --save`) to look at instead.
@@ -265,6 +271,7 @@ func _build_brush() -> void:
 
 
 func _process(delta: float) -> void:
+	renderer.focus = rig.target
 	_update_daylight()
 	if _shot_path != "":
 		_screenshot_step()
@@ -411,6 +418,7 @@ func _on_world_ready() -> void:
 	var info: Dictionary = Game.sim.world_info()
 	var v: Vector3i = info["features"]["village"]
 	rig.set_view(Vector3(v) + Vector3(0, 2, 0), 35.0, 48.0, 150.0)
+	renderer.focus = Vector3(v)
 	renderer.setup(Game.sim, rig.camera)
 	fx.setup(Game.sim, rig.camera)
 	chars.setup(Game.sim, rig.camera)

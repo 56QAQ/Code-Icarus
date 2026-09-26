@@ -1,5 +1,6 @@
 // icarus_cli: headless runner for the Code:Icarus simulation kernel.
-//   icarus_cli map  --seed N --out map.png          top-down map of the generated world
+//   icarus_cli map  --seed N [--layout continent] --out map.png   top-down map of the generated world
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -12,6 +13,7 @@
 #include "icarus/util/image.h"
 #include "icarus/util/log.h"
 #include "icarus/sim/simulation.h"
+#include "icarus/render/mesher.h"
 #include "icarus/world/world.h"
 
 using namespace icarus;
@@ -26,6 +28,7 @@ struct Args {
     int scale = 1;
     double days = 1.0;
     std::string scenario = "village";
+    std::string layout = "classic";  // classic | continent
     std::string save;
     bool verbose = false;
     int every = 1;                 // print stats every N hours
@@ -47,6 +50,7 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--scale") a.scale = std::stoi(next());
         else if (k == "--days") a.days = std::stod(next());
         else if (k == "--scenario") a.scenario = next();
+        else if (k == "--layout" || k == "--island") a.layout = next();
         else if (k == "--save") a.save = next();
         else if (k == "-v" || k == "--verbose") a.verbose = true;
         else if (k == "--every") a.every = std::max(1, std::stoi(next()));
@@ -62,8 +66,7 @@ int cmd_map(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
     World w(reg);
-    WorldConfig cfg;
-    cfg.seed = a.seed;
+    WorldConfig cfg = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
     w.init(cfg);
     const int W = w.size_x(), D = w.size_z();
     Image img(W, D);
@@ -86,7 +89,10 @@ int cmd_map(const Args& a) {
             }
             if (top >= 0) {
                 float k = 0.55f + 0.45f * (float)(top - 100) / 110.0f;
-                col = shade_color(col, clampv(k, 0.35f, 1.25f));
+                // Hill shading: light from the north-west.
+                ColumnInfo nw = w.gen().column(x - 1, z - 1);
+                if (nw.land) k *= clampv(1.0f + 0.07f * (float)(ci.top - nw.top), 0.6f, 1.4f);
+                col = shade_color(col, clampv(k, 0.3f, 1.35f));
             }
             img.set(x, z, col);
         }
@@ -98,10 +104,16 @@ int cmd_map(const Args& a) {
     };
     mark(f.village, 0xff3030);
     mark(f.farms, 0xffd000);
-    mark(f.bridge_a, 0xffffff);
-    mark(f.bridge_b, 0xffffff);
-    mark(f.spring, 0x00ffff);
-    mark(f.ravine_end, 0xff00ff);
+    if (cfg.layout == WorldLayout::Classic) {
+        mark(f.bridge_a, 0xffffff);
+        mark(f.bridge_b, 0xffffff);
+        mark(f.ravine_end, 0xff00ff);
+    }
+    for (const Site& s : f.sites) {
+        mark(s.center, 0xff3030);
+        mark(s.farms, 0xffd000);
+    }
+    for (const Vec3i& sp : f.springs) mark(sp, 0x00ffff);
     if (!write_png(a.out, img)) {
         std::fprintf(stderr, "cannot write %s\n", a.out.c_str());
         return 1;
@@ -112,6 +124,36 @@ int cmd_map(const Args& a) {
     std::printf("village=%s farms=%s lake=%s spring=%s bridge=%s->%s mountain=%s\n", f.village.str().c_str(),
                 f.farms.str().c_str(), f.lake.str().c_str(), f.spring.str().c_str(), f.bridge_a.str().c_str(),
                 f.bridge_b.str().c_str(), f.mountain.str().c_str());
+    for (const Site& s : f.sites)
+        std::printf("site %s (%s) farms=%s water=%s\n", s.center.str().c_str(), biome_name_zh(s.biome),
+                    s.farms.str().c_str(), s.water.str().c_str());
+    // Biome census over land columns.
+    int counts[(int)Biome::Count] = {0};
+    int land = 0;
+    for (int z = 0; z < D; z += 2)
+        for (int x = 0; x < W; x += 2) {
+            ColumnInfo ci = w.gen().column(x, z);
+            if (!ci.land) continue;
+            ++land;
+            counts[(int)ci.biome]++;
+        }
+    std::printf("land columns: %d (x4)\n", land);
+    {
+        int wet = 0, wet_water = 0, hist[8] = {0};
+        for (int z = 0; z < D; z += 2)
+            for (int x = 0; x < W; x += 2) {
+                ColumnInfo ci = w.gen().column(x, z);
+                if (!ci.land || ci.biome != Biome::Wetland) continue;
+                ++wet;
+                if (ci.water_top >= 0) ++wet_water;
+                hist[std::min(7, ci.moist / 32)]++;
+            }
+        std::printf("wetland columns %d, with water %d; moisture:", wet, wet_water);
+        for (int i = 0; i < 8; ++i) std::printf(" %d", hist[i]);
+        std::printf("\n");
+    }
+    for (int b = 1; b < (int)Biome::Count; ++b)
+        if (counts[b]) std::printf("  %-10s %5.1f%%\n", biome_key((Biome)b), 100.0 * counts[b] / std::max(1, land));
     return 0;
 }
 
@@ -178,12 +220,46 @@ std::vector<Scheduled> parse_admin(const Args& a, Simulation& sim) {
     return out;
 }
 
+// Generates and meshes every cell the renderer would ask for, and reports the cost.
+int cmd_meshbench(const Args& a) {
+    Registry reg;
+    reg.load_from_dir(a.data);
+    World w(reg);
+    w.init(WorldConfig::for_layout(layout_from_key(a.layout), a.seed));
+    Mesher mesher(w);
+    CellMesh out;
+    int cells = 0, nonempty = 0;
+    size_t verts = 0;
+    double gen_ms = 0, mesh_ms = 0;
+    for (int y = 0; y < w.cells_y(); ++y)
+        for (int z = 0; z < w.cells_z(); ++z)
+            for (int x = 0; x < w.cells_x(); ++x) {
+                const Vec3i c{x, y, z};
+                if (!w.gen().cell_maybe_nonempty(c)) continue;
+                ++cells;
+                auto t0 = std::chrono::steady_clock::now();
+                w.peek(Vec3i{x * kCellSize, y * kCellSize, z * kCellSize});
+                auto t1 = std::chrono::steady_clock::now();
+                mesher.build_cell(c, out);
+                auto t2 = std::chrono::steady_clock::now();
+                gen_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+                mesh_ms += std::chrono::duration<double, std::milli>(t2 - t1).count();
+                const size_t v = out.opaque.vertex_count() + out.water.vertex_count() + out.foliage.vertex_count() +
+                                 out.decor.vertex_count() + out.crops.vertex_count();
+                if (v) ++nonempty;
+                verts += v;
+            }
+    std::printf("cells %d (with geometry %d), vertices %zu, generate %.0f ms, mesh %.0f ms\n", cells, nonempty, verts,
+                gen_ms, mesh_ms);
+    return 0;
+}
+
 int cmd_run(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
     Simulation sim(reg);
     GameConfig cfg;
-    cfg.world.seed = a.seed;
+    cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
     cfg.scenario = a.scenario;
     sim.new_game(cfg);
     std::vector<Scheduled> sched = parse_admin(a, sim);
@@ -303,7 +379,7 @@ int cmd_experiment(const Args& a) {
     for (u64 seed : parse_seeds(a.seeds)) {
         Simulation sim(reg);
         GameConfig cfg;
-        cfg.world.seed = seed;
+        cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), seed);
         cfg.scenario = a.scenario;
         sim.new_game(cfg);
         std::vector<Scheduled> sched = parse_admin(a, sim);
@@ -438,6 +514,7 @@ int main(int argc, char** argv) {
     Args a = parse_args(argc, argv);
     try {
         if (a.cmd == "map") return cmd_map(a);
+        if (a.cmd == "meshbench") return cmd_meshbench(a);
         if (a.cmd == "run") return cmd_run(a);
         if (a.cmd == "experiment") return cmd_experiment(a);
     } catch (const std::exception& e) {

@@ -19,6 +19,7 @@ Vec3i json_vec3i(const Json& j) {
 Json config_to_json(const GameConfig& c) {
     Json j = Json::object();
     Json w = Json::object();
+    w.set("layout", layout_key(c.world.layout));
     w.set("seed", (double)c.world.seed);
     w.set("cells_x", c.world.cells_x);
     w.set("cells_y", c.world.cells_y);
@@ -43,6 +44,7 @@ Json config_to_json(const GameConfig& c) {
 GameConfig config_from_json(const Json& j) {
     GameConfig c;
     const Json& w = j["world"];
+    c.world.layout = layout_from_key(w.str("layout", "classic"));
     c.world.seed = (u64)w.num("seed", 1);
     c.world.cells_x = w.integer("cells_x", 32);
     c.world.cells_y = w.integer("cells_y", 8);
@@ -85,6 +87,7 @@ Simulation::Simulation(const Registry& reg)
     ctx_.agents = &agents_;
     ctx_.society = &society_;
     ctx_.decisions = &decisions_;
+    ctx_.ecology = &ecology_;
     buildings_.load_defs(reg);
     buildings_.set_physics(&physics_);
     farming_.irrigation_bonus = [this](u16 polity) { return (int)society_.tech_effect(polity, "irrigation_radius"); };
@@ -115,7 +118,8 @@ void Simulation::new_game(const GameConfig& cfg) {
     econ_.set_now(tick_);
     admin_queue_.clear();
     const IslandFeatures& f = world_.gen().features();
-    if (f.spring.y > 0) physics_.add_spring(f.spring);
+    for (const Vec3i& sp : f.springs)
+        if (sp.y > 0) physics_.add_spring(sp);
     Event e;
     e.type = EventType::Info;
     e.severity = 3;

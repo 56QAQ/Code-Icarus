@@ -62,6 +62,9 @@ public:
 
     // Job generation (fields, piles, sites, kitchens...).
     void generate_jobs();
+    // A wild food plant in column (x, z) within reach from the ground: a bush, grain,
+    // mushrooms on the surface, or fruit in the lowest layers of a crown.
+    bool food_plant_at(int x, int z, Vec3i& out);
 
     AgentTuning tune;
     // Diagnostics (not saved): recent failed routes (who, from, to).

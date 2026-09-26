@@ -68,6 +68,27 @@ void Registry::load(const std::map<std::string, std::string>& files) {
     core_.stone_brick = need("stone_brick");
     core_.glass = need("glass");
     core_.magma = need("magma");
+    auto opt = [&](const char* key) -> MatId { return has_mat(key) ? mat_id(key) : core_.air; };
+    core_.snow = opt("snow");
+    core_.ice = opt("ice");
+    core_.mud = opt("mud");
+    core_.red_sand = opt("red_sand");
+    core_.sandstone = opt("sandstone");
+    core_.granite = opt("granite");
+    core_.limestone = opt("limestone");
+    core_.flint = opt("flint");
+    core_.dry_grass = opt("dry_grass");
+    core_.pine_log = opt("pine_log");
+    core_.pine_leaves = opt("pine_leaves");
+    core_.birch_log = opt("birch_log");
+    core_.birch_leaves = opt("birch_leaves");
+    core_.fruit_leaves = opt("fruit_leaves");
+    core_.cactus = opt("cactus");
+    core_.reeds = opt("reeds");
+    core_.wild_grain = opt("wild_grain");
+    core_.mushroom = opt("mushroom");
+    core_.herb_plant = opt("herb_plant");
+    core_.sapling = opt("sapling");
 }
 
 void Registry::load_from_dir(const std::string& dir) {
@@ -163,12 +184,24 @@ void Registry::parse_materials(const Json& j) {
         m.fertile = e.boolean("fertile", false);
         m.diggable = e.boolean("diggable", true);
         m.render_transparent = e.boolean("transparent", !m.opaque);
+        m.trunk = e.boolean("trunk", false);
+        m.foliage = e.boolean("foliage", false);
+        m.forage_key = e.str("forage");
+        m.forage_count = e.integer("forage_count", m.forage_key.empty() ? 0 : 1);
+        m.forage_to_key = e.str("forage_to", "air");
+        m.sprite = e.str("sprite");
         mat_index_[m.key] = m.id;
         mats_.push_back(m);
     }
+    int sprites = 0;
     for (auto& m : mats_) {
         m.burn_to = mat_id(m.burn_to_key);
         if (!m.drop_item.empty()) m.drop_item_id = item_id(m.drop_item);
+        if (!m.forage_key.empty()) m.forage_item = item_id(m.forage_key);
+        m.forage_to = mat_id(m.forage_to_key);
+        if (!m.sprite.empty()) m.sprite_layer = kSpriteBase + sprites++;
+        m.holds_loose = !m.solid && !m.fluid && (!m.forage_key.empty() || !m.sprite.empty() || m.key == "crop" ||
+                                                  m.key == "cactus");
     }
 }
 

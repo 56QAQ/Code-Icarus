@@ -408,7 +408,7 @@ void Physics::step_granular() {
         }
         Voxel bv = w_.get(b);
         const Material& bm = reg.mat(vmat(bv));
-        if (!bm.solid && vmat(bv) != M.crop && vmat(bv) != M.berry_bush) {
+        if (!bm.solid && !bm.holds_loose) {
             // Fall (displacing water upward).
             w_.set(b, v);
             w_.set(p, bm.fluid ? bv : make_voxel(M.air));
@@ -424,8 +424,7 @@ void Physics::step_granular() {
             Voxel sv = w_.get(s), sdv = w_.get(sd);
             const Material& sm = reg.mat(vmat(sv));
             const Material& sdm = reg.mat(vmat(sdv));
-            if (!sm.solid && !sm.fluid && vmat(sv) == M.air && !sdm.solid && vmat(sdv) != M.crop &&
-                vmat(sdv) != M.berry_bush) {
+            if (!sm.solid && !sm.fluid && vmat(sv) == M.air && !sdm.solid && !sdm.holds_loose) {
                 if (rng_.chance(0.6f)) {
                     // Swap so any water in the way is displaced, never destroyed.
                     w_.set(sd, v);

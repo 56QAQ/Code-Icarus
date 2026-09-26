@@ -238,6 +238,34 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                         const int layer = stage <= 2 ? 7 : (stage <= 5 ? 8 : 9);
                         const float g = 1.0f + var;
                         push_crop(out.crops, (float)wx, (float)wy, (float)wz, hgt, layer, RGBf{g, g, g});
+                    } else if (m.sprite_layer >= 0) {
+                        // Wild plants drawn as sprites: reeds and grain in dense stands,
+                        // mushrooms and herbs as small crossed clumps.
+                        const u64 hh = hash3(cseed + 91, wx, wy, wz);
+                        const float g = 1.0f + var;
+                        if (m.sprite == "reeds" || m.sprite == "wild_grain") {
+                            const float hgt = (m.sprite == "reeds" ? 1.05f : 0.78f) + 0.2f * hash_to_unit(hh);
+                            push_crop(out.decor, (float)wx, (float)wy, (float)wz, hgt, m.sprite_layer, RGBf{g, g, g});
+                        } else {
+                            const float cx = (float)wx + 0.35f + 0.3f * hash_to_unit(hh >> 5);
+                            const float cz = (float)wz + 0.35f + 0.3f * hash_to_unit(hh >> 9);
+                            const float size = 0.5f + 0.2f * hash_to_unit(hh >> 14);
+                            push_sprite(out.decor, cx, (float)wy, cz, size * 0.5f, size, 0.785f * hash_to_unit(hh >> 17),
+                                        m.sprite_layer, RGBf{g, g, g});
+                        }
+                    } else if (mid == M.cactus) {
+                        // A ribbed column; the top of the stack is rounded off.
+                        const bool top = vmat(at(x, y + 1, z)) != mid;
+                        const float s = 0.22f;
+                        push_box(out.foliage, wx + s, (float)wy, wz + s, wx + 1 - s, wy + (top ? 0.86f : 1.0f), wz + 1 - s,
+                                 shade, emission, mid);
+                        if (top && (hash3(cseed + 5, wx, wy, wz) & 1)) {
+                            // An arm.
+                            push_box(out.foliage, wx + 1 - s, wy + 0.35f, wz + 0.4f, wx + 1 - s + 0.22f, wy + 0.5f, wz + 0.6f,
+                                     shade, emission, mid);
+                            push_box(out.foliage, wx + 1 - s + 0.08f, wy + 0.5f, wz + 0.42f, wx + 1 - s + 0.22f, wy + 0.78f,
+                                     wz + 0.58f, shade, emission, mid);
+                        }
                     } else {
                         float s = 0.1f;
                         push_box(out.foliage, wx + s, (float)wy, wz + s, wx + 1 - s, wy + 0.75f, wz + 1 - s, shade,
@@ -256,6 +284,29 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                     continue;
                 }
 
+                // Dry tufts on the savanna (layers 10-11).
+                if (mid == M.dry_grass && mid != M.air && vmat(at(x, y + 1, z)) == M.air) {
+                    const u64 hh = hash3(cseed + 78, wx, wy, wz);
+                    if (hash_to_unit(hh) < 0.45f) {
+                        const float cx = (float)wx + 0.25f + 0.5f * hash_to_unit(hh >> 5);
+                        const float cz = (float)wz + 0.25f + 0.5f * hash_to_unit(hh >> 9);
+                        const float size = 0.45f + 0.35f * hash_to_unit(hh >> 14);
+                        const float g = 1.0f + var;
+                        push_sprite(out.decor, cx, (float)(wy + 1), cz, size * 0.5f, size, 0.785f * hash_to_unit(hh >> 17),
+                                    10 + (int)((hh >> 12) & 1), RGBf{g, g, g});
+                    }
+                }
+                // Fruit hangs under the crown of fruit trees.
+                if (mid == M.fruit_leaves && mid != M.air && vmat(at(x, y - 1, z)) == M.air) {
+                    const u64 hh = hash3(cseed + 79, wx, wy, wz);
+                    const RGBf fruit = (hh & 1) ? RGBf{0.86f, 0.2f, 0.14f} : RGBf{0.95f, 0.6f, 0.15f};
+                    for (int b = 0; b < 2; ++b) {
+                        const float fx = wx + 0.2f + 0.6f * hash_to_unit(hash3(hh, b, 1, 0));
+                        const float fz = wz + 0.2f + 0.6f * hash_to_unit(hash3(hh, b, 2, 0));
+                        push_box(out.foliage, fx - 0.09f, wy - 0.2f, fz - 0.09f, fx + 0.09f, (float)wy - 0.02f, fz + 0.09f,
+                                 fruit, 0.0f);
+                    }
+                }
                 // Tufts of grass and the odd flower on open meadow (layers 0-2 tufts,
                 // 3-6 flowers in the decoration textures).
                 if (mid == M.grass && vmat(at(x, y + 1, z)) == M.air) {
@@ -306,12 +357,124 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                     float n[3] = {(float)d.x, (float)d.y, (float)d.z};
                     // A grass cube buried under another shows dirt on its sides.
                     int kind = face_kind(f);
-                    if (mid == M.grass && kind == 1 && reg.mat(vmat(at(x, y + 1, z))).opaque) kind = 2;
+                    if ((mid == M.grass || (mid != M.air && (mid == M.dry_grass || mid == M.snow))) && kind == 1 &&
+                        reg.mat(vmat(at(x, y + 1, z))).opaque)
+                        kind = 2;
                     push_quad(dst, p, n, cs, emission, ao, (float)mid, (float)kind + 3.0f * dmg);
                 }
             }
         }
     }
+}
+
+void Mesher::build_lod_column(int cx, int cz, int step, CellMesh& out) {
+    out.opaque.clear();
+    out.water.clear();
+    out.foliage.clear();
+    out.decor.clear();
+    out.crops.clear();
+    const Registry& reg = w_.reg();
+    const CoreMats& M = reg.m();
+    step = std::clamp(step, 1, kCellSize);
+    const int n = kCellSize / step;
+    const int N = n + 2;
+    struct Col {
+        bool land = false;
+        int top = -1, bottom = 0, water = -1;
+        MatId mat = 0, under = 0;
+    };
+    std::vector<Col> cols((size_t)N * N);
+    // Highest modified cell per cell column: built things can stand anywhere in it.
+    auto scan_start = [&](int x, int z, const ColumnInfo& ci) {
+        int start = ci.land ? ci.top + 20 : -1;
+        const int ccx = x >> kCellBits, ccz = z >> kCellBits;
+        for (int cy = w_.cells_y() - 1; cy >= 0; --cy) {
+            const Cell* cell = w_.cell({ccx, cy, ccz});
+            if (cell && !cell->pristine) {
+                start = std::max(start, cy * kCellSize + kCellSize - 1);
+                break;
+            }
+        }
+        return std::min(start, w_.size_y() - 1);
+    };
+    for (int j = 0; j < N; ++j)
+        for (int i = 0; i < N; ++i) {
+            const int x = cx * kCellSize + (i - 1) * step + step / 2;
+            const int z = cz * kCellSize + (j - 1) * step + step / 2;
+            if (x < 0 || z < 0 || x >= w_.size_x() || z >= w_.size_z()) continue;
+            Col& c = cols[(size_t)j * N + i];
+            const ColumnInfo ci = w_.gen().column(x, z);
+            int water = -1;
+            for (int y = scan_start(x, z, ci); y >= 0; --y) {
+                const MatId m = vmat(w_.peek({x, y, z}));
+                if (m == M.air) continue;
+                const Material& mm = reg.mat(m);
+                if (mm.fluid) {
+                    if (water < 0) water = y;
+                    continue;
+                }
+                if (!mm.solid) continue;  // plants
+                c.land = true;
+                c.top = y;
+                c.mat = m;
+                c.water = water;
+                c.under = vmat(w_.peek({x, y - 1, z}));
+                if (c.under == M.air || !reg.mat(c.under).solid) c.under = m;
+                break;
+            }
+            if (!c.land) continue;
+            c.bottom = ci.land ? std::min<int>(ci.bottom, c.top) : std::max(0, c.top - 2);
+        }
+    const int ao0[4] = {0, 0, 0, 0};
+    const RGBf white[4] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}};
+    // An axis-aligned quad: face f of the box [x0,x1]x[y0,y1]x[z0,z1].
+    auto face = [&](MeshData& m, int f, float x0, float y0, float z0, float x1, float y1, float z1, float u, float v,
+                    float em = 0.0f) {
+        const float lo[3] = {x0, y0, z0}, hi[3] = {x1, y1, z1};
+        float p[4][3];
+        for (int k = 0; k < 4; ++k)
+            for (int a = 0; a < 3; ++a) p[k][a] = kFaceCorners[f][k][a] ? hi[a] : lo[a];
+        const float nn[3] = {(float)kDir6[f].x, (float)kDir6[f].y, (float)kDir6[f].z};
+        push_quad(m, p, nn, white, em, ao0, u, v);
+    };
+    const int dirs[4][3] = {{1, 0, 0}, {-1, 0, 1}, {0, 1, 4}, {0, -1, 5}};  // di, dj, face
+    for (int j = 1; j <= n; ++j)
+        for (int i = 1; i <= n; ++i) {
+            const Col& c = cols[(size_t)j * N + i];
+            if (!c.land) continue;
+            const float x0 = (float)(cx * kCellSize + (i - 1) * step), z0 = (float)(cz * kCellSize + (j - 1) * step);
+            const float x1 = x0 + (float)step, z1 = z0 + (float)step;
+            const float top = (float)(c.top + 1);
+            face(out.opaque, 2, x0, top, z0, x1, top, z1, (float)c.mat, 0.0f);
+            if (c.water > c.top) {
+                const float wt = (float)(c.water + 1);
+                face(out.water, 2, x0, wt, z0, x1, wt, z1, (float)M.water, 0.0f, 1.0f);
+            }
+            face(out.opaque, 3, x0, (float)c.bottom, z0, x1, (float)c.bottom, z1, (float)M.stone, 2.0f);
+            for (const auto& d : dirs) {
+                const Col& nb = cols[(size_t)(j + d[1]) * N + (i + d[0])];
+                const int f = d[2];
+                float bx0 = x0, bx1 = x1, bz0 = z0, bz1 = z1;
+                if (f == 0) bx0 = x1;
+                if (f == 1) bx1 = x0;
+                if (f == 4) bz0 = z1;
+                if (f == 5) bz1 = z0;
+                // Walls down to the neighbour's surface (or the underside at the rim):
+                // the surface cube, the soil below it, then rock.
+                const int lo = nb.land ? std::max(nb.top + 1, c.bottom) : c.bottom;
+                if (lo < c.top + 1) {
+                    const int soil = std::max(lo, c.top - 3);
+                    face(out.opaque, f, bx0, (float)c.top, bz0, bx1, top, bz1, (float)c.mat, 1.0f);
+                    if (soil < c.top)
+                        face(out.opaque, f, bx0, (float)soil, bz0, bx1, (float)c.top, bz1, (float)c.under, 1.0f);
+                    if (lo < soil) face(out.opaque, f, bx0, (float)lo, bz0, bx1, (float)soil, bz1, (float)M.stone, 1.0f);
+                }
+                // Steps in the underside.
+                if (nb.land && nb.bottom > c.bottom)
+                    face(out.opaque, f, bx0, (float)c.bottom, bz0, bx1, (float)std::min(nb.bottom, c.top), bz1,
+                         (float)M.stone, 1.0f);
+            }
+        }
 }
 
 void build_voxel_model(const u8* vox, int sx, int sy, int sz, const std::vector<u32>& palette, float scale,

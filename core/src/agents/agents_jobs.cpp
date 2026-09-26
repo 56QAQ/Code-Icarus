@@ -12,6 +12,24 @@
 
 namespace icarus {
 
+bool Agents::food_plant_at(int x, int z, Vec3i& out) {
+    World& w = *ctx_.world;
+    const Registry& reg = *ctx_.reg;
+    const ColumnInfo col = w.gen().column(x, z);
+    if (!col.land) return false;
+    // The ground may have been dug or built on since generation: look a little around.
+    for (int y = col.top + 1; y <= col.top + 4; ++y) {
+        const Vec3i p{x, y, z};
+        const Material& m = reg.mat(w.mat(p));
+        if (m.forage_item == kNoItem || reg.item(m.forage_item).nutrition <= 0.0f) continue;
+        // Fruit hangs in the crown: pickable only from the ground below.
+        if (m.foliage && y > col.top + 3) continue;
+        out = p;
+        return true;
+    }
+    return false;
+}
+
 void Agents::generate_jobs() {
     const Registry& reg = *ctx_.reg;
     JobBoard& jobs = *ctx_.jobs;
@@ -296,7 +314,7 @@ void Agents::generate_jobs() {
             if (j.alive && j.type == JobType::Forage && j.polity == pc.id && j.item == herbs) ++open;
         if (stock + open * 3 >= want) continue;
         World& w = *ctx_.world;
-        const MatId bush = reg.m().berry_bush;
+        const MatId bush = reg.m().berry_bush, herb = reg.m().herb_plant;
         for (int r = 6; r <= 60 && open < 2; r += 4)
             for (int i = 0; i < 24 && open < 2; ++i) {
                 float a = (float)i / 24.0f * 6.2831853f + 0.13f;
@@ -305,7 +323,9 @@ void Agents::generate_jobs() {
                 ColumnInfo col = w.gen().column(x, z);
                 if (!col.land) continue;
                 Vec3i p{x, col.top + 1, z};
-                if (w.mat(p) != bush || has(JobType::Forage, p)) continue;
+                const MatId m = w.mat(p);
+                // Wild medicinal plants, or medicinal leaves among the berry bushes.
+                if ((m != bush && (herb == reg.m().air || m != herb)) || has(JobType::Forage, p)) continue;
                 Job& j = add(JobType::Forage, pc.id, p, 0.9f);
                 j.item = herbs;
                 existing[{(int)JobType::Forage, p}] = 1;
@@ -382,17 +402,13 @@ void Agents::generate_jobs() {
         int open = 0;
         for (const Job& j : jobs.all())
             if (j.alive && j.type == JobType::Forage && j.polity == pc.id) ++open;
-        World& w = *ctx_.world;
-        const MatId bush = reg.m().berry_bush;
         for (int r = 4; r <= 60 && open < 4; r += 4) {
             for (int i = 0; i < 24 && open < 4; ++i) {
                 float a = (float)i / 24.0f * 6.2831853f;
                 int x = seat->entrance.x + (int)std::lround(std::cos(a) * (float)r);
                 int z = seat->entrance.z + (int)std::lround(std::sin(a) * (float)r);
-                ColumnInfo col = w.gen().column(x, z);
-                if (!col.land) continue;
-                Vec3i p{x, col.top + 1, z};
-                if (w.mat(p) != bush || has(JobType::Forage, p)) continue;
+                Vec3i p;
+                if (!food_plant_at(x, z, p) || has(JobType::Forage, p)) continue;
                 add(JobType::Forage, pc.id, p, 1.0f);
                 existing[{(int)JobType::Forage, p}] = 1;
                 ++open;

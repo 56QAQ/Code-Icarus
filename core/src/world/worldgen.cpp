@@ -41,6 +41,11 @@ const char* biome_key(Biome b) {
         case Biome::Ravine: return "ravine";
         case Biome::Underside: return "underside";
         case Biome::Islet: return "islet";
+        case Biome::Taiga: return "taiga";
+        case Biome::Snowfield: return "snowfield";
+        case Biome::Desert: return "desert";
+        case Biome::Savanna: return "savanna";
+        case Biome::Wetland: return "wetland";
         default: return "unknown";
     }
 }
@@ -55,8 +60,32 @@ const char* biome_name_zh(Biome b) {
         case Biome::Ravine: return "峡谷";
         case Biome::Underside: return "浮岛底层";
         case Biome::Islet: return "小浮岛";
+        case Biome::Taiga: return "针叶林";
+        case Biome::Snowfield: return "雪原";
+        case Biome::Desert: return "荒漠";
+        case Biome::Savanna: return "稀树草原";
+        case Biome::Wetland: return "沼泽";
         default: return "未知";
     }
+}
+
+const char* layout_key(WorldLayout l) { return l == WorldLayout::Continent ? "continent" : "classic"; }
+
+WorldLayout layout_from_key(const std::string& k) {
+    return (k == "continent" || k == "large") ? WorldLayout::Continent : WorldLayout::Classic;
+}
+
+WorldConfig WorldConfig::for_layout(WorldLayout l, u64 seed) {
+    WorldConfig c;
+    c.seed = seed;
+    c.layout = l;
+    if (l == WorldLayout::Continent) {
+        c.cells_y = 10;  // room for the mountains
+        c.island_radius = 330.0f;
+        c.base_height = 150;
+        c.islet_count = 6;
+    }
+    return c;
 }
 
 void WorldGen::init(const WorldConfig& cfg, const Registry& reg) {
@@ -64,6 +93,15 @@ void WorldGen::init(const WorldConfig& cfg, const Registry& reg) {
     reg_ = &reg;
     col_cache_.clear();
     islands_.clear();
+    lakes_.clear();
+    streams_.clear();
+    peaks_.clear();
+    site_climate_.clear();
+    feat_ = IslandFeatures{};
+    if (cfg.layout == WorldLayout::Continent) {
+        init_continent();
+        return;
+    }
 
     Rng rng(cfg.seed, 0x15A4D);
     const float W = (float)(cfg.cells_x * kCellSize);
@@ -152,6 +190,9 @@ void WorldGen::init(const WorldConfig& cfg, const Registry& reg) {
     fill_h(feat_.ravine_end);
     feat_.lake.y = column(feat_.lake.x, feat_.lake.z).water_top;
     feat_.pond.y = column(feat_.pond.x, feat_.pond.z).water_top;
+    feat_.sites.push_back({feat_.village, feat_.farms, feat_.pond, Biome::Grassland});
+    feat_.springs.push_back(feat_.spring);
+    feat_.waters = {feat_.pond, feat_.lake};
 }
 
 void WorldGen::to_local(float x, float z, float& lu, float& lv) const {
@@ -169,6 +210,7 @@ float WorldGen::ravine_center_u(float lv) const {
 }
 
 ColumnInfo WorldGen::compute_column(int xi, int zi) const {
+    if (cfg_.layout == WorldLayout::Continent) return compute_column_continent(xi, zi);
     ColumnInfo c;
     const float x = (float)xi + 0.5f, z = (float)zi + 0.5f;
     for (size_t ii = 0; ii < islands_.size(); ++ii) {
@@ -336,7 +378,8 @@ bool WorldGen::cell_maybe_nonempty(const Vec3i& cc) const {
     for (const auto& is : islands_) {
         float rr = is.radius * 1.3f + 6.0f;
         if (is.cx + rr < x0 || is.cx - rr > x1 || is.cz + rr < z0 || is.cz - rr > z1) continue;
-        float ylo = is.base_h - is.thickness - 20.0f, yhi = is.base_h + 60.0f;
+        float ylo = is.base_h - is.thickness - 20.0f;
+        float yhi = is.base_h + (cfg_.layout == WorldLayout::Continent && is.main ? 100.0f : 60.0f);
         if (yhi < y0 || ylo > y1) continue;
         return true;
     }
@@ -370,6 +413,10 @@ void WorldGen::generate_cell(const Vec3i& cc, Voxel* out) const {
     const Voxel air = make_voxel(M.air);
     if (!cell_maybe_nonempty(cc)) {
         for (int i = 0; i < kCellVol; ++i) out[i] = air;
+        return;
+    }
+    if (cfg_.layout == WorldLayout::Continent) {
+        generate_cell_continent(cc, out);
         return;
     }
     const ColumnBlock& cb = column_block(cc.x, cc.z);
@@ -453,6 +500,10 @@ void WorldGen::place_ores(const Vec3i& cc, Voxel* out) const {
     constexpr int G = 12;
     const int bx0 = cc.x * kCellSize, by0 = cc.y * kCellSize, bz0 = cc.z * kCellSize;
     const float base = (float)cfg_.base_height;
+    const bool continent = cfg_.layout == WorldLayout::Continent;
+    auto rock = [&](MatId m) {
+        return m == M.stone || (m != M.air && (m == M.granite || m == M.limestone || m == M.sandstone));
+    };
     int gx0 = floordiv(bx0 - 4, G), gx1 = floordiv(bx0 + kCellSize + 4, G);
     int gy0 = floordiv(by0 - 4, G), gy1 = floordiv(by0 + kCellSize + 4, G);
     int gz0 = floordiv(bz0 - 4, G), gz1 = floordiv(bz0 + kCellSize + 4, G);
@@ -468,6 +519,7 @@ void WorldGen::place_ores(const Vec3i& cc, Voxel* out) const {
                 MatId ore;
                 if (py > base - 40.0f && roll < 0.14f) ore = M.copper_ore;
                 else if (py < base - 22.0f && roll < 0.22f) ore = M.iron_ore;
+                else if (continent && py > base + 12.0f && roll < 0.24f) ore = M.iron_ore;  // in the mountains
                 else if (roll > 0.90f) ore = M.coal;
                 else continue;
                 int x0 = (int)std::floor(px - rad), x1 = (int)std::ceil(px + rad);
@@ -479,7 +531,7 @@ void WorldGen::place_ores(const Vec3i& cc, Voxel* out) const {
                             float dx = x + 0.5f - px, dy = y + 0.5f - py, dz = z + 0.5f - pz;
                             if (dx * dx + dy * dy + dz * dz > rad * rad) continue;
                             Voxel& v = out[local_index(x - bx0, y - by0, z - bz0)];
-                            if (vmat(v) == M.stone) v = make_voxel(ore);
+                            if (rock(vmat(v))) v = make_voxel(ore);
                         }
             }
 }
@@ -494,6 +546,13 @@ std::vector<Vec3i> WorldGen::tree_bases() const {
     std::vector<Vec3i> out;
     const int S = kTreeSlot;
     const int nx = cfg_.cells_x * kCellSize / S + 1, nz = cfg_.cells_z * kCellSize / S + 1;
+    if (cfg_.layout == WorldLayout::Continent) {
+        TreeSpec t;
+        for (int sz = 0; sz < nz; ++sz)
+            for (int sx = 0; sx < nx; ++sx)
+                if (continent_tree(sx, sz, t)) out.push_back({t.x, t.ground + 1, t.z});
+        return out;
+    }
     for (int sz = 0; sz < nz; ++sz)
         for (int sx = 0; sx < nx; ++sx) {
             u64 h = hash3(cfg_.seed ^ 0x7EE5, sx, 0, sz);

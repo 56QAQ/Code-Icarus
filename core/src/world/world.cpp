@@ -288,12 +288,11 @@ const std::vector<Vec3i>& World::generated_trees() const {
 ForestStats World::forest() const {
     generated_trees();
     ForestStats f;
-    const MatId log = reg_->m().log;
     for (const Vec3i& t : tree_bases_) {
         if (!in_bounds(t)) continue;
         ++f.initial;
         const Cell& c = cells_[cell_index(cell_of(t))];
-        if (c.state == CellState::Ungenerated || c.pristine || vmat(peek(t)) == log) ++f.standing;
+        if (c.state == CellState::Ungenerated || c.pristine || reg_->mat(vmat(peek(t))).trunk) ++f.standing;
     }
     return f;
 }
@@ -339,7 +338,8 @@ void World::save(BinWriter& w) const {
     w.vari(cfg.cells_z);
     w.f32(cfg.island_radius);
     w.vari(cfg.base_height);
-    w.vari(cfg.islet_count);
+    // The layout rides in the high bits of the islet count (older saves: classic).
+    w.vari(cfg.islet_count | ((int)cfg.layout << 16));
     w.u64v(now_);
 
     std::vector<const Cell*> stored;
@@ -398,7 +398,9 @@ void World::load(BinReader& outer) {
     cfg.cells_z = (int)r.vari();
     cfg.island_radius = r.f32();
     cfg.base_height = (int)r.vari();
-    cfg.islet_count = (int)r.vari();
+    const int islets = (int)r.vari();
+    cfg.islet_count = islets & 0xFFFF;
+    cfg.layout = (WorldLayout)((islets >> 16) & 0xFF);
     Tick now = r.u64v();
     init(cfg);
     now_ = now;

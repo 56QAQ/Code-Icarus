@@ -34,6 +34,9 @@
     {"key": "bronze_armor", "name": "铜甲", "weight": 6.0, "value": 18.0, "armor": 0.4, "tags": ["armor"]},
     {"key": "iron_armor", "name": "铁甲", "weight": 7.0, "value": 30.0, "armor": 0.55, "tags": ["armor"]},
     {"key": "cart", "name": "手推车", "weight": 1.0, "value": 6.0, "carry": 12.0, "tags": ["cart"]},
-    {"key": "pottery", "name": "陶器", "weight": 1.0, "value": 2.0, "tags": ["storage"]}
+    {"key": "pottery", "name": "陶器", "weight": 1.0, "value": 2.0, "tags": ["storage"]},
+    {"key": "fruit", "name": "野果", "weight": 0.3, "nutrition": 0.16, "joy": 0.04, "spoil_per_day": 0.06, "value": 0.8, "tags": ["food", "raw"]},
+    {"key": "mushroom", "name": "蘑菇", "weight": 0.2, "nutrition": 0.12, "joy": 0.01, "spoil_per_day": 0.10, "value": 0.7, "tags": ["food", "raw"]},
+    {"key": "flint", "name": "燧石", "weight": 1.0, "value": 1.2, "tags": ["material"]}
   ]
 }

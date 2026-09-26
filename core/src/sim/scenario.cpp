@@ -208,7 +208,8 @@ void build_village_scenario(SimContext& ctx, const GameConfig& cfg, Rng& rng) {
                         w.set(p, make_voxel(M.path), ev);
                         Vec3i up = p + Vec3i{0, 1, 0};
                         MatId um = w.mat(up);
-                        if (um == M.berry_bush) w.set(up, make_voxel(M.air), ev);
+                        if (um != M.air && !w.material(up).solid && !w.material(up).fluid)
+                            w.set(up, make_voxel(M.air), ev);
                     }
                 }
             if (x0 == x1 && z0 == z1) break;
@@ -291,7 +292,8 @@ void build_village_scenario(SimContext& ctx, const GameConfig& cfg, Rng& rng) {
                 if (nearby_same) continue;
                 w.set(g, make_voxel(M.farmland), ev);
                 Vec3i up = g + Vec3i{0, 1, 0};
-                if (w.material(up).solid || w.mat(up) == M.berry_bush) w.set(up, make_voxel(M.air), ev);
+                if (w.material(up).solid || (w.mat(up) != M.air && !w.material(up).fluid))
+                    w.set(up, make_voxel(M.air), ev);
                 if (rng.chance(0.75f)) w.set(up, make_voxel(M.crop, (u8)rng.range(1, 7)), ev);
                 plots.push_back(g);
             }

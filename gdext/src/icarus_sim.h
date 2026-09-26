@@ -46,6 +46,7 @@ public:
     PackedInt32Array take_fx();             // [kind, x, y, z, material] per broken / landed cube
     PackedVector3Array fire_spots(int64_t max_count) const;  // burning cubes
     Array build_cell_mesh(const Vector3i& cell);
+    Array build_lod_mesh(const Vector2i& column, int step);
     Dictionary raycast(const Vector3& origin, const Vector3& dir, double max_dist) const;
     Dictionary cube_info(const Vector3i& cube) const;
     Array debris_list() const;

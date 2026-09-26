@@ -5,6 +5,10 @@
 //
 // Only places the simulation has already touched are seeded: an island nobody has
 // visited keeps its generated forest untouched and costs nothing.
+//
+// On the continent, trees come back as the species of their biome (pines in the cold,
+// acacias on the savanna...), wild grain, mushrooms and reeds re-sprout where they
+// belong, and picked fruit trees bear again after a few days.
 #pragma once
 
 #include <vector>
@@ -27,6 +31,8 @@ public:
     // Trees that grew from saplings and still stand.
     int regrown_standing() const;
     size_t saplings() const { return saplings_.size(); }
+    // A fruit was picked here (the cube is bare leaves now); it ripens again later.
+    void picked(const Vec3i& p, Tick now);
 
     void save(BinWriter& w) const;
     void load(BinReader& r);
@@ -39,12 +45,14 @@ private:
     };
     bool open_grass(const Vec3i& above, const Buildings& buildings);
     void grow_tree(const Vec3i& base);
+    MatId wild_plant_for(const Vec3i& p);
 
     World& w_;
     const Registry* reg_;
     Rng rng_;
     std::vector<Sapling> saplings_;
     std::vector<Vec3i> regrown_;
+    std::vector<Sapling> picked_;  // fruit picked (pos, when)
 };
 
 }  // namespace icarus

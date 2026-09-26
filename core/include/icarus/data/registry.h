@@ -42,7 +42,22 @@ struct Material {
     bool fertile = false;   // plants can grow on it
     bool diggable = true;
     bool render_transparent = false;
+    // Plants and trees (see materials.json).
+    bool trunk = false;          // tree trunk: felling takes the whole tree with its crown
+    bool foliage = false;        // part of a tree crown
+    std::string forage_key;      // item gathered by hand (berries, grain, reeds...)
+    ItemId forage_item = kNoItem;
+    int forage_count = 0;
+    std::string forage_to_key = "air";
+    MatId forage_to = 0;         // what is left after gathering (air, or bare leaves)
+    std::string sprite;          // drawn as crossed sprites rather than a small box
+    bool holds_loose = false;    // a sturdy plant (bush, crop, reeds): loose sand rests on it
+    int sprite_layer = -1;       // decoration layer, assigned in load order (see kSpriteBase)
 };
+
+// Decoration layers 0..kSpriteBase-1 are fixed (grass tufts, flowers, wheat, dry
+// tufts); plant materials with a "sprite" follow in material order.
+constexpr int kSpriteBase = 12;
 
 struct ItemDef {
     ItemId id = 0;
@@ -71,6 +86,10 @@ struct CoreMats {
           water = 0, log = 0, leaves = 0, planks = 0, rubble = 0, brick = 0, copper_ore = 0, iron_ore = 0,
           coal = 0, farmland = 0, crop = 0, ash = 0, path = 0, thatch = 0, meteorite = 0, basalt = 0,
           spring = 0, door = 0, berry_bush = 0, stone_brick = 0, glass = 0, magma = 0;
+    // Version 2 world (optional: absent materials resolve to air).
+    MatId snow = 0, ice = 0, mud = 0, red_sand = 0, sandstone = 0, granite = 0, limestone = 0, flint = 0,
+          dry_grass = 0, pine_log = 0, pine_leaves = 0, birch_log = 0, birch_leaves = 0, fruit_leaves = 0,
+          cactus = 0, reeds = 0, wild_grain = 0, mushroom = 0, herb_plant = 0, sapling = 0;
 };
 
 class Registry {

@@ -419,8 +419,7 @@ bool Buildings::find_site(const std::string& key, const Vec3i& near, int radius,
                     if (std::abs(y - gy) > 1) ok = false;
                     MatId top = w_.mat({x, y, z});
                     const Material& tm = reg.mat(top);
-                    if (tm.fluid || top == reg.m().farmland || top == reg.m().log || top == reg.m().leaves ||
-                        top == reg.m().planks)
+                    if (tm.fluid || top == reg.m().farmland || tm.trunk || tm.foliage || top == reg.m().planks)
                         ok = false;
                     for (int k = 0; k <= 4 && ok; ++k)
                         if (at({x, y + k, z})) ok = false;

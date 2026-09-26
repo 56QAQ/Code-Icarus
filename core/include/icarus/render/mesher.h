@@ -44,6 +44,10 @@ public:
     explicit Mesher(const World& world) : w_(world) {}
     // Builds the mesh of one cell in world coordinates.
     void build_cell(const Vec3i& cc, CellMesh& out);
+    // Coarse stand-in for a whole column of cells seen from afar: the surface sampled
+    // every `step` cubes as flat-topped blocks with walls and an underside, textured
+    // like the cubes (opaque) plus lake surfaces (water).
+    void build_lod_column(int cx, int cz, int step, CellMesh& out);
 
 private:
     Voxel at(int x, int y, int z) const {  // padded local coords -1..32

@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "icarus/agents/agents.h"
+#include "icarus/sim/ecology.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/economy/farming.h"
 #include "icarus/sim/clock.h"
@@ -898,15 +899,19 @@ bool Agents::task_work(Character& c) {
                         }
                         carrying = carried_weight(c) > 0;
                         break;
-                    case JobType::Forage:
-                        if (w.mat(j->pos) == reg.m().berry_bush) {
-                            w.set(j->pos, make_voxel(0), j->cause);
-                            // Herb gatherers look for the medicinal plants among the bushes.
-                            if (j->item != kNoItem) ctx_.econ->add(c.inv, j->item, 3, "forage");
-                            else ctx_.econ->add(c.inv, reg.find_item("berries"), 3, "forage");
+                    case JobType::Forage: {
+                        const MatId fm = w.mat(j->pos);
+                        const Material& mm = reg.mat(fm);
+                        if (mm.forage_item != kNoItem) {
+                            w.set(j->pos, make_voxel(mm.forage_to), j->cause);
+                            if (reg.mat(mm.forage_to).foliage && ctx_.ecology) ctx_.ecology->picked(j->pos, now_);
+                            // Herb gatherers also look for medicinal plants among the bushes.
+                            if (j->item != kNoItem && fm == reg.m().berry_bush) ctx_.econ->add(c.inv, j->item, 3, "forage");
+                            else ctx_.econ->add(c.inv, mm.forage_item, std::max(1, mm.forage_count), "forage");
                             carrying = true;
                         }
                         break;
+                    }
                     case JobType::Chop: {
                         // Fell the whole tree: flood fill connected logs and leaves.
                         std::deque<Vec3i> q{j->pos};
@@ -916,11 +921,11 @@ bool Agents::task_work(Character& c) {
                         while (!q.empty() && cut.size() < 400) {
                             Vec3i p = q.front();
                             q.pop_front();
-                            MatId m = w.mat(p);
-                            if (m != reg.m().log && m != reg.m().leaves) continue;
+                            const Material& mm = reg.mat(w.mat(p));
+                            if (!mm.trunk && !mm.foliage) continue;
                             if (ctx_.buildings->at(p)) continue;  // never fell a building
                             cut.push_back(p);
-                            if (m == reg.m().log) ++logs;
+                            if (mm.trunk) ++logs;
                             else ++leaves;
                             for (int d = 0; d < 6; ++d) {
                                 Vec3i n = p + kDir6[d];

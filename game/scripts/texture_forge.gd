@@ -18,7 +18,8 @@ const FLAG_WINDOW := 16   # panes glow warm at night
 # cube so natural ground and rock never show the same stamp twice in a row.
 const VARIANT_SHIFT := 5
 const VARIED := ["grass", "dirt", "stone", "sand", "gravel", "clay", "leaves", "basalt", "path", "farmland", "rubble",
-	"ash", "copper_ore", "iron_ore", "coal", "log"]
+	"ash", "copper_ore", "iron_ore", "coal", "log", "snow", "mud", "red_sand", "sandstone", "granite", "limestone",
+	"dry_grass", "pine_leaves", "birch_leaves", "fruit_leaves", "pine_log", "birch_log", "flint"]
 const CRACK_STAGES := 4
 
 var _layers: Array[Image] = []
@@ -78,11 +79,12 @@ func _flags(key: String, m: Dictionary) -> int:
 	var f := 0
 	if key == "crop":
 		f |= FLAG_TINTED
-	if key in ["grass", "dirt", "sand", "stone", "gravel", "leaves", "clay", "path", "farmland", "basalt"]:
+	if key in ["grass", "dirt", "sand", "stone", "gravel", "leaves", "clay", "path", "farmland", "basalt", "mud",
+			"red_sand", "sandstone", "granite", "limestone", "dry_grass", "pine_leaves", "birch_leaves", "fruit_leaves"]:
 		f |= FLAG_NATURAL
 	if key in ["levistone", "magma", "spring"]:
 		f |= FLAG_GLOW
-	if key in ["copper_ore", "iron_ore", "coal", "meteorite", "glass", "levistone", "spring"]:
+	if key in ["copper_ore", "iron_ore", "coal", "meteorite", "glass", "levistone", "spring", "ice", "mud", "flint"]:
 		f |= FLAG_SHINY
 	if key == "glass":
 		f |= FLAG_WINDOW
@@ -107,8 +109,10 @@ static func crate_texture() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## Decoration sprites: three grass tufts (in the grass colour) and four flowers.
-static func build_decor(grass: Color) -> Texture2DArray:
+## Decoration sprites: three grass tufts (in the grass colour), four flowers, wheat in
+## three stages, two dry tufts (layers 10-11), then one layer per plant material with a
+## "sprite" in the rules, in material order (the kernel numbers them the same way).
+static func build_decor(grass: Color, materials: Array = []) -> Texture2DArray:
 	var f := TextureForge.new()
 	var imgs: Array[Image] = []
 	grass.s *= 0.84
@@ -124,6 +128,17 @@ static func build_decor(grass: Color) -> Texture2DArray:
 	for i in 3:
 		f._rng.seed = 980 + i
 		imgs.append(f._wheat(i))
+	for i in 2:
+		f._rng.seed = 990 + i
+		imgs.append(f._tuft(Color(0.78, 0.70, 0.36), i + 1))
+	for m in materials:
+		var layer: int = int(m.get("sprite_layer", -1))
+		if layer < 0:
+			continue
+		while imgs.size() < layer:
+			imgs.append(imgs[0])
+		f._rng.seed = hash(String(m["key"])) & 0x7fffffff
+		imgs.append(f._plant(String(m["sprite"]), m["color"]))
 	for img in imgs:
 		_bleed(img)
 		img.generate_mipmaps()
@@ -203,6 +218,79 @@ func _flower(c: Color, petal: Color) -> Image:
 	for p in [[7, 3], [6, 4], [8, 4], [7, 5], [5, 4], [9, 4], [7, 2], [6, 5], [8, 5], [6, 3], [8, 3]]:
 		img.set_pixel(p[0], p[1], petal if (p[0] + p[1]) % 3 != 0 else petal.lightened(0.2))
 	img.set_pixel(7, 4, Color(0.95, 0.8, 0.25) if petal.b < 0.5 else Color(0.98, 0.9, 0.4))
+	return img
+
+
+## Plant sprites for materials drawn as crossed planes.
+func _plant(kind: String, c: Color) -> Image:
+	var img := _img()
+	img.fill(Color(0, 0, 0, 0))
+	match kind:
+		"reeds":
+			# Tall stems with brown cattail heads.
+			var pal := _ramp(c, 4, 0.2)
+			for x in range(1, SIZE, 3):
+				var xx := x + _rng.randi_range(0, 1)
+				var top := _rng.randi_range(0, 4)
+				for y in range(top, SIZE):
+					img.set_pixel(clampi(xx, 0, SIZE - 1), y, pal[_rng.randi_range(1, 3)])
+				if _rng.randf() < 0.6:
+					for y in range(top + 1, top + 4):
+						img.set_pixel(clampi(xx, 0, SIZE - 1), y, Color(0.42, 0.27, 0.16))
+				# A leaf blade leaning off the stem.
+				var lx := xx
+				for y in range(SIZE - 2, top + 6, -1):
+					lx += 1 if _rng.randf() < 0.3 else 0
+					if lx < SIZE:
+						img.set_pixel(lx, y, pal[2])
+		"wild_grain":
+			# Thin stalks with nodding golden-green ears.
+			var green := _ramp(Color(0.55, 0.62, 0.3), 4, 0.2)
+			var gold := _ramp(c, 4, 0.2)
+			for x in range(1, SIZE, 2):
+				var top := _rng.randi_range(2, 6)
+				for y in range(top, SIZE):
+					img.set_pixel(x, y, green[_rng.randi_range(1, 3)] if y > top + 3 else gold[_rng.randi_range(1, 3)])
+				if x + 1 < SIZE:
+					img.set_pixel(x + 1, top + 1, gold[3])
+					img.set_pixel(x + 1, top + 3, gold[2])
+		"mushroom":
+			# Two or three capped mushrooms of different sizes.
+			var cap := _ramp(c, 4, 0.22)
+			var stem := Color(0.9, 0.86, 0.76)
+			for k in 3:
+				var cx := 3 + k * 5 + _rng.randi_range(-1, 1)
+				var h := _rng.randi_range(4, 8) if k != 1 else _rng.randi_range(7, 10)
+				var r := 2 if k != 1 else 3
+				for y in range(SIZE - h, SIZE):
+					img.set_pixel(clampi(cx, 0, SIZE - 1), y, stem)
+				var cy := SIZE - h
+				for dy in range(-2, 1):
+					for dx in range(-r, r + 1):
+						if abs(dx) + max(0, -dy) * 1 > r + 1:
+							continue
+						var px := clampi(cx + dx, 0, SIZE - 1)
+						var col: Color = cap[3] if dy == -2 else cap[2 if dy == -1 else 1]
+						img.set_pixel(px, clampi(cy + dy, 0, SIZE - 1), col)
+				# White spots on the cap.
+				img.set_pixel(clampi(cx - 1, 0, SIZE - 1), clampi(cy - 1, 0, SIZE - 1), Color(0.96, 0.94, 0.9))
+		"herb_plant":
+			# A leafy herb with pale flower clusters.
+			var pal := _ramp(c, 4, 0.24)
+			for b in 7:
+				var x := float(_rng.randi_range(3, 12))
+				var lean := _rng.randf_range(-0.5, 0.5)
+				var h := _rng.randi_range(5, 11)
+				for s in h:
+					var px := clampi(int(round(x + lean * float(s))), 0, SIZE - 1)
+					img.set_pixel(px, SIZE - 1 - s, pal[clampi(1 + s * 3 / h, 0, 3)])
+					if s % 3 == 1 and px + 1 < SIZE:
+						img.set_pixel(px + 1, SIZE - 1 - s, pal[2])
+				var tx := clampi(int(round(x + lean * float(h))), 0, SIZE - 2)
+				img.set_pixel(tx, SIZE - h, Color(0.95, 0.92, 0.98))
+				img.set_pixel(tx + 1, SIZE - h, Color(0.86, 0.8, 0.95))
+		_:
+			img = _tuft(c, 1)
 	return img
 
 
@@ -382,6 +470,63 @@ func _paint(key: String, c: Color, m: Dictionary) -> Array:
 		"crop":
 			var s := _stalks()
 			return [s, s, s]
+		"snow":
+			var dirt := _dirt(Color("7a5534"))
+			return [_snow_top(c), _snow_side(c, dirt), dirt]
+		"ice":
+			var i := _ice(c)
+			return [i, i, i]
+		"mud":
+			var md := _mud(c)
+			return [md, md, md]
+		"red_sand":
+			var s := _sand(c)
+			return [s, s, s]
+		"sandstone":
+			var s := _sandstone(c)
+			return [_noisy(c, 0.14, 0.25), s, _noisy(c, 0.14, 0.25)]
+		"granite":
+			var g := _stone(c, false)
+			_speckle(g, Color(0.86, 0.72, 0.68), 9)
+			_speckle(g, Color(0.2, 0.19, 0.2), 8)
+			return [g, g, g]
+		"limestone":
+			var l := _stone(c, false)
+			_speckle(l, _shade(c, 0.78), 10)
+			_speckle(l, _shade(c, 1.1), 6, 2)
+			return [l, l, l]
+		"flint":
+			var o := _ore(Color("c9c3ae"), c, false)
+			return [o, o, o]
+		"dry_grass":
+			var dirt := _dirt(Color("7a5534"))
+			var top := _grass_top(c)
+			_speckle(top, Color(0.62, 0.5, 0.3), 8)
+			return [top, _grass_side(c, dirt), dirt]
+		"pine_log":
+			var bark := _bark(c)
+			for i in 10:
+				bark.set_pixel(_rng.randi_range(0, 15), _rng.randi_range(0, 15), _shade(c, 0.6))
+			return [_rings(c), bark, _rings(c)]
+		"birch_log":
+			return [_rings(Color(0.6, 0.5, 0.36)), _birch(c), _rings(Color(0.6, 0.5, 0.36))]
+		"pine_leaves":
+			var l := _needles(c)
+			return [l, l, l]
+		"birch_leaves":
+			var l := _leaves(c)
+			return [l, l, l]
+		"fruit_leaves":
+			var l := _leaves(c)
+			for i in 5:
+				var x := _rng.randi_range(0, SIZE - 2)
+				var y := _rng.randi_range(0, SIZE - 2)
+				var fruit := Color(0.86, 0.22, 0.16) if i % 2 == 0 else Color(0.95, 0.58, 0.16)
+				img_blob(l, x, y, fruit)
+			return [l, l, l]
+		"cactus":
+			var s := _cactus(c)
+			return [_noisy(c, 0.2), s, _noisy(c, 0.2)]
 		_:
 			var n := _noisy(c)
 			return [n, n, n]
@@ -771,4 +916,115 @@ func _cracks(stage: int) -> Image:
 			img.set_pixel(posmod(x, SIZE), posmod(y, SIZE), Color(0, 0, 0, 0.85))
 			x += dx if _rng.randf() < 0.7 else _rng.randi_range(-1, 1)
 			y += dy if _rng.randf() < 0.7 else _rng.randi_range(-1, 1)
+	return img
+
+
+func img_blob(img: Image, x: int, y: int, c: Color) -> void:
+	img.set_pixel(x, y, c.lightened(0.25))
+	img.set_pixel(x + 1, y, c)
+	img.set_pixel(x, y + 1, c)
+	img.set_pixel(x + 1, y + 1, _shade(c, 0.7))
+
+
+func _snow_top(c: Color) -> Image:
+	var img := _noisy(c, 0.06, 0.12)
+	# Faint blue hollows and glints.
+	_speckle(img, Color(0.8, 0.86, 0.95), 10, 2)
+	_speckle(img, Color(1, 1, 1), 8)
+	return img
+
+
+func _snow_side(c: Color, dirt: Image) -> Image:
+	var img := dirt.duplicate() as Image
+	var pal := _ramp(c, 3, 0.06)
+	for x in SIZE:
+		var depth := 3 + (1 if _rng.randf() < 0.5 else 0) + (1 if _rng.randf() < 0.2 else 0)
+		for y in depth:
+			img.set_pixel(x, y, pal[_rng.randi_range(0, 2)])
+		img.set_pixel(x, depth, _shade(img.get_pixel(x, depth), 0.8))
+	return img
+
+
+func _ice(c: Color) -> Image:
+	var img := _img()
+	var pal := _ramp(c, 4, 0.12)
+	var f := _fbm(0.2)
+	for y in SIZE:
+		for x in SIZE:
+			img.set_pixel(x, y, Color(pal[clampi(int(f[y * SIZE + x] * 4.0), 0, 3)], 0.4))
+	# White fracture lines.
+	for k in 3:
+		var x := _rng.randi_range(0, SIZE - 1)
+		var y := _rng.randi_range(0, SIZE - 1)
+		for s in _rng.randi_range(4, 8):
+			img.set_pixel(posmod(x, SIZE), posmod(y, SIZE), Color(0.95, 0.98, 1.0, 0.3))
+			x += _rng.randi_range(-1, 1)
+			y += 1
+	return img
+
+
+func _mud(c: Color) -> Image:
+	var img := _noisy(c, 0.22, 0.3)
+	# Wet, glossy puddles (alpha < 1 marks glossy texels).
+	var f := _noise(4)
+	for y in SIZE:
+		for x in SIZE:
+			if f[y * SIZE + x] > 0.68:
+				var p := img.get_pixel(x, y)
+				img.set_pixel(x, y, Color(_shade(p, 0.8).lerp(Color(0.4, 0.42, 0.44), 0.25), 0.35))
+	_pebbles(img, Color(0.45, 0.4, 0.34), 2)
+	return img
+
+
+func _sandstone(c: Color) -> Image:
+	var img := _noisy(c, 0.12, 0.2)
+	# Horizontal strata in warm bands.
+	for y in SIZE:
+		var k := 1.0 + 0.1 * sin(float(y) * 1.1)
+		if y % 5 == 4:
+			k = 0.8
+		for x in SIZE:
+			img.set_pixel(x, y, _shade(img.get_pixel(x, y), k))
+	return img
+
+
+func _birch(c: Color) -> Image:
+	var img := _noisy(c, 0.08, 0.15)
+	# Black lenticels in short horizontal dashes.
+	for i in 9:
+		var x := _rng.randi_range(0, SIZE - 4)
+		var y := _rng.randi_range(0, SIZE - 1)
+		for dx in _rng.randi_range(2, 4):
+			img.set_pixel(x + dx, y, Color(0.16, 0.15, 0.14))
+	return img
+
+
+func _needles(c: Color) -> Image:
+	var img := _img()
+	var pal := _ramp(c, 5, 0.36)
+	_quantize(img, _fbm(0.6), pal)
+	# Short diagonal needle strokes.
+	for i in 18:
+		var x := _rng.randi_range(0, SIZE - 1)
+		var y := _rng.randi_range(0, SIZE - 1)
+		var d := 1 if i % 2 == 0 else -1
+		for k in 3:
+			img.set_pixel(posmod(x + k * d, SIZE), posmod(y + k, SIZE), pal[4] if k == 0 else pal[3])
+	for i in 14:
+		img.set_pixel(_rng.randi_range(0, SIZE - 1), _rng.randi_range(0, SIZE - 1), _shade(pal[0], 0.6))
+	return img
+
+
+func _cactus(c: Color) -> Image:
+	var img := _img()
+	var pal := _ramp(c, 4, 0.22)
+	for y in SIZE:
+		for x in SIZE:
+			var rib := x % 4
+			var col: Color = pal[3] if rib == 1 else (pal[0] if rib == 3 else pal[2])
+			img.set_pixel(x, y, col)
+	# Pale spines along the ribs.
+	for y in range(1, SIZE, 3):
+		for x in range(1, SIZE, 4):
+			img.set_pixel(x, y, Color(0.93, 0.9, 0.78))
 	return img

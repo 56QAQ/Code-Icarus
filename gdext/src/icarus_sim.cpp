@@ -45,6 +45,7 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("take_fx"), &IcarusSim::take_fx);
     ClassDB::bind_method(D_METHOD("fire_spots", "max_count"), &IcarusSim::fire_spots);
     ClassDB::bind_method(D_METHOD("build_cell_mesh", "cell"), &IcarusSim::build_cell_mesh);
+    ClassDB::bind_method(D_METHOD("build_lod_mesh", "column", "step"), &IcarusSim::build_lod_mesh);
     ClassDB::bind_method(D_METHOD("raycast", "origin", "dir", "max_dist"), &IcarusSim::raycast);
     ClassDB::bind_method(D_METHOD("cube_info", "cube"), &IcarusSim::cube_info);
     ClassDB::bind_method(D_METHOD("debris_list"), &IcarusSim::debris_list);
@@ -120,7 +121,8 @@ bool IcarusSim::new_game(const Dictionary& config) {
     try {
         icarus::Json j = variant_to_json(config);
         icarus::GameConfig cfg;
-        cfg.world.seed = (uint64_t)j.num("seed", 1);
+        cfg.world = icarus::WorldConfig::for_layout(icarus::layout_from_key(j.str("layout", "classic")),
+                                                    (uint64_t)j.num("seed", 1));
         cfg.world.island_radius = j.flt("island_radius", cfg.world.island_radius);
         cfg.scenario = j.str("scenario", cfg.scenario);
         cfg.residents = j.integer("residents", cfg.residents);
@@ -182,7 +184,18 @@ Dictionary IcarusSim::world_info() const {
     feat["bridge_a"] = to_gd(f.bridge_a);
     feat["bridge_b"] = to_gd(f.bridge_b);
     feat["ravine_end"] = to_gd(f.ravine_end);
+    Array sites;
+    for (const icarus::Site& s : f.sites) {
+        Dictionary sd;
+        sd["center"] = to_gd(s.center);
+        sd["farms"] = to_gd(s.farms);
+        sd["water"] = to_gd(s.water);
+        sd["biome"] = String(icarus::biome_key(s.biome));
+        sites.push_back(sd);
+    }
+    feat["sites"] = sites;
     d["features"] = feat;
+    d["layout"] = String(icarus::layout_key(w.config().layout));
     Array islands;
     for (const auto& is : w.gen().islands()) {
         Dictionary id;
@@ -245,6 +258,10 @@ Array IcarusSim::material_table() const {
         d["fluid"] = m.fluid;
         d["granular"] = m.granular;
         d["anchor"] = m.anchor;
+        d["trunk"] = m.trunk;
+        d["foliage"] = m.foliage;
+        d["sprite"] = to_gd(m.sprite);
+        d["sprite_layer"] = m.sprite_layer;
         out.push_back(d);
     }
     return out;
@@ -302,6 +319,15 @@ Array IcarusSim::build_cell_mesh(const Vector3i& cell) {
     out.push_back(mesh_to_arrays(scratch_.foliage));
     out.push_back(mesh_to_arrays(scratch_.decor));
     out.push_back(mesh_to_arrays(scratch_.crops));
+    return out;
+}
+
+Array IcarusSim::build_lod_mesh(const Vector2i& column, int step) {
+    Array out;
+    if (!sim_ || !mesher_) return out;
+    mesher_->build_lod_column(column.x, column.y, step, scratch_);
+    out.push_back(mesh_to_arrays(scratch_.opaque));
+    out.push_back(mesh_to_arrays(scratch_.water));
     return out;
 }
 

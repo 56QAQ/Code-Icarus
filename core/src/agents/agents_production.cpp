@@ -188,11 +188,11 @@ void Agents::production_jobs() {
                 if (need_wood && d > 12 * 12) {
                     for (int y = col.top + 1; y <= col.top + 2; ++y) {
                         Vec3i p{x, y, z};
-                        if (vmat(w.peek(p)) != M.log || vmat(w.peek(p + Vec3i{0, -1, 0})) == M.log) continue;
+                        if (!reg.mat(vmat(w.peek(p))).trunk || reg.mat(vmat(w.peek(p + Vec3i{0, -1, 0}))).trunk) continue;
                         // A tree, not a wall: no building owns it, and leaves crown the trunk.
                         if (ctx_.buildings->at(p)) break;
                         bool crown = false;
-                        for (int k = 1; k <= 10 && !crown; ++k) crown = vmat(w.peek(p + Vec3i{0, k, 0})) == M.leaves;
+                        for (int k = 1; k <= 13 && !crown; ++k) crown = reg.mat(vmat(w.peek(p + Vec3i{0, k, 0}))).foliage;
                         if (crown) spots.push_back({d, p, 0});
                         break;
                     }

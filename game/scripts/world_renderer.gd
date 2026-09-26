@@ -3,10 +3,18 @@ extends Node3D
 ## Draws the voxel world. Cells are meshed by the kernel (C++) nearest-first within a
 ## per-frame time budget; changed cells are re-meshed. Read-only with respect to the
 ## simulation: meshing uses renderer-safe access that never activates cells.
+##
+## Only cell columns within `detail_radius` of the camera's focus are meshed cube by
+## cube; every column also has a coarse stand-in (LOD: the surface in blocks of
+## `lod_step` cubes), shown wherever the detailed cells are not (yet) there. A large
+## island stays cheap to draw and quick to appear.
 
 var sim: IcarusSim
 var camera: Camera3D
 var budget_ms := 7.0
+var detail_radius := 224.0
+var lod_step := 4
+var focus := Vector3.ZERO  # set by the scene each frame (the camera rig's target)
 
 var mat_terrain: ShaderMaterial
 var mat_water: ShaderMaterial
@@ -17,6 +25,12 @@ var _cells := {}      # Vector3i -> Node3D
 var _pending := {}    # Vector3i -> true
 var _order: Array[Vector3i] = []
 var _order_dirty := false
+var _columns := {}    # Vector2i -> Array[Vector3i]: the cells of each column worth drawing
+var _detailed := {}   # Vector2i -> true: columns drawn cube by cube
+var _waiting := {}    # Vector2i -> {Vector3i: true}: cells a new detailed column still lacks
+var _lod := {}        # Vector2i -> Node3D
+var _lod_pending := {}  # Vector2i -> true
+var _focus_col := Vector2i(-99999, -99999)
 var _debris := {}     # id -> MeshInstance3D
 var _meteors := {}    # id -> Node3D
 
@@ -50,16 +64,30 @@ func setup(s: IcarusSim, cam: Camera3D) -> void:
 	for m in sim.material_table():
 		if m["key"] == "grass":
 			grass = m["color"]
-	mat_decor.set_shader_parameter("decor", TextureForge.build_decor(grass))
+	mat_decor.set_shader_parameter("decor", TextureForge.build_decor(grass, sim.material_table()))
 	for c in _cells.values():
 		c.queue_free()
 	_cells.clear()
+	for c in _lod.values():
+		c.queue_free()
+	_lod.clear()
 	_pending.clear()
+	_columns.clear()
+	_detailed.clear()
+	_waiting.clear()
+	_lod_pending.clear()
 	_initial_done = false
 	var list: PackedInt32Array = sim.render_cells()
 	for i in range(0, list.size(), 3):
-		_pending[Vector3i(list[i], list[i + 1], list[i + 2])] = true
+		var c := Vector3i(list[i], list[i + 1], list[i + 2])
+		var col := Vector2i(c.x, c.z)
+		if not _columns.has(col):
+			_columns[col] = []
+			_lod_pending[col] = true
+		_columns[col].append(c)
 	sim.take_dirty_cells()
+	_focus_col = Vector2i(-99999, -99999)
+	_update_detail()
 	_order_dirty = true
 
 
@@ -76,19 +104,68 @@ func set_wetness(v: float) -> void:
 
 
 func pending_count() -> int:
-	return _pending.size()
+	return _pending.size() + _lod_pending.size()
+
+
+## Brings columns near the focus into full detail and lets far ones fall back to their
+## stand-ins. Runs when the focus crosses into another column.
+func _update_detail() -> void:
+	var fc := Vector2i(floori(focus.x / 32.0), floori(focus.z / 32.0))
+	if fc == _focus_col:
+		return
+	_focus_col = fc
+	var f2 := Vector2(focus.x, focus.z)
+	for col: Vector2i in _columns.keys():
+		var d := Vector2(col.x * 32 + 16, col.y * 32 + 16).distance_to(f2)
+		if d <= detail_radius and not _detailed.has(col):
+			_detailed[col] = true
+			var wait := {}
+			for c: Vector3i in _columns[col]:
+				if not _cells.has(c):
+					_pending[c] = true
+					wait[c] = true
+			if not wait.is_empty():
+				_waiting[col] = wait
+			_order_dirty = true
+			_show_lod(col)
+		elif d > detail_radius + 48.0 and _detailed.has(col):
+			_detailed.erase(col)
+			_waiting.erase(col)
+			for c: Vector3i in _columns[col]:
+				_pending.erase(c)
+				var holder: Node3D = _cells.get(c)
+				if holder:
+					holder.queue_free()
+					_cells.erase(c)
+			if not _lod.has(col):
+				_lod_pending[col] = true
+			_show_lod(col)
+
+
+func _show_lod(col: Vector2i) -> void:
+	var holder: Node3D = _lod.get(col)
+	if holder:
+		holder.visible = not _detailed.has(col) or _waiting.has(col)
 
 
 func _process(_delta: float) -> void:
 	if sim == null or not sim.has_game():
 		return
+	_update_detail()
 	var dirty: PackedInt32Array = sim.take_dirty_cells()
 	for i in range(0, dirty.size(), 3):
 		var c := Vector3i(dirty[i], dirty[i + 1], dirty[i + 2])
-		if not _pending.has(c):
+		var col := Vector2i(c.x, c.z)
+		if not _columns.has(col):
+			_columns[col] = []
+		if not c in _columns[col]:
+			_columns[col].append(c)
+		if not _detailed.has(col):
+			_lod_pending[col] = true
+		elif not _pending.has(c):
 			_pending[c] = true
 			_order_dirty = true
-	if _pending.is_empty():
+	if _pending.is_empty() and _lod_pending.is_empty():
 		if not _initial_done:
 			_initial_done = true
 			initial_meshing_done.emit()
@@ -114,8 +191,45 @@ func _mesh_some() -> void:
 			continue
 		_pending.erase(c)
 		_build(c)
+		var col := Vector2i(c.x, c.z)
+		if _waiting.has(col):
+			_waiting[col].erase(c)
+			if _waiting[col].is_empty():
+				_waiting.erase(col)
+				_show_lod(col)
 		if float(Time.get_ticks_usec() - t0) / 1000.0 > limit:
-			break
+			return
+	# Stand-ins with what is left of the budget.
+	for col: Vector2i in _lod_pending.keys():
+		_lod_pending.erase(col)
+		_build_lod(col)
+		if float(Time.get_ticks_usec() - t0) / 1000.0 > limit:
+			return
+
+
+func _build_lod(col: Vector2i) -> void:
+	var arrays: Array = sim.build_lod_mesh(col, lod_step)
+	var holder: Node3D = _lod.get(col)
+	if holder:
+		for ch in holder.get_children():
+			ch.queue_free()
+	else:
+		holder = Node3D.new()
+		holder.name = "lod_%d_%d" % [col.x, col.y]
+		add_child(holder)
+		_lod[col] = holder
+	for i in arrays.size():
+		var arr: Array = arrays[i]
+		if arr.is_empty():
+			continue
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.material_override = mat_terrain if i == 0 else mat_water
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(mi)
+	_show_lod(col)
 
 
 func _dist2(c: Vector3i, cam: Vector3) -> float:
