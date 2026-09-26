@@ -83,6 +83,7 @@ func _ready() -> void:
 	if interactive:
 		hud.open_menu()
 	hud.selection.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 40.0))
+	hud.selection.character_requested.connect(func(id: int) -> void: _select_character(id))
 	hud.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 45.0))
 	hud.civ_card.girl_selected.connect(func(id: int) -> void:
 		# The camera turns to her (she ends up in the middle): the card goes beside that.

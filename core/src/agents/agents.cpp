@@ -14,7 +14,7 @@ namespace icarus {
 
 namespace {
 // Per-character data added in version 2 (see Agents::save).
-constexpr u64 kCharBlockVersion = 1;
+constexpr u64 kCharBlockVersion = 2;  // 2: age, partner, parents, awakening
 }  // namespace
 
 Agents::Agents(SimContext& ctx) : ctx_(ctx) {}
@@ -48,6 +48,7 @@ EntityId Agents::spawn(CharKind kind, const std::string& name, bool female, cons
     if (kind == CharKind::MagicalGirl) c->girl = std::make_unique<GirlData>();
     chars_.push_back(std::move(c));
     Character& ref = *chars_.back();
+    set_first_age(ref);
     place_at(ref, foot);
     return ref.id;
 }
@@ -105,6 +106,7 @@ void Agents::step(Tick now) {
         fail_ring_[(size_t)fail_ring_pos_] = 0;
     }
     if (now % kTicksPerHour == kTicksPerHour / 2) assign_homes();
+    if (now % kTicksPerDay == kTicksPerHour * 6 + 17) daily_life();
     if (now % 600 == 0) refresh_water_spots();
     if (now % 50 == 0) {
         ctx_.jobs->expire(now);
@@ -139,6 +141,7 @@ void Agents::update_needs(Character& c) {
     if (const Polity* pp = ctx_.society->polity(c.polity)) activity *= 1.0f - pp->passive("numb");
     float appetite = 1.0f;
     if (c.is_girl() && c.girl->drive == "gluttony" && c.girl->level >= 2) appetite = 3.0f;  // 无底
+    if (!c.is_girl() && c.age0 < 14.0f && is_child(c)) appetite *= 0.6f;  // children eat less
     c.needs.food = clampv(c.needs.food - tune.food_per_day * per_tick * activity * appetite, 0.0f, 1.0f);
     c.needs.water = clampv(c.needs.water - tune.water_per_day * per_tick * activity, 0.0f, 1.0f);
     if (c.sleeping) {
@@ -227,7 +230,18 @@ void Agents::assign_homes() {
         if (!cp || !cp->alive || cp->departed || cp->is_girl() || cp->home) continue;
         Building* best = nullptr;
         i64 bd = 0;
+        // Family first: a partner's or a parent's home with a bed free.
+        for (EntityId kin : {cp->partner, cp->parents[0], cp->parents[1]}) {
+            const Character* k = get(kin);
+            Building* kb = k && k->alive ? ctx_.buildings->get(k->home) : nullptr;
+            if (kb && kb->polity == cp->polity && kb->functional && (int)kb->residents.size() < kb->beds) {
+                best = kb;
+                break;
+            }
+        }
+        const bool family = best != nullptr;
         for (Building* b : homes) {
+            if (family) break;
             if (b->polity != cp->polity || !b->functional || (int)b->residents.size() >= b->beds) continue;
             const i64 d = b->entrance.dist2(cp->foot);
             if (!best || d < bd) {
@@ -334,9 +348,18 @@ void Agents::kill(Character& c, const std::string& cause, EventId ev_cause) {
     e.actor = c.id;
     e.polity = c.polity;
     e.causes[0] = ev_cause;
-    e.text = strfmt("%s死亡：%s", c.name.c_str(), cause.c_str());
+    e.text = cause == "年老" ? strfmt("%s安详离世，享年 %d 岁", c.name.c_str(), (int)age_years(c))
+                             : strfmt("%s死亡：%s", c.name.c_str(), cause.c_str());
     e.data.set("cause", cause);
     c.death_event = ctx_.chron->emit(std::move(e));
+    // Partner and children mourn.
+    if (Character* pt = get(c.partner); pt && pt->partner == c.id) {
+        pt->partner = kNoEntity;
+        pt->remember(now_, MemoryKind::Bereaved, c.id, -0.35f, c.death_event);
+    }
+    for (auto& o : chars_)
+        if (o && o->alive && (o->parents[0] == c.id || o->parents[1] == c.id))
+            o->remember(now_, MemoryKind::Bereaved, c.id, -0.3f, c.death_event);
     if (Polity* p = ctx_.society->polity(c.polity)) p->deaths_total++;
     // Witnesses and friends remember.
     for (auto& o : chars_) {
@@ -485,6 +508,8 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
     (void)w;
     float speed = tune.walk_speed * c.body.mobility();
     if (c.needs.rest < 0.15f) speed *= 0.7f;
+    if (c.age0 < 14.0f && is_child(c)) speed *= 0.8f;
+    else if (is_elder(c)) speed *= 0.85f;
     if (c.needs.food < 0.1f || c.needs.water < 0.1f) speed *= 0.75f;
     if (c.fear > 0.5f && c.task.type == TaskType::Flee) speed *= 1.3f;
     float cost = nav.step_cost(next);
@@ -568,6 +593,7 @@ void Agents::update_equipment(Character& c) {
     if (c.tool != held) c.tool_wear = 0;
     if (inv) inv->capacity = carry_capacity(c);
     if (c.is_girl() || !c.body.can_hold()) return;
+    const bool child = c.age0 < 14.0f && is_child(c);  // children take only something to wear
     // Pick up better gear from a public store within reach.
     for (StoreId sid : ctx_.society->public_stores(c.polity)) {
         const Store* st = ctx_.econ->store(sid);
@@ -594,7 +620,7 @@ void Agents::update_equipment(Character& c) {
         };
         // The tool of one's trade (any tool rather than none); a better one of the same
         // kind replaces it.
-        {
+        if (!child) {
             const std::string trade = occupation_tool(c.occupation);
             const float cur = tool_factor(c, trade);
             ItemId best = kNoItem;
@@ -621,7 +647,7 @@ void Agents::update_equipment(Character& c) {
         upgrade(c.weapon, "weapon", c.drafted);
         upgrade(c.armor, "armor", c.drafted);
         // A cart for anyone who hauls (soldiers march without one).
-        if (c.cart == kNoItem && !c.drafted)
+        if (c.cart == kNoItem && !c.drafted && !child)
             for (const ItemStack& is : st->items)
                 if (reg.item(is.item).has_tag("cart") && ctx_.econ->available(sid, is.item, c.id) > 0 &&
                     ctx_.econ->transfer(sid, c.inv, is.item, 1) == 1) {
@@ -837,6 +863,12 @@ void Agents::save(BinWriter& w) const {
         w.u16v(c.clothes);
         w.u16v(c.tool_wear);
         w.u8v(c.task.resume);
+        w.f32(c.age0);
+        w.u32v(c.partner);
+        w.u32v(c.parents[0]);
+        w.u32v(c.parents[1]);
+        w.u64v(c.last_child);
+        w.u64v(c.girl ? c.girl->awakened : 0);
     }
     w.end_section(sec);
 }
@@ -1052,6 +1084,15 @@ void Agents::load(BinReader& outer) {
                 ch.tool_wear = r.u16v();
                 ch.task.resume = r.u8v();
             }
+            if (version >= 2) {
+                ch.age0 = r.f32();
+                ch.partner = r.u32v();
+                ch.parents[0] = r.u32v();
+                ch.parents[1] = r.u32v();
+                ch.last_child = r.u64v();
+                const Tick aw = r.u64v();
+                if (ch.girl) ch.girl->awakened = aw;
+            }
         }
     }
 }
@@ -1064,6 +1105,8 @@ u64 Agents::hash() const {
         h = fnv1a64(&c->needs, sizeof(c->needs), h);
         h = hash_combine(h, (u64)c->task.type);
         h = hash_combine(h, (u64)c->body.total_alive());
+        h = hash_combine(h, ((u64)c->partner << 32) ^ (u64)c->parents[0] ^ ((u64)c->parents[1] << 16));
+        h = fnv1a64(&c->age0, sizeof(c->age0), h);
     }
     return h;
 }

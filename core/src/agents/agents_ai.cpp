@@ -149,12 +149,14 @@ void Agents::think(Character& c) {
     if (work_time) social *= 0.5f;
     add("交谈", social, strfmt("孤独 %s，社交性 %s", pct(lonely), pct(c.pers.sociability)));
 
-    // Work.
+    // Work (children play instead).
+    const bool child = c.age0 < 14.0f && is_child(c);
     std::string job_why;
     float job_score = -1;
     u32 job = 0;
-    if (c.body.can_hold()) job = best_job(c, job_score, job_why);
+    if (c.body.can_hold() && !child) job = best_job(c, job_score, job_why);
     if (job) add("工作", job_score, job_why);
+    if (child) add("玩耍", 0.3f + 0.2f * c.pers.sociability, strfmt("还是个孩子（%d 岁）", (int)age_years(c)));
 
     // Governing (magical girls holding office).
     if (c.is_girl() && p && (p->ruler == c.id || c.girl->role != "none") && work_time) {
@@ -167,7 +169,7 @@ void Agents::think(Character& c) {
     if (danger > 0.05f) add("逃离危险", danger * (1.0f + c.pers.caution) * 2.5f, strfmt("危险 %s，谨慎 %s", pct(danger), pct(c.pers.caution)));
 
     // Grievance → protest.
-    if (p && p->ruler != kNoEntity && p->ruler != c.id && work_time) {
+    if (p && p->ruler != kNoEntity && p->ruler != c.id && work_time && !child) {
         float s = c.support_for(p->ruler);
         float grievance = std::max(0.0f, -s) * (1.0f - c.mood) * (0.6f + c.pers.aggression + 0.3f * c.pers.idealism) -
                           c.fear * c.pers.conformity * 0.6f - pol.punishment * 0.25f;
@@ -187,7 +189,7 @@ void Agents::think(Character& c) {
 
     // Going over to a neighbour that treats its people better.
     const Polity* migrate_to = nullptr;
-    if (p && ctx_.society->polities().size() > 2) {
+    if (p && ctx_.society->polities().size() > 2 && !child) {
         std::string why;
         const float m = migration_pull(c, *p, migrate_to, why);
         if (migrate_to && m > 0.3f && !blacklisted(c, ctx_.buildings->get(migrate_to->seat)
@@ -241,7 +243,7 @@ void Agents::think(Character& c) {
     add("闲逛", 0.1f + (1.0f - c.mood) * 0.12f, "无事可做");
 
     // Pick with hysteresis: the current activity gets a commitment bonus.
-    auto label_for = [](TaskType t) -> std::string {
+    auto label_for = [&](TaskType t) -> std::string {
         switch (t) {
             case TaskType::Eat: return "吃饭";
             case TaskType::Drink: return "喝水";
@@ -252,7 +254,7 @@ void Agents::think(Character& c) {
             case TaskType::Flee: return "逃离危险";
             case TaskType::Protest: return "抗议";
             case TaskType::Steal: return "偷取食物";
-            case TaskType::Wander: return "闲逛";
+            case TaskType::Wander: return child ? "玩耍" : "闲逛";
             case TaskType::Cast: return "施法";
             case TaskType::Escape: return "设法脱困";
             case TaskType::Fight: return "从军";

@@ -163,6 +163,11 @@ struct Polity {
             if (c.kind == k) return &c;
         return nullptr;
     }
+    const Crisis* crisis(CrisisKind k) const {
+        for (auto& c : crises)
+            if (c.kind == k) return &c;
+        return nullptr;
+    }
     War* war_with(u16 other) {
         for (auto& w : wars)
             if (w.enemy == other) return &w;

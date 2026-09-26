@@ -234,6 +234,14 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	var spd := moved / maxf(delta, 0.001)
 	n["speed"] = lerpf(float(n["speed"]), spd, 1.0 - exp(-delta * 8.0))
 	root.rotation.y = lerp_angle(root.rotation.y, float(c["yaw"]), 1.0 - exp(-delta * 10.0))
+	# Children are small and grow up; the old stoop a little.
+	var stage := String(c.get("stage", "adult"))
+	var sz := 1.0
+	if stage == "child":
+		sz = 0.5 + 0.5 * clampf(float(c.get("age", 14.0)) / 14.0, 0.0, 1.0)
+	elif stage == "elder":
+		sz = 0.96
+	root.scale = Vector3.ONE * sz
 	var parts: Array = n["parts"]
 	if parts.size() < 6:
 		return

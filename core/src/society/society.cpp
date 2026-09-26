@@ -414,7 +414,7 @@ void Society::compute_stats(Polity& p) {
     refresh_passives(p);
     PolityStats s;
     s.tick = ctx_.now;
-    int residents = 0, fed = 0, watered = 0;
+    int residents = 0, fed = 0, watered = 0, grown = 0;
     float mood = 0, sup = 0;
     for (const auto& cp : ctx_.agents->all()) {
         if (!cp || !cp->alive || cp->departed || cp->polity != p.id) continue;
@@ -428,7 +428,11 @@ void Society::compute_stats(Polity& p) {
         if (c.needs.food > 0.3f) fed++;
         if (c.needs.water > 0.3f) watered++;
         mood += c.mood;
-        sup += c.support_for(p.ruler);
+        // Children have no say in politics.
+        if (c.age0 >= 14.0f || !ctx_.agents->is_child(c)) {
+            sup += c.support_for(p.ruler);
+            ++grown;
+        }
         if (c.task.type == TaskType::Protest && c.task.step == 2) s.protesters++;
     }
     s.food_stock = public_food(p.id);
@@ -437,7 +441,7 @@ void Society::compute_stats(Polity& p) {
     s.food_access = residents ? (float)fed / (float)residents : 1.0f;
     s.water_access = residents ? (float)watered / (float)residents : 1.0f;
     s.mood = residents ? mood / (float)residents : 0.5f;
-    s.ruler_support = residents ? sup / (float)residents : 0.0f;
+    s.ruler_support = grown ? sup / (float)grown : 0.0f;
     s.deaths = p.deaths_total;
     s.harvest_today = ctx_.agents->day.harvested;
     float protest_share = residents ? (float)s.protesters / (float)residents : 0.0f;

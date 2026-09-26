@@ -625,6 +625,8 @@ Array IcarusSim::characters() const {
         d["sleeping"] = c.sleeping;
         d["alive"] = c.alive;
         d["girl"] = c.is_girl();
+        d["age"] = sim_->agents().age_years(c);
+        d["stage"] = String(sim_->agents().is_child(c) ? "child" : (sim_->agents().is_elder(c) ? "elder" : "adult"));
         d["body_version"] = (int64_t)c.body.version;
         d["polity"] = c.polity;
         d["task"] = to_gd(icarus::task_name_zh(c.task.type));
@@ -848,6 +850,30 @@ Dictionary IcarusSim::character_info(int64_t id) const {
     d["polity"] = c.polity;
     d["polity_title"] = to_gd(sim_->society().title(c.polity));
     d["pos"] = to_gd(c.pos);
+    // A life: age, stage, family.
+    {
+        const icarus::Agents& ag = sim_->agents();
+        d["age"] = ag.age_years(c);
+        d["stage"] = String(ag.is_child(c) ? "child" : (ag.is_elder(c) ? "elder" : "adult"));
+        auto who = [&](icarus::EntityId e) {
+            Dictionary w;
+            const icarus::Character* o = ag.get(e);
+            if (!o) return w;
+            w["id"] = (int64_t)o->id;
+            w["name"] = to_gd(o->name);
+            w["alive"] = o->alive;
+            return w;
+        };
+        if (c.partner) d["partner"] = who(c.partner);
+        Array parents, kids;
+        for (icarus::EntityId e : c.parents)
+            if (e) parents.push_back(who(e));
+        for (const auto& op : ag.all())
+            if (op && (op->parents[0] == c.id || op->parents[1] == c.id)) kids.push_back(who(op->id));
+        d["parents"] = parents;
+        d["children"] = kids;
+        if (c.girl && c.girl->awakened) d["awakened"] = to_gd(icarus::format_time_zh(c.girl->awakened));
+    }
     d["task"] = to_gd(icarus::task_name_zh(c.task.type));
     d["status"] = to_gd(c.status_text);
     d["reason"] = to_gd(c.task.label);

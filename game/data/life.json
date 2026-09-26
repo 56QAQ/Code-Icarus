@@ -1,0 +1,30 @@
+// The course of a life, compressed so that generations pass within a game: a game day
+// is years_per_day years of a life. Ages are in years.
+{
+  "years_per_day": 0.75,
+  "adult_age": 14,           // children grow up: until then they play, eat and sleep
+  "elder_age": 55,           // slower walking and working
+  "death_age": [60, 84],     // dying of old age becomes likely across this span
+  "girl_life_factor": 1.25,  // magical girls live longer
+  "first_ages": [16, 44],    // the first generation arrives grown
+  "girl_first_ages": [15, 19],
+
+  // Two unattached adults who have grown fond of each other pair off.
+  "partner_affinity": 0.3,
+  "partner_age": 18,
+  "housemate_affinity": 0.03,  // per day, between people sharing a home (or a band's fire)
+  // A couple may have a child when fed, housed and content.
+  "birth_chance": 0.3,         // per day, under good conditions
+  "birth_cooldown_days": 10,
+  "max_children": 3,
+  "min_mood": 0.45,
+  "min_food_days": 2.0,        // for farmers; foraging bands need everyone fed instead
+  "crowding": 0.3,             // chance factor when the home has no free bed
+  "band_factor": 0.5,          // bands without roofs have fewer children
+  "soft_cap": 120,             // chance falls as a polity nears this population
+
+  // Magical girls awaken among the people when a polity has fewer than it should.
+  "girls_wanted": 3,
+  "awaken_days": 4,            // at least this long after the polity's founding or last awakening
+  "awaken_chance": 0.2         // per day while short of girls (a leaderless people: almost surely)
+}

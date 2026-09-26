@@ -64,6 +64,8 @@ enum class EventType : u16 {
     Unification,  // one polity holds the whole island
     Trade,        // pacts, caravans, cut trade roads
     Hunt,         // game taken, beasts attacking people
+    Life,         // partnerships, births, coming of age, dying of old age
+    Awakening,    // a resident awakens as a magical girl
     Count
 };
 

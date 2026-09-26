@@ -287,7 +287,8 @@ const Character* Fauna::nearest_person(const Vec3f& p, float radius) const {
 void Fauna::step(Tick now) {
     now_ = now;
     if (species_.empty()) return;
-    if (people_at_ == ~0ull || now - people_at_ >= 10) index_people();
+    // Every tick (cheap): an index kept across ticks would differ after a load.
+    index_people();
     if (now % kTicksPerDay == kTicksPerDay / 4 && now > 0) daily();
     chasers_.clear();
     for (const Animal& a : animals_)
@@ -308,6 +309,7 @@ void Fauna::step(Tick now) {
         if (!a.alive) continue;
         move(a, dt);
     }
+    rough_ = false;  // between steps the ground is looked at as it is
 }
 
 void Fauna::think(Animal& a, bool near) {
@@ -608,6 +610,7 @@ void Fauna::die(Animal& a, const std::string& cause) {
 bool Fauna::strike(Animal& a, float power, EntityId by, EventId cause) {
     (void)cause;
     if (!a.alive) return false;
+    now_ = ctx_.now;  // called from the agents' step: the clock of this tick, not the last fauna step
     const SpeciesDef& s = species_[a.species];
     a.hp -= power / s.hp;
     a.attacker = by;
@@ -824,6 +827,7 @@ void Fauna::load(BinReader& outer) {
     }
     people_.clear();
     people_at_ = ~0ull;
+    rough_ = false;
 }
 
 u64 Fauna::hash() const {

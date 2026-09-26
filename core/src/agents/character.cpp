@@ -35,6 +35,9 @@ const char* memory_kind_zh(MemoryKind k) {
         case MemoryKind::Blessed: return "受到神恩";
         case MemoryKind::Cursed: return "遭受天罚";
         case MemoryKind::Migrated: return "投奔他乡";
+        case MemoryKind::Partnered: return "结为伴侣";
+        case MemoryKind::ChildBorn: return "孩子出生";
+        case MemoryKind::Bereaved: return "痛失至亲";
         default: return "";
     }
 }

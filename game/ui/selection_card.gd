@@ -7,6 +7,7 @@ signal closed
 signal focus_requested(pos: Vector3)
 signal event_requested(id: int)
 signal decision_requested(id: int)
+signal character_requested(id: int)
 
 var sim: IcarusSim
 var kind := ""        # "character" | "building" | "cube"
@@ -320,11 +321,16 @@ func _refresh_character() -> void:
 	_title.text = ("◆ " if not girl.is_empty() else "") + String(d["name"]) + ("" if d["alive"] else "（已故）")
 	if not girl.is_empty():
 		var roles := {"ruler": "统治者", "minister": "大臣", "governor": "总督", "general": "将军", "none": "无职务"}
-		_subtitle.text = "%s · %s · Lv%d" % [girl["title"], roles.get(girl["role"], girl["role"]), girl["level"]]
+		_subtitle.text = "%s · %s · Lv%d · %d 岁" % [girl["title"], roles.get(girl["role"], girl["role"]), girl["level"], int(d.get("age", 16))]
 	else:
 		var occ := {"food": "农夫", "build": "工匠", "gather": "劳工"}
 		var job: String = "士兵" if d.get("drafted", false) else occ.get(d.get("occupation", ""), "居民")
-		_subtitle.text = "人造人 · %s · 住在%s" % [job, d.get("home", "野外")]
+		var stage := String(d.get("stage", "adult"))
+		if stage == "child":
+			job = "孩子"
+		elif stage == "elder" and job == "居民":
+			job = "老人"
+		_subtitle.text = "人造人 · %s · %d 岁 · 住在%s" % [job, int(d.get("age", 20)), d.get("home", "野外")]
 	match _tab:
 		"status":
 			if not d["alive"]:
@@ -372,6 +378,7 @@ func _refresh_character() -> void:
 			if float(d.get("exposure", 0.0)) > 0.05:
 				var cold := _bar("寒冷", float(d["exposure"]))
 				cold.fixed_color = Color(0.55, 0.75, 0.95)
+			_family(d)
 			var inv: Array = d["inventory"]
 			if not inv.is_empty():
 				var s := ""
@@ -477,6 +484,39 @@ func _refresh_character() -> void:
 				var col := UITheme.TEXT if sp["unlocked"] else UITheme.TEXT_FAINT
 				_line("%s【%s·Lv%d】%s" % ["◆" if sp["unlocked"] else "◇", tag, sp["level"], sp["name"]], 13, col)
 				_line("　" + String(sp["desc"]), 12, UITheme.TEXT_FAINT)
+
+
+## Partner, parents and children as links to their own cards.
+func _family(d: Dictionary) -> void:
+	var rows := []
+	if d.has("partner"):
+		rows.append(["伴侣", [d["partner"]]])
+	if not (d.get("parents", []) as Array).is_empty():
+		rows.append(["父母", d["parents"]])
+	if not (d.get("children", []) as Array).is_empty():
+		rows.append(["孩子", d["children"]])
+	if rows.is_empty() and not d.has("awakened"):
+		return
+	_section("家人")
+	if d.has("awakened"):
+		_line("%s 在人群中觉醒为魔法少女" % String(d["awakened"]), 12, UITheme.MAGIC)
+	for r in rows:
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 4)
+		var l := UITheme.label(String(r[0]), 12, UITheme.TEXT_DIM)
+		l.custom_minimum_size = Vector2(40, 0)
+		h.add_child(l)
+		for who in r[1]:
+			var b := Button.new()
+			b.focus_mode = Control.FOCUS_NONE
+			b.flat = true
+			b.add_theme_font_size_override("font_size", 12)
+			b.add_theme_color_override("font_color", UITheme.ACCENT if who.get("alive", true) else UITheme.TEXT_FAINT)
+			b.text = String(who.get("name", "?")) + ("" if who.get("alive", true) else "（已故）")
+			var wid := int(who.get("id", -1))
+			b.pressed.connect(func() -> void: character_requested.emit(wid))
+			h.add_child(b)
+		_body.add_child(h)
 
 
 func _refresh_building() -> void:

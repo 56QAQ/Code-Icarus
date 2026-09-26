@@ -60,6 +60,17 @@ public:
     // Utility: random personality/appearance/skills.
     void randomize(Character& c, Rng& rng);
 
+    // The course of a life (agents_life.cpp). Ages are in years (see life.json).
+    float age_years(const Character& c) const;
+    bool is_child(const Character& c) const;
+    bool is_elder(const Character& c) const;
+    // A first-generation age for someone who arrives grown (a pure hash of who they are).
+    void set_first_age(Character& c);
+    // Once a day: old age, partnerships, births, coming of age, awakenings.
+    void daily_life();
+    // The children of a character (living ones).
+    std::vector<EntityId> children_of(EntityId id) const;
+
     // Job generation (fields, piles, sites, kitchens...).
     void generate_jobs();
     // A wild food plant in column (x, z) within reach from the ground: a bush, grain,

@@ -54,7 +54,8 @@ struct Support {
 
 enum class MemoryKind : u8 {
     None = 0, AteWell, Hungry, Thirsty, Injured, SawDeath, FriendDied, Punished, Rewarded, Helped, Saved,
-    Disaster, HomeLost, Rationed, Feast, Protested, Insulted, LostJob, Healed, Blessed, Cursed, Migrated
+    Disaster, HomeLost, Rationed, Feast, Protested, Insulted, LostJob, Healed, Blessed, Cursed, Migrated,
+    Partnered, ChildBorn, Bereaved
 };
 const char* memory_kind_zh(MemoryKind k);
 
@@ -113,6 +114,7 @@ struct GirlData {
     std::string stance = "loyal";  // loyal / critical / defiant / rebel
     std::vector<std::pair<std::string, float>> experience;  // option key -> how it worked out
     EntityId grudge = kNoEntity;   // someone who wronged her politically
+    Tick awakened = 0;             // when she awoke among the people (0: one of the first)
     float experience_of(const std::string& k) const {
         for (auto& e : experience)
             if (e.first == k) return e.second;
@@ -128,6 +130,10 @@ struct Character {
     bool alive = true;
     bool departed = false;
     Tick born = 0;
+    float age0 = 25.0f;             // age in years at `born` (the first generation arrives grown)
+    EntityId partner = kNoEntity;
+    EntityId parents[2] = {kNoEntity, kNoEntity};
+    Tick last_child = 0;
     Tick died = 0;
     std::string death_cause;
     EventId death_event = 0;

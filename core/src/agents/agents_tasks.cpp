@@ -623,11 +623,20 @@ bool Agents::task_wander(Character& c) {
         t.label = "归还随身物资";
         return true;
     }
+    const bool child = c.age0 < 14.0f && is_child(c);
+    const bool toddler = child && age_years(c) < 3.0f;  // stays by the door, toddling
     if (t.step == 0) {
         Vec3i anchor = c.foot;
         const Building* h = ctx_.buildings->get(c.home);
-        if (h && c.foot.chebyshev(h->entrance) > 30) anchor = h->entrance;
-        Vec3i goal{anchor.x + rng_.range(-8, 8), anchor.y, anchor.z + rng_.range(-8, 8)};
+        if (h && c.foot.chebyshev(h->entrance) > (toddler ? 2 : child ? 10 : 30)) anchor = h->entrance;
+        // Children without a roof play by the fire, or near a parent.
+        if (child && !h) {
+            const Polity* pp = ctx_.society->polity(c.polity);
+            const Building* seat = pp ? ctx_.buildings->get(pp->seat) : nullptr;
+            if (seat && c.foot.chebyshev(seat->entrance) > 10) anchor = seat->entrance;
+        }
+        const int reach = toddler ? 2 : 8;
+        Vec3i goal{anchor.x + rng_.range(-reach, reach), anchor.y, anchor.z + rng_.range(-reach, reach)};
         Vec3i st;
         if (!ctx_.nav->find_standable_near(goal, st, 3)) {
             t.step = 2;
@@ -638,7 +647,7 @@ bool Agents::task_wander(Character& c) {
         t.step = 1;
     }
     if (t.step == 1) {
-        say(c, "闲逛");
+        say(c, toddler ? "蹒跚学步" : child ? "玩耍" : "闲逛");
         Move m = move_to(c, t.target, false);
         if (m == Move::Moving && now_ - t.started < 400) return true;
         t.step = 2;
@@ -843,6 +852,7 @@ bool Agents::task_work(Character& c) {
         float skill = j ? c.skills[job_skill(j->type)] : 0.3f;
         float f = (0.6f + 0.8f * skill) * std::max(0.2f, c.body.manipulation());
         f *= tool_factor(c, kind);
+        if (is_elder(c)) f *= 0.75f;  // old hands are slower
         return (Tick)std::max(10.0f, base / f);
     };
     // Before setting out: fetch the right tool from a store not far out of the way.

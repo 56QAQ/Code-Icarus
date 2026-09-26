@@ -53,7 +53,11 @@ TEST("village: residents survive and work for two days") {
             drinks += sim.agents().day.drinks;
         }
     }
-    CHECK_EQ(sim.agents().count_alive(1), 21);
+    // Everyone who started is still alive (children may have been born since).
+    int founders = 0;
+    for (EntityId id = 1; id <= 21; ++id)
+        if (const Character* c = sim.agents().get(id); c && c->alive && c->polity == 1) ++founders;
+    CHECK_EQ(founders, 21);
     CHECK(harvested > 40);
     CHECK(drinks > 40);
     // Nobody is permanently stuck: path failures stay rare.

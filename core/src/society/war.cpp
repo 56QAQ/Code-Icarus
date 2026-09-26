@@ -118,15 +118,15 @@ int Society::soldiers(u16 id) const {
     return n;
 }
 
-static bool fit_to_serve(const Character& c, u16 polity) {
+static bool fit_to_serve(const SimContext& ctx, const Character& c, u16 polity) {
     return c.alive && !c.departed && !c.is_girl() && c.polity == polity && !c.drafted && c.body.can_hold() &&
-           c.body.mobility() >= 0.6f;
+           c.body.mobility() >= 0.6f && !ctx.agents->is_child(c) && !ctx.agents->is_elder(c);
 }
 
 int Society::draftable(u16 id) const {
     int n = 0;
     for (const auto& cp : ctx_.agents->all())
-        if (cp && fit_to_serve(*cp, id)) ++n;
+        if (cp && fit_to_serve(ctx_, *cp, id)) ++n;
     return n;
 }
 
@@ -136,7 +136,7 @@ int Society::draft(u16 id, int n, EventId cause) {
     std::vector<std::pair<float, Character*>> pool;
     for (const auto& cp : ctx_.agents->all()) {
         Character* c = cp.get();
-        if (!c || !fit_to_serve(*c, id)) continue;
+        if (!c || !fit_to_serve(ctx_, *c, id)) continue;
         float fit = c->pers.aggression + c->skills[kCombat] + 0.3f * c->pers.conformity - 0.3f * c->pers.caution +
                     0.2f * c->body.vitality;
         pool.push_back({fit, c});
