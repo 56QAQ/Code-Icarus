@@ -590,13 +590,16 @@ Array IcarusSim::characters() const {
         d["status"] = to_gd(c.status_text);
         const icarus::Store* inv = sim_->economy().store(c.inv);
         // Cargo, not the tools and gear they always have on them.
-        bool cargo = false;
+        // A load in both arms (a crate) only when it weighs something; a handful of
+        // berries is carried in one hand.
+        float cargo = 0.0f;
         if (inv)
             for (const auto& st : inv->items) {
                 const int kept = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
-                if (st.count > kept) cargo = true;
+                if (st.count > kept) cargo += (float)(st.count - kept) * reg_->item(st.item).weight;
             }
-        d["carrying"] = cargo;
+        d["carrying"] = cargo >= 2.0f;
+        d["cargo"] = cargo;
         d["working"] = c.task.type == icarus::TaskType::Work && c.task.until > now && !c.moving;
         // What the work is (for the animation) and the tool in hand.
         if (c.task.type == icarus::TaskType::Work)

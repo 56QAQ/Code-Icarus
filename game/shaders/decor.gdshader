@@ -28,7 +28,7 @@ void fragment() {
 	}
 	// Tips catch more light than roots.
 	c *= mix(0.72, 1.08, 1.0 - UV.y);
-	ALBEDO = c;
+	ALBEDO = safe_color(c);
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.2;
 	BACKLIGHT = c * 0.4;

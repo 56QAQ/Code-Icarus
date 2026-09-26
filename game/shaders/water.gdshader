@@ -64,8 +64,13 @@ void fragment() {
 	// How much water lies between the surface and whatever is behind it.
 	float depth = texture(depth_tex, SCREEN_UV).r;
 	vec4 view = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
-	view.xyz /= view.w;
-	float thickness = max(-view.z - (-VERTEX.z), 0.0);
+	// Nothing behind (the sky) or a degenerate depth: treat as deep water, never divide
+	// by zero (a NaN here would turn the pixel black).
+	float thickness = 50.0;
+	if (abs(view.w) > 1e-6) {
+		view.xyz /= view.w;
+		thickness = clamp(-view.z + VERTEX.z, 0.0, 50.0);
+	}
 	float murk = 1.0 - exp(-thickness / clarity);
 	// Refraction: the bed seen through the rippling surface, tinted by the water.
 	vec2 offs = nw.xz * 0.03 * clamp(thickness, 0.0, 1.0);

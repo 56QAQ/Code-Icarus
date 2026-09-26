@@ -9,7 +9,13 @@ uniform float speed = 0.004;
 
 varying vec3 wpos;
 
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// A hash without sin(): sin of large arguments loses precision on GPUs, which turned the
+// cloud sea into visible squares.
+float hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 float noise(vec2 p) {
 	vec2 i = floor(p), f = fract(p);
 	f = f * f * (3.0 - 2.0 * f);
@@ -26,8 +32,10 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 p = wpos.xz * scale + vec2(TIME * speed, TIME * speed * 0.6);
-	float d = fbm(p) * 0.65 + fbm(p * 3.1 - TIME * speed * 2.0) * 0.35;
+	// Wrapped time keeps coordinates small (precision) without a visible jump.
+	float tt = mod(TIME, 20000.0);
+	vec2 p = wpos.xz * scale + vec2(tt * speed, tt * speed * 0.6);
+	float d = fbm(p) * 0.65 + fbm(p * 3.1 - tt * speed * 2.0) * 0.35;
 	float dist = length(wpos.xz - CAMERA_POSITION_WORLD.xz);
 	float fade = 1.0 - smoothstep(1200.0, 2600.0, dist);
 	vec3 c = mix(shadow_color, cloud_color, smoothstep(0.35, 0.75, d));

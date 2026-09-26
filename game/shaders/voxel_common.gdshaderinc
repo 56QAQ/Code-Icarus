@@ -50,6 +50,15 @@ vec3 natural_tint(vec3 wpos) {
 	return mix(lush, dry, smoothstep(0.2, 0.85, m)) * mix(0.9, 1.04, n3);
 }
 
+// Never hand the lighting a NaN or a negative colour (some GPUs turn those black).
+vec3 safe_color(vec3 c) {
+	bvec3 bad = isnan(c);
+	if (bad.x || bad.y || bad.z || any(isinf(c))) {
+		return vec3(0.5);
+	}
+	return max(c, vec3(0.0));
+}
+
 // Continuous face coordinates (for gradients) from a model-space position and normal;
 // v runs downwards on the sides so textures stand upright.
 vec2 face_coords(vec3 p, vec3 n) {

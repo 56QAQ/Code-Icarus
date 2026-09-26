@@ -125,10 +125,31 @@ static func build_decor(grass: Color) -> Texture2DArray:
 		f._rng.seed = 980 + i
 		imgs.append(f._wheat(i))
 	for img in imgs:
+		_bleed(img)
 		img.generate_mipmaps()
 	var arr := Texture2DArray.new()
 	arr.create_from_images(imgs)
 	return arr
+
+
+## Transparent texels take the average colour of the opaque ones (alpha stays 0), so
+## mipmaps of cut-out sprites do not darken towards black at a distance.
+static func _bleed(img: Image) -> void:
+	var sum := Color(0, 0, 0, 0)
+	var n := 0
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a > 0.5:
+				sum += Color(c.r, c.g, c.b, 0)
+				n += 1
+	if n == 0:
+		return
+	var avg := Color(sum.r / n, sum.g / n, sum.b / n, 0.0)
+	for y in img.get_height():
+		for x in img.get_width():
+			if img.get_pixel(x, y).a <= 0.5:
+				img.set_pixel(x, y, avg)
 
 
 func _wheat(stage: int) -> Image:

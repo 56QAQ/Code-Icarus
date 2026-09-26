@@ -412,13 +412,57 @@ bool Agents::task_drink(Character& c) {
     return true;
 }
 
+Vec3i Agents::sleep_spot(const Character& c, const Building* home, const Vec3i& near) {
+    // Cubes taken by other sleepers (where they lie or are going to lie).
+    std::vector<Vec3i> taken;
+    for (const auto& op : chars_)
+        if (op && op->alive && !op->departed && op->id != c.id && op->task.type == TaskType::Sleep)
+            taken.push_back(op->task.step >= 2 ? op->foot : op->task.target);
+    auto free_at = [&](const Vec3i& p) { return std::find(taken.begin(), taken.end(), p) == taken.end(); };
+    Nav& nav = *ctx_.nav;
+    if (home) {
+        // The floor inside, farthest from the door first; each member of the household
+        // starts from their own spot.
+        std::vector<Vec3i> spots;
+        for (size_t i = 0; i < home->plan_pos.size(); ++i) {
+            const Vec3i& p = home->plan_pos[i];
+            if (p.y != home->inside.y || vmat(home->plan_vox[i]) != 0) continue;
+            if (nav.standable(p)) spots.push_back(p);
+        }
+        std::sort(spots.begin(), spots.end(), [&](const Vec3i& a, const Vec3i& b) {
+            const i64 da = a.dist2(home->entrance), db = b.dist2(home->entrance);
+            return da != db ? da > db : a < b;
+        });
+        if (!spots.empty()) {
+            int rank = 0;
+            for (const auto& op : chars_)
+                if (op && op->alive && !op->departed && op->home == c.home && op->id < c.id) ++rank;
+            for (size_t k = 0; k < spots.size(); ++k) {
+                const Vec3i& p = spots[((size_t)rank + k) % spots.size()];
+                if (free_at(p)) return p;
+            }
+        }
+    }
+    // Outdoors (or a full house): the nearest free standable cube around.
+    for (int r = 0; r <= 3; ++r)
+        for (int dz = -r; dz <= r; ++dz)
+            for (int dx = -r; dx <= r; ++dx) {
+                if (std::max(std::abs(dx), std::abs(dz)) != r) continue;
+                for (int dy : {0, 1, -1}) {
+                    const Vec3i p = near + Vec3i{dx, dy, dz};
+                    if (free_at(p) && nav.standable(p)) return p;
+                }
+            }
+    return near;
+}
+
 bool Agents::task_sleep(Character& c) {
     Task& t = c.task;
     if (t.step == 0) {
-        t.target = c.foot;
         const Building* h = ctx_.buildings->get(c.home);
         // Exhausted people far from home just lie down where they are.
-        if (h && h->functional && !(c.needs.rest < 0.3f && c.foot.chebyshev(h->inside) > 45)) t.target = h->inside;
+        const bool go_home = h && h->functional && !(c.needs.rest < 0.3f && c.foot.chebyshev(h->inside) > 45);
+        t.target = sleep_spot(c, go_home ? h : nullptr, go_home ? h->inside : c.foot);
         t.step = 1;
     }
     if (t.step == 1) {

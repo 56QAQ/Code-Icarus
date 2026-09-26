@@ -36,7 +36,7 @@ void fragment() {
 	vec2 gx = dFdx(uvc);
 	vec2 gy = dFdy(uvc);
 	VoxelSurface s = voxel_surface(UV, COLOR, lpos, lnrm, wpos, gx, gy);
-	ALBEDO = s.albedo * s.edge;
+	ALBEDO = safe_color(s.albedo * s.edge);
 	ROUGHNESS = mix(0.85, 0.08, s.gloss);
 	SPECULAR = mix(0.3, 0.8, s.gloss);
 	BACKLIGHT = s.albedo * 0.45;

@@ -39,6 +39,12 @@ func _ready() -> void:
 	var ui_layer := CanvasLayer.new()
 	add_child(ui_layer)
 	hud = HUD.new()
+	# Name tags live on the same 2D layer, under the cards.
+	var tags := Control.new()
+	tags.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	tags.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui_layer.add_child(tags)
+	chars.overlay = tags
 	ui_layer.add_child(hud)
 	if _cli.has("hide-ui"):
 		ui_layer.visible = false
@@ -65,7 +71,8 @@ func _ready() -> void:
 	hud.selection.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 40.0))
 	hud.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 45.0))
 	hud.civ_card.girl_selected.connect(func(id: int) -> void:
-		_select_character(id)
+		# The camera turns to her (she ends up in the middle): the card goes beside that.
+		_select_character(id, get_viewport().get_visible_rect().size * 0.5)
 		rig.focus(chars.position_of(id), 40.0))
 	if _cli.has("ticks"):
 		Game.sim.step(int(_cli["ticks"]))
@@ -207,7 +214,6 @@ func _build_environment() -> void:
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = 1.2
-	sun.light_angular_distance = 0.7  # soft-edged shadows that widen with distance
 	sun.rotation_degrees = Vector3(-52, 38, 0)
 	add_child(sun)
 
@@ -408,17 +414,24 @@ func _on_world_ready() -> void:
 	hud.on_world_changed()
 
 
-func _select_character(id: int) -> void:
+func _select_character(id: int, near := Vector2(-1, -1)) -> void:
 	chars.selected_id = id
 	hud.selection.show_character(id)
+	# Beside the clicked figure, or beside where the figure is on screen.
+	if near.x < 0.0:
+		var p := chars.position_of(id) + Vector3(0, 1.5, 0)
+		if not rig.camera.is_position_behind(p):
+			near = rig.camera.unproject_position(p)
+	hud.place_selection_near(near)
 	Game.select({"kind": "character", "id": id})
 
 
 func _apply_tool() -> void:
 	if Game.current_tool == "inspect":
-		var cid := chars.pick(get_viewport().get_mouse_position())
+		var mp := get_viewport().get_mouse_position()
+		var cid := chars.pick(mp)
 		if cid >= 0:
-			_select_character(cid)
+			_select_character(cid, mp)
 			return
 	var hit := _mouse_ray()
 	if not hit.get("hit", false):
@@ -448,6 +461,7 @@ func _apply_tool() -> void:
 			if not b.is_empty():
 				chars.selected_id = -1
 				hud.selection.show_building(b["id"], cube)
+				hud.place_selection_near(get_viewport().get_mouse_position())
 			else:
 				chars.selected_id = -1
 				hud.selection.visible = false

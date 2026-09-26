@@ -22,6 +22,8 @@ var _top_right: VBoxContainer
 var _bottom_left: VBoxContainer
 var _bottom_center: VBoxContainer
 var _bottom_right: VBoxContainer
+var _float: Control           # free-floating cards (the selection card)
+var _sel_anchor := Vector2(-1, -1)
 var civ_card: CivCard
 var selection: SelectionCard
 signal focus_requested(pos: Vector3)
@@ -80,6 +82,36 @@ func _ready() -> void:
 	_on_tool_changed(Game.current_tool)
 
 
+# ------------------------------------------------------------------ selection card
+
+## Shows the selection card beside a screen point (what was clicked): to its right, or
+## to its left near the right edge, vertically centred on it and kept clear of the top
+## bar and the tool dock. Without a point it goes to the right side of the screen.
+func place_selection_near(p: Vector2) -> void:
+	_sel_anchor = p
+	selection.moved_by_user = false
+	_place_selection()
+
+
+func _place_selection() -> void:
+	if not selection.visible or selection.moved_by_user:
+		return
+	var view := get_viewport_rect().size
+	selection.reset_size()
+	var sz := selection.size
+	var top := 70.0
+	var bottom := view.y - 90.0
+	var p := _sel_anchor
+	if p.x < 0.0:
+		p = Vector2(view.x - 40.0, view.y * 0.45)
+	var x := p.x + 36.0
+	if x + sz.x > view.x - 14.0:
+		x = p.x - 36.0 - sz.x
+	x = clampf(x, 14.0, view.x - sz.x - 14.0)
+	var y := clampf(p.y - sz.y * 0.4, top, maxf(top, bottom - sz.y))
+	selection.position = Vector2(x, y).round()
+
+
 # ------------------------------------------------------------------ layout
 
 func _build_layout() -> void:
@@ -118,6 +150,10 @@ func _build_layout() -> void:
 	bottom.add_child(_bottom_center)
 	_bottom_right = _column(bottom, true)
 	_bottom_right.alignment = BoxContainer.ALIGNMENT_END
+	_float = Control.new()
+	_float.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_float.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_float)
 
 
 func _column(parent: Control, expand: bool) -> VBoxContainer:
@@ -223,7 +259,9 @@ func _build_status() -> void:
 	_top_left.add_child(civ_card)
 	selection = SelectionCard.new()
 	selection.sim = Game.sim
-	_bottom_right.add_child(selection)
+	_float.add_child(selection)
+	selection.resized.connect(func() -> void: _place_selection())
+	selection.visibility_changed.connect(func() -> void: _place_selection())
 	selection.closed.connect(func() -> void:
 		selection.visible = false
 		Game.select({}))

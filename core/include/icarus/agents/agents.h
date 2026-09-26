@@ -17,6 +17,7 @@
 namespace icarus {
 
 struct Polity;
+struct Building;
 
 struct AgentTuning {
     float walk_speed = 0.38f;       // cubes per tick at full mobility (days are compressed)
@@ -102,6 +103,10 @@ private:
     bool task_eat(Character& c);
     bool task_drink(Character& c);
     bool task_sleep(Character& c);
+    // Where to lie down: a bed spot of its own inside the home (by rank among the
+    // household), or a free cube near `near` when sleeping out; never on a cube another
+    // sleeper already lies on or is heading for.
+    Vec3i sleep_spot(const Character& c, const Building* home, const Vec3i& near);
     bool task_social(Character& c);
     bool task_wander(Character& c);
     bool task_work(Character& c);

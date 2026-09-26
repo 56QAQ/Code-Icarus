@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <map>
 
+#include "icarus/economy/buildings.h"
 #include "icarus/sim/simulation.h"
 #include "icarus/util/log.h"
 #include "test_framework.h"
@@ -186,4 +188,26 @@ TEST("governance: a polity that knows how to build something it lacks is offered
                 if (o.key == "build_workshop" || o.key == "build_longhouse") offered = true;
     }
     CHECK(offered);
+}
+
+TEST("agents: at night everyone sleeps on a cube of their own, at home when they can") {
+    Simulation sim(test_registry());
+    GameConfig c;
+    c.world.seed = 1;
+    c.scenario = "village";
+    sim.new_game(c);
+    // Run to the middle of the first night.
+    sim.run(kTicksPerDay - kTicksPerHour * 6);
+    std::vector<Vec3i> spots;
+    int sleeping = 0, at_home = 0;
+    for (const auto& cp : sim.agents().all()) {
+        if (!cp || !cp->alive || cp->task.type != TaskType::Sleep || cp->task.step < 2) continue;
+        ++sleeping;
+        CHECK(std::find(spots.begin(), spots.end(), cp->foot) == spots.end());
+        spots.push_back(cp->foot);
+        if (const Building* h = sim.buildings().get(cp->home))
+            if (cp->foot.chebyshev(h->inside) <= 3) ++at_home;
+    }
+    CHECK(sleeping > 10);
+    CHECK(at_home * 10 >= sleeping * 7);
 }

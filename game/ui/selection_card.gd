@@ -28,17 +28,21 @@ const WHISPER_VALUES := [
 	["harshness", "严惩"], ["military", "武力"], ["self_power", "权力"], ["growth", "发展"],
 ]
 var _tab_buttons := {}
+## Dragged by its header: stays where the player put it until the next selection.
+var moved_by_user := false
+var _dragging := false
 
 
 func _ready() -> void:
 	add_theme_stylebox_override("panel", UITheme.card_style(UITheme.BG, 14, 12))
 	custom_minimum_size = Vector2(380, 0)
-	size_flags_horizontal = Control.SIZE_SHRINK_END
-	size_flags_vertical = Control.SIZE_SHRINK_END
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 6)
 	add_child(col)
 	var head := HBoxContainer.new()
+	head.mouse_filter = Control.MOUSE_FILTER_STOP
+	head.mouse_default_cursor_shape = Control.CURSOR_MOVE
+	head.gui_input.connect(_on_head_input)
 	col.add_child(head)
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -48,6 +52,7 @@ func _ready() -> void:
 	titles.add_child(_title)
 	_subtitle = UITheme.label("", 12, UITheme.ACCENT)
 	_subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_subtitle.custom_minimum_size = Vector2(290, 0)  # a width to wrap at (the card floats)
 	titles.add_child(_subtitle)
 	var focus := Button.new()
 	focus.focus_mode = Control.FOCUS_NONE
@@ -81,6 +86,17 @@ func _ready() -> void:
 	_body.add_theme_constant_override("separation", 4)
 	_scroll.add_child(_body)
 	visible = false
+
+
+func _on_head_input(e: InputEvent) -> void:
+	if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
+		_dragging = e.pressed
+		accept_event()
+	elif e is InputEventMouseMotion and _dragging:
+		var view := get_viewport_rect().size
+		position = (position + e.relative).clamp(Vector2(0, 0), view - size)
+		moved_by_user = true
+		accept_event()
 
 
 func show_character(id: int) -> void:

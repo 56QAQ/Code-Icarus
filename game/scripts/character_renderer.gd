@@ -9,6 +9,8 @@ signal character_clicked(id: int)
 var sim: IcarusSim
 var camera: Camera3D
 var selected_id := -1
+## 2D layer for the magical girls' name tags (set by the scene).
+var overlay: Control
 
 var _nodes := {}       # id -> Dictionary
 var _mat: ShaderMaterial
@@ -72,8 +74,15 @@ func setup(s: IcarusSim, cam: Camera3D) -> void:
 	sim = s
 	camera = cam
 	for n in _nodes.values():
-		n["root"].queue_free()
+		_free_node(n)
 	_nodes.clear()
+
+
+func _free_node(n: Dictionary) -> void:
+	n["root"].queue_free()
+	var tag: Control = n.get("label")
+	if tag != null and is_instance_valid(tag):
+		tag.queue_free()
 
 
 func _process(delta: float) -> void:
@@ -93,8 +102,9 @@ func _process(delta: float) -> void:
 		_animate(n, c, delta)
 	for id in _nodes.keys():
 		if not seen.has(id):
-			_nodes[id]["root"].queue_free()
+			_free_node(_nodes[id])
 			_nodes.erase(id)
+	_update_tags(delta)
 	# Selection ring.
 	if selected_id >= 0 and _nodes.has(selected_id):
 		_ring.visible = true
@@ -122,22 +132,8 @@ func _create(c: Dictionary) -> Dictionary:
 	if c.get("girl", false):
 		n["look"] = {"hair": c.get("hair", Color(0.3, 0.2, 0.15)), "cloth": c.get("cloth", Color.WHITE),
 			"accent": c.get("accent", Color(1, 0.8, 0.3))}
-		var l := Label3D.new()
-		l.text = "◆ %s" % c["name"]
-		l.font = UITheme.font_bold()
-		l.font_size = 30
-		l.pixel_size = 0.0011
-		l.fixed_size = true
-		l.outline_size = 10
-		l.outline_modulate = Color(0.05, 0.06, 0.1, 0.85)
-		l.modulate = Color(1.0, 0.92, 0.7)
-		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		l.no_depth_test = false
-		# Girls often stand together (at the hall): stagger their names.
-		l.position = Vector3(0, 3.4 + 0.55 * float(int(c["id"]) % 3), 0)
-		l.visibility_range_end = 160.0
-		root.add_child(l)
-		n["label"] = l
+		if overlay != null:
+			n["label"] = _make_tag(String(c["name"]), n["look"]["accent"])
 	var crate := MeshInstance3D.new()
 	crate.mesh = _crate_mesh
 	crate.material_override = _crate_mat
@@ -240,7 +236,9 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	var alive: bool = c["alive"]
 	var sleeping: bool = c["sleeping"] and alive
 	var lying := sleeping or not alive
-	var k := 1.0 - exp(-delta * 12.0)
+	# Limbs follow their targets quickly (a walk cycle of two to three steps a second
+	# must not be smoothed away); whole-body changes (lying down) are slower.
+	var k := 1.0 - exp(-delta * 30.0)
 	var ks := 1.0 - exp(-delta * 5.0)
 	# Lying down: asleep on the back, the dead fallen on their side.
 	body.rotation.z = lerpf(body.rotation.z, PI / 2.0 if not alive else 0.0, ks)
@@ -250,21 +248,22 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	var arml: Node3D = parts[PART_ARM_L]
 	var armr: Node3D = parts[PART_ARM_R]
 	var head: Node3D = parts[PART_HEAD]
-	# Walking: stride follows the ground actually covered (no sliding feet at any game
-	# speed), blending in and out instead of snapping.
-	var walking: bool = c["moving"] and not lying
-	var w_target := clampf(float(n["speed"]) / 1.2, 0.0, 1.0) if walking else 0.0
-	n["walk"] = lerpf(float(n["walk"]), w_target, 1.0 - exp(-delta * 6.0))
+	# Walking: the stride follows the ground actually covered (about one step per cube
+	# and a bit), capped at a brisk pace so fast-forwarded figures still read as walking
+	# rather than a blur; walking blends in and out instead of snapping.
+	var walking := float(n["speed"]) > 0.6 and not lying
+	var w_target := clampf(float(n["speed"]) / 2.5, 0.35, 1.0) if walking else 0.0
+	n["walk"] = lerpf(float(n["walk"]), w_target, 1.0 - exp(-delta * 8.0))
 	var walk: float = n["walk"]
-	n["phase"] = float(n["phase"]) + moved * 5.2
+	n["phase"] = float(n["phase"]) + minf(moved * 2.4, delta * 13.0)
 	var ph: float = n["phase"]
-	var swing := sin(ph) * 0.7 * walk
+	var swing := sin(ph) * 0.75 * walk
 	var ll := swing
 	var lr := -swing
-	var al := -swing * 0.75
-	var ar := swing * 0.75
-	var lean := 0.07 * walk
-	var bob := absf(sin(ph)) * 0.07 * walk
+	var al := -swing * 0.85
+	var ar := swing * 0.85
+	var lean := 0.08 * walk
+	var bob := absf(sin(ph)) * 0.08 * walk
 	var head_x := 0.0
 	var head_y := 0.0
 	var arm_z := 0.0
@@ -629,27 +628,125 @@ func _attach_gear(n: Dictionary, c: Dictionary) -> void:
 			_box(head, Vector3(0.025, 0.2, 0.3), Vector3(hb.get_center().x, hb.end.y + 0.37, hb.position.z - 0.17), pm)
 
 
-func pick(screen_pos: Vector2, max_px := 26.0) -> int:
+## The character under (or close to) a screen point: the figure is a segment from the
+## feet to the top of the head on screen; a click anywhere on it, or a little beside it,
+## counts. Among several, the one closest to the point (then to the camera) wins.
+func pick(screen_pos: Vector2) -> int:
 	if camera == null:
 		return -1
 	var best := -1
-	var bd := max_px
+	var bd := INF
 	for id in _nodes.keys():
 		var root: Node3D = _nodes[id]["root"]
-		var p := root.global_position + Vector3(0, 1.3, 0)
-		if camera.is_position_behind(p):
+		var feet := root.global_position
+		var head := feet + Vector3(0, 2.9, 0)
+		if camera.is_position_behind(head) or camera.is_position_behind(feet):
 			continue
-		var sp := camera.unproject_position(p)
-		var d := sp.distance_to(screen_pos)
-		if d < bd:
-			bd = d
+		var a := camera.unproject_position(feet)
+		var b := camera.unproject_position(head)
+		var d := Geometry2D.get_closest_point_to_segment(screen_pos, a, b).distance_to(screen_pos)
+		# Tolerance grows with the figure's size on screen, never below a finger's width.
+		var tol := maxf(18.0, a.distance_to(b) * 0.35 + 6.0)
+		if d > tol:
+			continue
+		var score := d / tol + camera.global_position.distance_to(feet) * 0.001
+		if score < bd:
+			bd = score
 			best = id
 	return best
+
+
+# ------------------------------------------------------------------ name tags
+
+func _make_tag(name_text: String, accent: Color) -> Control:
+	var tag := PanelContainer.new()
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := UITheme.flat(Color(UITheme.BG_SOLID, 0.72), 9, 7, 2)
+	sb.border_color = Color(accent, 0.8)
+	sb.border_width_left = 3
+	tag.add_theme_stylebox_override("panel", sb)
+	var l := UITheme.label(name_text, 13, Color(1.0, 0.95, 0.84), true)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tag.add_child(l)
+	tag.set_meta("label", l)
+	tag.set_meta("fade", 0.0)
+	tag.set_meta("occ_timer", randf() * 0.2)
+	tag.set_meta("occluded", false)
+	tag.visible = false
+	overlay.add_child(tag)
+	return tag
+
+
+## Tags sit above the girls' heads: slightly smaller with distance, faded out far away
+## or when a building or hill is between her and the camera, and nudged apart when
+## several overlap on screen.
+func _update_tags(delta: float) -> void:
+	if overlay == null or camera == null:
+		return
+	var placed: Array[Rect2] = []
+	var order: Array = []
+	for id in _nodes.keys():
+		var n: Dictionary = _nodes[id]
+		var tag: Control = n.get("label")
+		if tag == null or not is_instance_valid(tag):
+			continue
+		var root: Node3D = n["root"]
+		order.append([camera.global_position.distance_to(root.global_position), id])
+	order.sort()
+	for item in order:
+		var n: Dictionary = _nodes[item[1]]
+		var tag: Control = n["label"]
+		var root: Node3D = n["root"]
+		var dist: float = item[0]
+		var anchor := root.global_position + Vector3(0, 3.35, 0)
+		var target := 0.0
+		if not camera.is_position_behind(anchor) and dist < 170.0:
+			target = 1.0 - smoothstep(110.0, 170.0, dist)
+			# Occlusion by the world, checked a few times a second.
+			var tmr: float = float(tag.get_meta("occ_timer")) - delta
+			if tmr <= 0.0:
+				tmr = 0.2
+				var from := camera.global_position
+				var dir := (anchor - from).normalized()
+				var hit: Dictionary = sim.raycast(from, dir, dist + 1.0)
+				tag.set_meta("occluded", hit.get("hit", false) and float(hit["distance"]) < from.distance_to(anchor) - 1.5)
+			tag.set_meta("occ_timer", tmr)
+			if tag.get_meta("occluded"):
+				target = 0.0
+		var fade := move_toward(float(tag.get_meta("fade")), target, delta * 4.0)
+		tag.set_meta("fade", fade)
+		tag.visible = fade > 0.01
+		if not tag.visible:
+			continue
+		var l: Label = tag.get_meta("label")
+		var fs := int(clampf(round(16.0 - dist * 0.035), 11.0, 15.0))
+		if l.get_theme_font_size("font_size") != fs:
+			l.add_theme_font_size_override("font_size", fs)
+		tag.reset_size()
+		var sz := tag.get_combined_minimum_size()
+		var sp := camera.unproject_position(anchor)
+		var r := Rect2(sp - Vector2(sz.x * 0.5, sz.y), sz)
+		for tries in 4:
+			var clash := false
+			for q in placed:
+				if q.grow(2.0).intersects(r):
+					clash = true
+					r.position.y = q.position.y - sz.y - 3.0
+					break
+			if not clash:
+				break
+		placed.append(r)
+		tag.position = r.position.round()
+		tag.modulate.a = fade * (1.0 if item[1] == selected_id or selected_id < 0 else 0.8)
 
 
 func position_of(id: int) -> Vector3:
 	if _nodes.has(id):
 		return (_nodes[id]["root"] as Node3D).global_position
+	if sim != null:
+		for c in sim.characters():
+			if int(c["id"]) == id:
+				return c["pos"]
 	return Vector3.ZERO
 
 
