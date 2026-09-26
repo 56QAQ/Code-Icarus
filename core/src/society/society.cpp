@@ -1,5 +1,7 @@
 #include "icarus/society/society.h"
 
+#include "icarus/sim/physics.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -312,13 +314,28 @@ void Society::update_crises(Polity& p) {
         resolve(CrisisKind::Food, "粮食短缺缓解");
     }
 
-    // Water.
+    // Water: people thirsting, a sealed spring feeding the land, or fields losing irrigation.
+    EventId sealed = 0;
+    {
+        const Building* seat = ctx_.buildings->get(p.seat);
+        const auto& sp = ctx_.physics->springs();
+        const auto& ss = ctx_.physics->spring_states();
+        for (size_t i = 0; i < sp.size() && i < ss.size(); ++i)
+            if (!ss[i].flowing && seat && sp[i].dist2(seat->entrance) < 200LL * 200LL) sealed = ss[i].lost_event;
+    }
+    FarmStats fs = ctx_.farming->stats_polity(p.id);
+    const bool fields_dry = fs.plots >= 8 && (float)fs.irrigated < 0.5f * (float)fs.plots;
     if (s.water_access < 0.6f) {
         declare(CrisisKind::Water, clampv((0.8f - s.water_access) / 0.8f, 0.1f, 1.0f),
                 recent_cause({EventType::WaterSourceLost, EventType::StructureDestroyed}, day * 3),
                 strfmt("缺水：%.0f%% 的居民严重口渴", (1.0f - s.water_access) * 100.0f));
+    } else if (sealed || fields_dry) {
+        EventId cause = sealed ? sealed : recent_cause({EventType::WaterSourceLost, EventType::StructureDestroyed}, day * 6);
+        declare(CrisisKind::Water, fields_dry ? 0.7f : 0.45f, cause,
+                fields_dry ? strfmt("农田缺水：%d 块田中只有 %d 块还能灌溉", fs.plots, fs.irrigated)
+                           : std::string("泉眼断流，湖水将逐渐干涸"));
     } else if (s.water_access > 0.85f) {
-        resolve(CrisisKind::Water, "饮水恢复");
+        resolve(CrisisKind::Water, "水源危机解除");
     }
 
     // Unrest.

@@ -82,8 +82,19 @@ public:
     void on_changes(const std::vector<VoxelChange>& changes);
 
     // Registration / control.
-    void add_spring(const Vec3i& p) { springs_.push_back(p); }
+    void add_spring(const Vec3i& p) {
+        springs_.push_back(p);
+        spring_state_.push_back({});
+    }
     const std::vector<Vec3i>& springs() const { return springs_; }
+    // A spring is blocked when every outlet is solid; the event that sealed it is kept.
+    struct SpringState {
+        bool flowing = true;
+        u32 dry = 0;              // consecutive emission attempts with all outlets sealed
+        EventId touch_cause = 0;  // latest event that changed matter around the spring
+        EventId lost_event = 0;   // WaterSourceLost event while blocked
+    };
+    const std::vector<SpringState>& spring_states() const { return spring_state_; }
     void ignite(const Vec3i& p, EventId cause);
     u32 spawn_meteor(const Vec3f& target, float radius, EventId cause);
     void explode(const Vec3f& center, float radius, EventId cause, bool meteor);
@@ -131,6 +142,7 @@ private:
     Rng rng_;
     PosQueue water_, fire_, granular_, support_;
     std::vector<Vec3i> springs_;
+    std::vector<SpringState> spring_state_;
     std::vector<DebrisBody> debris_;
     std::vector<Meteor> meteors_;
     std::vector<AreaDamage> damage_;

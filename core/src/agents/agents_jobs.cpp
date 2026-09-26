@@ -168,6 +168,39 @@ void Agents::generate_jobs() {
         }
     }
 
+    // Dig projects (clearing a sealed spring, channels): expose cubes from the outside in.
+    for (const Project& prc : ctx_.society->projects()) {
+        if (!prc.alive || prc.status != 0 || prc.kind != "dig") continue;
+        const u32 pid = prc.id;
+        World& w = *ctx_.world;
+        std::vector<Vec3i> left;
+        for (const Json& c : prc.params["cubes"].items()) {
+            Vec3i q{c[0].as_int(), c[1].as_int(), c[2].as_int()};
+            const Material& m = reg.mat(w.mat(q));
+            if (m.solid && m.diggable) left.push_back(q);
+        }
+        if (left.empty()) {
+            ctx_.society->finish_project(pid, true, prc.cause);
+            continue;
+        }
+        std::sort(left.begin(), left.end(), [](const Vec3i& a, const Vec3i& b) { return a.y != b.y ? a.y > b.y : a < b; });
+        int open = 0;
+        for (const Job& j : jobs.all())
+            if (j.alive && j.type == JobType::Dig && j.project == pid) ++open;
+        for (const Vec3i& q : left) {
+            if (open >= 4) break;
+            if (has(JobType::Dig, q)) continue;
+            bool exposed = false;
+            for (int k = 0; k < 6 && !exposed; ++k) exposed = !reg.mat(w.mat(q + kDir6[k])).solid;
+            if (!exposed) continue;
+            Job& j = add(JobType::Dig, prc.polity, q, prc.priority);
+            j.project = pid;
+            j.cause = prc.cause;
+            existing[{(int)JobType::Dig, q}] = j.id;
+            ++open;
+        }
+    }
+
     // Kitchens: turn grain into bread when there is grain to spare.
     for (const Building& k : ctx_.buildings->all()) {
         if (!k.alive || !k.complete || !k.functional || k.def != "kitchen" || !k.store) continue;

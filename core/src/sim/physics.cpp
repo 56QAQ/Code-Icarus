@@ -23,6 +23,7 @@ void Physics::reset(u64 seed) {
     granular_.clear();
     support_.clear();
     springs_.clear();
+    spring_state_.clear();
     debris_.clear();
     meteors_.clear();
     damage_.clear();
@@ -65,9 +66,13 @@ void Physics::on_changes(const std::vector<VoxelChange>& changes) {
             support_.push(c.p);
             if (c.cause) removal_causes_.push_back({c.p, c.cause});
         }
+        if (c.cause)
+            for (size_t i = 0; i < springs_.size(); ++i)
+                if (springs_[i].dist2(c.p) <= 9) spring_state_[i].touch_cause = c.cause;
         if (vmat(c.before) == M.spring && vmat(c.after) != M.spring) {
             auto it = std::find(springs_.begin(), springs_.end(), c.p);
             if (it != springs_.end()) {
+                spring_state_.erase(spring_state_.begin() + (it - springs_.begin()));
                 springs_.erase(it);
                 Event e;
                 e.type = EventType::WaterSourceLost;
@@ -79,7 +84,7 @@ void Physics::on_changes(const std::vector<VoxelChange>& changes) {
             }
         }
         if (vmat(c.after) == M.spring && vmat(c.before) != M.spring) {
-            if (std::find(springs_.begin(), springs_.end(), c.p) == springs_.end()) springs_.push_back(c.p);
+            if (std::find(springs_.begin(), springs_.end(), c.p) == springs_.end()) add_spring(c.p);
         }
     }
 }
@@ -165,17 +170,44 @@ void Physics::step(Tick now) {
 void Physics::step_springs(Tick now) {
     if (springs_.empty() || spring_interval <= 0 || now % (Tick)spring_interval != 0) return;
     const CoreMats& M = w_.reg().m();
-    for (const Vec3i& s : springs_) {
+    const Registry& reg = w_.reg();
+    for (size_t i = 0; i < springs_.size(); ++i) {
+        const Vec3i s = springs_[i];
+        SpringState& ss = spring_state_[i];
         if (w_.mat(s) != M.spring) continue;
         // Emit into the cube above, or any side cube that can take water.
         Vec3i targets[5] = {s + Vec3i{0, 1, 0}, s + kDir4H[0], s + kDir4H[1], s + kDir4H[2], s + kDir4H[3]};
+        bool sealed = true;
         for (const Vec3i& t : targets) {
             Voxel v = w_.get(t);
+            if (!reg.mat(vmat(v)).solid) sealed = false;
             if (!water_can_enter(v)) continue;
             u8 lvl = vmat(v) == M.water ? vlevel(v) : 0;
             w_.set(t, make_voxel(M.water, (u8)(lvl + 1)));
             stats_.water_units_spring++;
             break;
+        }
+        // A spring under water is merely full; one sealed in rock is lost until dug out.
+        ss.dry = sealed ? ss.dry + 1 : 0;
+        if (ss.flowing && ss.dry >= 100) {
+            ss.flowing = false;
+            Event e;
+            e.type = EventType::WaterSourceLost;
+            e.severity = 4;
+            e.pos = s;
+            e.causes[0] = ss.touch_cause;
+            e.text = "泉眼被堵塞，水源断绝";
+            ss.lost_event = chron_.emit(std::move(e));
+        } else if (!ss.flowing && !sealed) {
+            ss.flowing = true;
+            Event e;
+            e.type = EventType::Info;
+            e.severity = 3;
+            e.pos = s;
+            e.causes[0] = ss.touch_cause ? ss.touch_cause : ss.lost_event;
+            e.text = "泉水重新涌出";
+            chron_.emit(std::move(e));
+            ss.lost_event = 0;
         }
     }
 }
@@ -786,6 +818,12 @@ void Physics::save(BinWriter& w) const {
     w.u64v(rain_until_);
     w.u64v(next_weather_);
     w.i64v(stats_.water_units_rain);
+    for (const SpringState& ss : spring_state_) {
+        w.boolean(ss.flowing);
+        w.u32v(ss.dry);
+        w.u32v(ss.touch_cause);
+        w.u32v(ss.lost_event);
+    }
     w.end_section(s);
 }
 
@@ -847,6 +885,13 @@ void Physics::load(BinReader& outer) {
     rain_until_ = r.u64v();
     next_weather_ = r.u64v();
     stats_.water_units_rain = r.i64v();
+    spring_state_.assign(springs_.size(), SpringState{});
+    for (SpringState& ss : spring_state_) {
+        ss.flowing = r.boolean();
+        ss.dry = r.u32v();
+        ss.touch_cause = r.u32v();
+        ss.lost_event = r.u32v();
+    }
     damage_.clear();
 }
 

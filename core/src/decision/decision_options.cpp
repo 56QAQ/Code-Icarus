@@ -1,5 +1,6 @@
 // Jev pipeline: program-generated options (with computed facts), execution and review.
 #include <algorithm>
+#include <map>
 #include <cmath>
 
 #include "icarus/agents/agents.h"
@@ -8,6 +9,7 @@
 #include "icarus/economy/buildings.h"
 #include "icarus/economy/farming.h"
 #include "icarus/sim/clock.h"
+#include "icarus/sim/physics.h"
 #include "icarus/society/society.h"
 #include "icarus/util/log.h"
 
@@ -117,6 +119,45 @@ int carried_food(SimContext& ctx, u16 polity) {
             if (ctx.reg->item(st.item).nutrition > 0) n += st.count;
     }
     return n;
+}
+
+// Cubes near p that are solid now but were open in the island's original terrain:
+// whatever sealed a spring (a landslide, a meteor, a god's whim) can be dug away.
+std::vector<Vec3i> obstruction_around(SimContext& ctx, const Vec3i& p, int radius) {
+    std::map<Vec3i, std::vector<Voxel>> cells;
+    const Registry& reg = *ctx.reg;
+    auto pristine = [&](const Vec3i& q) -> MatId {
+        Vec3i cc{floordiv(q.x, kCellSize), floordiv(q.y, kCellSize), floordiv(q.z, kCellSize)};
+        auto it = cells.find(cc);
+        if (it == cells.end()) {
+            std::vector<Voxel> buf((size_t)kCellSize * kCellSize * kCellSize);
+            ctx.world->gen().generate_cell(cc, buf.data());
+            it = cells.emplace(cc, std::move(buf)).first;
+        }
+        Vec3i l{q.x - cc.x * kCellSize, q.y - cc.y * kCellSize, q.z - cc.z * kCellSize};
+        return vmat(it->second[(size_t)((l.y * kCellSize + l.z) * kCellSize + l.x)]);
+    };
+    std::vector<Vec3i> out;
+    for (int dy = -radius; dy <= radius + 2; ++dy)
+        for (int dz = -radius; dz <= radius; ++dz)
+            for (int dx = -radius; dx <= radius; ++dx) {
+                Vec3i q = p + Vec3i{dx, dy, dz};
+                if (!ctx.world->in_bounds(q) || q == p) continue;
+                const Material& now = reg.mat(ctx.world->mat(q));
+                if (!now.solid || !now.diggable) continue;
+                if (reg.mat(pristine(q)).solid) continue;
+                out.push_back(q);
+            }
+    return out;
+}
+
+const Vec3i* sealed_spring(SimContext& ctx, const Polity& p) {
+    const Building* seat = ctx.buildings->get(p.seat);
+    const auto& sp = ctx.physics->springs();
+    const auto& ss = ctx.physics->spring_states();
+    for (size_t i = 0; i < sp.size() && i < ss.size(); ++i)
+        if (!ss[i].flowing && (!seat || sp[i].dist2(seat->entrance) < 200LL * 200LL)) return &sp[i];
+    return nullptr;
 }
 
 }  // namespace
@@ -302,6 +343,47 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
         case CrisisKind::Water: {
             const IslandFeatures& ft = ctx_.world->gen().features();
             const Building* seat = ctx_.buildings->get(p.seat);
+            if (const Vec3i* spring = sealed_spring(ctx_, p)) {
+                std::vector<Vec3i> cubes = obstruction_around(ctx_, *spring, 4);
+                float days = 0.2f + (float)cubes.size() / 45.0f;
+                DecisionOption o = make("clear_spring", strfmt("疏通泉眼（挖开 %zu 块堵塞物）", cubes.size()),
+                                        strfmt("组织人手挖开封住泉眼的岩土，约 %.1f 天；泉水恢复后湖泊和灌溉渠会重新充盈。", days),
+                                        {{kFoodSecurity, 0.7f}, {kWelfare, 0.4f}, {kGrowth, 0.5f}, {kSpeed, -0.2f}, {kFrugality, -0.1f}, {kCooperation, 0.2f}},
+                                        act("dig"));
+                Json list = Json::array();
+                for (const Vec3i& q : cubes) {
+                    Json v = Json::array();
+                    v.push(q.x);
+                    v.push(q.y);
+                    v.push(q.z);
+                    list.push(v);
+                }
+                o.action.set("cubes", list);
+                o.action.set("title", "疏通泉眼");
+                Json at = Json::array();
+                at.push(spring->x);
+                at.push(spring->y);
+                at.push(spring->z);
+                o.action.set("at", at);
+                o.facts.set("cubes", (int)cubes.size());
+                o.facts.set("days", days);
+                if (cubes.empty()) {
+                    o.feasible = false;
+                    o.why_not = "找不到可以挖开的堵塞物";
+                }
+                O.push_back(o);
+            }
+            {
+                int plots = 0;
+                for (const Farm& f : ctx_.farming->all())
+                    if (f.alive && f.polity == p.id) plots += (int)f.plots.size();
+                DecisionOption o = make("found_farm", "在仍有水的地方另开新田",
+                                        "趁湖水尚在，在水边开垦新田；若水源不复，这些田也会干涸。",
+                                        {{kFoodSecurity, 0.5f}, {kGrowth, 0.6f}, {kSpeed, -0.3f}, {kFrugality, -0.2f}}, act("found_farm"));
+                o.action.set("n", 20);
+                (void)plots;
+                O.push_back(o);
+            }
             DecisionOption o = make("lakeside_huts", "在湖边新建茅屋", "让居民住到水源附近。",
                                     {{kWelfare, 0.3f}, {kGrowth, 0.4f}, {kFrugality, -0.4f}, {kSpeed, -0.3f}}, act("build"));
             o.action.set("def", "hut");
@@ -796,6 +878,19 @@ void Decisions::execute(Decision& d) {
         u32 f = polity_farm(ctx_, p->id);
         int n = ctx_.farming->expand(f, a.integer("n", 16));
         policy_event(strfmt("开垦新田 %d 块", n));
+    } else if (what == "dig") {
+        Project pr;
+        pr.polity = p->id;
+        pr.kind = "dig";
+        pr.title = a.str("title", "挖掘工程");
+        pr.sponsor = g->id;
+        pr.cause = cause;
+        pr.decision = d.id;
+        pr.priority = 1.4f;
+        if (a.has("at")) pr.target = Vec3i{a["at"][0].as_int(), a["at"][1].as_int(), a["at"][2].as_int()};
+        pr.params = Json::object();
+        pr.params.set("cubes", a["cubes"]);
+        d.project = ctx_.society->add_project(pr);
     } else if (what == "found_farm") {
         // Nearest water surfaces to the seat that can irrigate fertile ground.
         const Building* seat = ctx_.buildings->get(p->seat);

@@ -218,3 +218,45 @@ TEST("politics: secession splits people and fields and conserves every item") {
         if (e.type == EventType::Secession) secession_event = true;
     CHECK(secession_event);
 }
+
+TEST("phase1: a sealed spring is detected, dug out on the ruler's order and flows again") {
+    Simulation sim(test_registry());
+    sim.new_game(village(1));
+    sim.run(kTicksPerHour * 2);
+    const Vec3i spring = sim.world().gen().features().spring;
+    REQUIRE(spring.y > 0);
+    const Polity* p = sim.society().polity(1);
+    sim.decisions().whisper(p->ruler, "clear_spring", 0);
+    AdminCommand cmd;
+    cmd.type = "place";
+    cmd.params = Json::object();
+    Json pos = Json::array();
+    pos.push(spring.x);
+    pos.push(spring.y);
+    pos.push(spring.z);
+    cmd.params.set("pos", pos);
+    cmd.params.set("radius", 2.5);
+    cmd.params.set("material", "stone");
+    sim.queue_admin(cmd);
+    sim.run(kTicksPerDay * 2);
+    const Event* lost = nullptr;
+    const Event* restored = nullptr;
+    for (const Event& e : sim.chronicle().events()) {
+        if (e.type == EventType::WaterSourceLost && !lost) lost = &e;
+        if (e.type == EventType::Info && e.text == "泉水重新涌出") restored = &e;
+    }
+    REQUIRE(lost != nullptr);
+    const Event* admin = sim.chronicle().get(lost->causes[0]);
+    REQUIRE(admin != nullptr);
+    CHECK(admin->type == EventType::AdminAction);
+    const Decision* d = find_decision(sim, "crisis", CrisisKind::Water);
+    REQUIRE(d != nullptr);
+    CHECK_EQ(d->options[(size_t)d->chosen].key, std::string("clear_spring"));
+    REQUIRE(restored != nullptr);
+    // The restoration traces back through the decision to the administrator's act.
+    bool via_decision = false;
+    for (EventId id : sim.chronicle().causes_of(restored->id))
+        if (id == d->decision_event) via_decision = true;
+    CHECK(via_decision);
+    CHECK(sim.physics().spring_states().front().flowing);
+}
