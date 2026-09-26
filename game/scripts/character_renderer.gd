@@ -126,7 +126,8 @@ func _create(c: Dictionary) -> Dictionary:
 		l.modulate = Color(1.0, 0.92, 0.7)
 		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		l.no_depth_test = false
-		l.position = Vector3(0, 3.4, 0)
+		# Girls often stand together (at the hall): stagger their names.
+		l.position = Vector3(0, 3.4 + 0.55 * float(int(c["id"]) % 3), 0)
 		l.visibility_range_end = 160.0
 		root.add_child(l)
 		n["label"] = l

@@ -2,7 +2,7 @@ extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--tool id] [--focus-soldiers [dist]]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]]
 ##        [--hide-ui] [--frames N]
 
 var renderer: WorldRenderer
@@ -114,6 +114,8 @@ func _ready() -> void:
 		hud.show_ending()
 	if _cli.has("menu"):
 		hud.open_menu()
+	if _cli.has("civ-detail"):
+		hud.civ_card.expanded = true
 	if _cli.has("shot"):
 		_shot_path = _cli["shot"]
 		_shot_frames = int(_cli.get("frames", "20"))
