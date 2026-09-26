@@ -45,6 +45,10 @@ public:
     // Adds research points to the current target; discovers it when complete.
     void add_research(u16 polity, float points, EntityId by);
     void discover(Polity& p, const std::string& key, EntityId by, EventId cause);
+    // Knowledge given from outside (a god's revelation) goes to the current research,
+    // or the cheapest open tech when nobody is researching ("" if nothing is open).
+    std::string grant_target(u16 polity) const;
+    void grant_research(u16 polity, const std::string& key, float points, EventId cause);
     // War and peace.
     EventId declare_war(u16 attacker, u16 defender, const std::string& aim, EntityId by, EventId cause);
     EventId make_peace(u16 a, u16 b, const std::string& how, EventId cause);

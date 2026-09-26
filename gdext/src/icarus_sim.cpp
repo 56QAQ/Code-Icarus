@@ -713,6 +713,17 @@ Dictionary IcarusSim::character_info(int64_t id) const {
                 ++n;
             }
         gd["popular_support"] = n ? sup / (float)n : 0.0f;
+        int wf = 0;
+        float wdelta = 0;
+        icarus::Tick wsince = 0;
+        if (sim_->decisions().value_whisper(c.id, wf, wdelta, wsince)) {
+            Dictionary w;
+            w["feature"] = to_gd(icarus::feature_key(wf));
+            w["name"] = to_gd(icarus::feature_name_zh(wf));
+            w["dir"] = wdelta > 0 ? 1 : -1;
+            w["hours_left"] = (double)(wsince + 2 * icarus::kTicksPerDay - now) / (double)icarus::kTicksPerHour;
+            gd["whisper"] = w;
+        }
         if (const icarus::Json* dd = drive_doc(*reg_, g.drive)) {
             gd["valence"] = dd->integer("valence", 1);
             gd["category"] = to_gd(dd->str("category"));

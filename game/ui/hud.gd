@@ -41,6 +41,17 @@ const TOOLS := [
 	{"id": "meteor", "icon": "meteor", "label": "陨石", "tip": "召唤陨石：撞出陨坑、点燃周边、留下陨铁"},
 	{"id": "ignite", "icon": "fire", "label": "火焰", "tip": "点燃可燃物，火势会沿材料蔓延"},
 	{"id": "flood", "icon": "water", "label": "洪水", "tip": "倾倒大量的水，水量守恒地流动"},
+	{"sep": true},
+	{"id": "miracle", "icon": "blessing", "label": "神迹", "tip": "作用于肉体与人心：赐粮、鼓舞、恐吓、治愈、天雷"},
+]
+
+## Miracles: [admin command, name, what it does].
+const MIRACLES := [
+	["bless_food", "赐粮", "降下真实的粮食，记入物资账本，由居民搬运入库"],
+	["inspire", "鼓舞", "驱散范围内居民的恐惧与压力，留下被神眷顾的记忆"],
+	["terrify", "恐吓", "范围内的人陷入恐惧并逃离此地"],
+	["heal", "治愈", "伤口与断肢复原（不能起死回生）"],
+	["smite", "天雷", "雷击范围内的人并引燃草木，周围的人会害怕"],
 ]
 
 const PLACE_MATERIALS := [
@@ -292,9 +303,12 @@ func _on_tool_changed(tool: String) -> void:
 func _rebuild_options(tool: String) -> void:
 	for c in _options_box.get_children():
 		c.queue_free()
-	var show := tool in ["dig", "place", "meteor", "ignite", "flood"]
+	var show := tool in ["dig", "place", "meteor", "ignite", "flood", "miracle"]
 	_options_panel.visible = show
 	if not show:
+		return
+	if tool == "miracle":
+		_build_miracle_options()
 		return
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
@@ -330,6 +344,49 @@ func _rebuild_options(tool: String) -> void:
 				for other in mats.get_children():
 					(other as Button).button_pressed = other == b)
 			mats.add_child(b)
+
+
+func _build_miracle_options() -> void:
+	var kind: String = Game.tool_params.get("miracle", "bless_food")
+	var chips := HBoxContainer.new()
+	chips.add_theme_constant_override("separation", 4)
+	_options_box.add_child(chips)
+	var desc := ""
+	for m in MIRACLES:
+		var b := Button.new()
+		b.text = m[1]
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.button_pressed = kind == m[0]
+		b.tooltip_text = m[2]
+		var key: String = m[0]
+		b.pressed.connect(func() -> void:
+			Game.tool_params["miracle"] = key
+			_rebuild_options("miracle"))
+		chips.add_child(b)
+		if kind == m[0]:
+			desc = m[2]
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	_options_box.add_child(row)
+	var food := kind == "bless_food"
+	row.add_child(UITheme.label("数量" if food else "范围", 13, UITheme.TEXT_DIM))
+	var slider := HSlider.new()
+	slider.min_value = 10.0 if food else 1.0
+	slider.max_value = 200.0 if food else (3.0 if kind == "smite" else 20.0)
+	slider.step = 10.0 if food else 0.5
+	slider.custom_minimum_size = Vector2(180, 18)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var param := "amount" if food else "radius"
+	slider.value = Game.tool_params.get(param, 40.0 if food else 3.0)
+	row.add_child(slider)
+	var val := UITheme.label(("%d 份" % int(slider.value)) if food else ("%.1f" % slider.value), 13, UITheme.ACCENT)
+	val.custom_minimum_size = Vector2(44, 0)
+	row.add_child(val)
+	slider.value_changed.connect(func(v: float) -> void:
+		Game.tool_params[param] = v
+		val.text = ("%d 份" % int(v)) if food else ("%.1f" % v))
+	_options_box.add_child(UITheme.label(desc, 12, UITheme.TEXT_FAINT))
 
 
 # ------------------------------------------------------------------ hover card

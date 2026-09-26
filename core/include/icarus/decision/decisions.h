@@ -112,6 +112,19 @@ public:
 
     // Admin influence: a whisper nudges a girl's next decision toward an option key.
     void whisper(EntityId girl, const std::string& option_key, EventId cause);
+    // Shifts how much she cares about one value (feature) for two days.
+    void whisper_value(EntityId girl, int feature, float delta, EventId cause);
+    // The value whisper currently acting on her, if any (feature, signed shift, since).
+    bool value_whisper(EntityId girl, int& feature, float& delta, Tick& since) const {
+        const ValueWhisper* v = active_value_whisper(girl);
+        if (!v) return false;
+        feature = v->feature;
+        delta = v->delta;
+        since = v->at;
+        return true;
+    }
+    // Levels a girl up for the experience she has (new spells come with levels).
+    void level_ups(Character& g, EventId cause);
 
     void save(BinWriter& w) const;
     void load(BinReader& r);
@@ -163,6 +176,16 @@ private:
     };
     std::map<u32, ReplayEntry> replay_;
     std::map<EntityId, std::pair<std::string, Tick>> whispers_;
+    // A god's voice shifting what a girl cares about for a while.
+    struct ValueWhisper {
+        int feature = 0;
+        float delta = 0;
+        Tick at = 0;
+        EventId cause = 0;
+    };
+    std::map<EntityId, ValueWhisper> value_whispers_;
+    std::map<EntityId, EventId> whisper_cause_;  // event of the option whisper
+    const ValueWhisper* active_value_whisper(EntityId girl) const;
     Tick now_ = 0;
 };
 

@@ -1,5 +1,6 @@
 #include "icarus/sim/simulation.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -271,6 +272,128 @@ EventId Simulation::apply_admin(const AdminCommand& cmd) {
         e.text = strfmt("管理员向%s低语：「%s」", g->name.c_str(), p.str("label", opt).c_str());
         EventId id = chronicle_.emit(std::move(e));
         decisions_.whisper(gid, opt, id);
+        return id;
+    }
+    // --- Miracles: powers over people and minds. Like everything the god does, they
+    // are recorded and act only through the shared world systems: blessed food is
+    // real items in the ledger, fear makes residents run, a whisper shifts what a girl
+    // values in her own decisions.
+    const Vec3f center((float)pos.x + 0.5f, (float)pos.y + 0.5f, (float)pos.z + 0.5f);
+    auto people_near = [&](float r) {
+        std::vector<Character*> out;
+        for (const auto& cp : agents_.all())
+            if (cp && cp->alive && !cp->departed && cp->pos.dist_sq(center) <= r * r) out.push_back(cp.get());
+        return out;
+    };
+    if (cmd.type == "bless_food") {
+        ItemId item = reg_->find_item(p.str("item", "grain"));
+        if (item == kNoItem) item = reg_->find_item("grain");
+        const int n = std::clamp(p.integer("amount", 40), 1, 1000);
+        Vec3i at = pos;
+        while (world_.in_bounds(at) && world_.mat(at) != M.air && at.y < pos.y + 8) at.y++;
+        e.pos = at;
+        e.text = strfmt("天降粮食：%d 份%s落在 %s", n, reg_->item(item).name.c_str(), at.str().c_str());
+        EventId id = chronicle_.emit(std::move(e));
+        econ_.add(econ_.pile_at(at), item, n, "admin_bless");
+        for (Character* c : people_near(14.0f)) c->remember(tick_, MemoryKind::Blessed, kNoEntity, 0.3f, id);
+        return id;
+    }
+    if (cmd.type == "inspire" || cmd.type == "terrify") {
+        const bool inspire = cmd.type == "inspire";
+        const std::vector<Character*> hit = people_near(std::clamp(radius, 1.0f, 30.0f));
+        e.text = inspire ? strfmt("神迹显现：%zu 人受到鼓舞", hit.size()) : strfmt("天威降临：%zu 人陷入恐惧", hit.size());
+        EventId id = chronicle_.emit(std::move(e));
+        for (Character* c : hit) {
+            if (inspire) {
+                c->fear = std::max(0.0f, c->fear - 0.5f);
+                c->stress = std::max(0.0f, c->stress - 0.3f);
+                c->remember(tick_, MemoryKind::Blessed, kNoEntity, 0.5f, id);
+            } else {
+                c->fear = 1.0f;
+                c->remember(tick_, MemoryKind::Cursed, kNoEntity, -0.4f, id);
+                c->next_think = tick_;
+            }
+        }
+        if (!inspire) agents_.add_danger(center, radius + 4.0f);
+        return id;
+    }
+    if (cmd.type == "heal") {
+        // Only the living: no god here brings back the dead.
+        const std::vector<Character*> hit = people_near(std::clamp(radius, 1.0f, 20.0f));
+        e.text = strfmt("治愈之光：%zu 人的伤势痊愈", hit.size());
+        EventId id = chronicle_.emit(std::move(e));
+        for (Character* c : hit) {
+            int missing = c->body.total_voxels() - c->body.total_alive();
+            c->body.regrow(missing, c->look, true);
+            c->body.bleeding = 0.0f;
+            c->body.vitality = 1.0f;
+            c->body.version++;
+            c->remember(tick_, MemoryKind::Healed, kNoEntity, 0.4f, id);
+        }
+        return id;
+    }
+    if (cmd.type == "smite") {
+        e.severity = 4;
+        const float r = std::clamp(radius, 1.0f, 6.0f);
+        const std::vector<Character*> hit = people_near(r);
+        e.text = hit.empty() ? std::string("天雷落下") : strfmt("天雷落下，击中 %zu 人", hit.size());
+        EventId id = chronicle_.emit(std::move(e));
+        for (Character* c : hit) agents_.damage(*c, 0.8f, -1, "被天雷击中", id);
+        for (int dz = -1; dz <= 1; ++dz)
+            for (int dx = -1; dx <= 1; ++dx)
+                for (int dy = -1; dy <= 2; ++dy)
+                    if (world_.in_bounds(pos + Vec3i{dx, dy, dz})) physics_.ignite(pos + Vec3i{dx, dy, dz}, id);
+        for (Character* c : people_near(16.0f)) {
+            c->fear = std::min(1.0f, c->fear + 0.4f);
+            if (c->alive) c->remember(tick_, MemoryKind::Cursed, kNoEntity, -0.2f, id);
+        }
+        agents_.add_danger(center, r + 5.0f);
+        return id;
+    }
+    if (cmd.type == "enlighten") {
+        const u16 pid = (u16)p.integer("polity", 1);
+        const float pts = std::clamp(p.flt("points", 40.0f), 1.0f, 500.0f);
+        const Polity* pol = society_.polity(pid);
+        const std::string key = society_.grant_target(pid);
+        const Json* t = key.empty() ? nullptr : society_.tech(key);
+        e.polity = pid;
+        e.text = strfmt("管理员向「%s」降下启示", pol ? pol->name.c_str() : "?") +
+                 (t ? strfmt("：%s +%.0f 研究点", t->str("name").c_str(), pts) : std::string("，却无人能领会"));
+        EventId id = chronicle_.emit(std::move(e));
+        society_.grant_research(pid, key, pts, id);
+        return id;
+    }
+    if (cmd.type == "empower" || cmd.type == "whisper_value") {
+        Character* g = agents_.get((EntityId)p.num("girl"));
+        if (!g || !g->is_girl() || !g->alive) {
+            e.text = "神迹没有找到对象";
+            e.severity = 0;
+            return chronicle_.emit(std::move(e));
+        }
+        e.actor = g->id;
+        e.polity = g->polity;
+        if (cmd.type == "empower") {
+            e.text = strfmt("管理员赐予%s力量", g->name.c_str());
+            EventId id = chronicle_.emit(std::move(e));
+            g->girl->xp += 40.0f * (float)g->girl->level;
+            g->girl->mana = 1.0f;
+            g->remember(tick_, MemoryKind::Blessed, kNoEntity, 0.5f, id);
+            decisions_.level_ups(*g, id);
+            return id;
+        }
+        int feature = -1;
+        for (int f = 0; f < kFeatureCount; ++f)
+            if (p.str("feature") == feature_key(f)) feature = f;
+        if (feature < 0) {
+            e.text = "低语没有内容";
+            e.severity = 0;
+            return chronicle_.emit(std::move(e));
+        }
+        const float delta = p.flt("dir", 1.0f) >= 0.0f ? 0.8f : -0.8f;
+        e.severity = 2;
+        e.text = strfmt("管理员向%s低语：%s「%s」", g->name.c_str(), delta > 0 ? "更在意" : "别再在意", feature_name_zh(feature));
+        EventId id = chronicle_.emit(std::move(e));
+        decisions_.whisper_value(g->id, feature, delta, id);
         return id;
     }
     e.text = "未知的管理员指令: " + cmd.type;

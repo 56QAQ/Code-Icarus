@@ -2,7 +2,7 @@ extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--focus-soldiers [dist]]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--tool id] [--focus-soldiers [dist]]
 ##        [--hide-ui] [--frames N]
 
 var renderer: WorldRenderer
@@ -103,6 +103,8 @@ func _ready() -> void:
 	if _cli.has("chronicle"):
 		var eid := int(_cli["chronicle"]) if String(_cli["chronicle"]).is_valid_int() else 0
 		hud.toggle_chronicle(eid)
+	if _cli.has("tool"):
+		Game.set_tool(_cli["tool"])
 	if _cli.has("tech"):
 		hud.toggle_tech()
 	if _cli.has("shot"):
@@ -271,11 +273,14 @@ func _update_hover() -> void:
 	info["cube"] = cube
 	hud.show_hover(info)
 	var tool := Game.current_tool
-	if tool in ["dig", "place", "meteor", "ignite", "flood"]:
+	if tool in ["dig", "place", "meteor", "ignite", "flood", "miracle"]:
 		var r: float = Game.tool_params.get("radius", 3.0)
 		var center := Vector3(cube) + Vector3(0.5, 0.5, 0.5)
-		if tool == "place" or tool == "flood":
+		if tool in ["place", "flood", "miracle"]:
 			center += Vector3(hit["normal"])
+		if tool == "miracle":
+			var kind: String = Game.tool_params.get("miracle", "bless_food")
+			r = 1.0 if kind == "bless_food" else (minf(r, 3.0) if kind == "smite" else r)
 		brush.visible = true
 		brush.position = center
 		brush.scale = Vector3.ONE * maxf(r, 0.5)
@@ -341,6 +346,12 @@ func _apply_tool() -> void:
 			Game.admin("ignite", {"pos": cube, "radius": minf(r, 3.0)})
 		"flood":
 			Game.admin("place", {"pos": cube + normal, "radius": r, "material": "water"})
+		"miracle":
+			var kind: String = Game.tool_params.get("miracle", "bless_food")
+			if kind == "bless_food":
+				Game.admin(kind, {"pos": cube + normal, "amount": int(Game.tool_params.get("amount", 40.0))})
+			else:
+				Game.admin(kind, {"pos": cube + normal, "radius": minf(r, 3.0) if kind == "smite" else r})
 		"inspect":
 			var b: Dictionary = Game.sim.building_at(cube)
 			if not b.is_empty():

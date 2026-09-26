@@ -46,6 +46,8 @@ public:
     void kill(Character& c, const std::string& cause, EventId ev_cause);
     void apply_area_damage(const AreaDamage& d);
     void damage(Character& c, float fraction, int part, const std::string& what, EventId cause);
+    // A hazard residents will run from for a while (explosions, a god's wrath).
+    void add_danger(const Vec3f& p, float radius) { dangers_.push_back({p, radius}); }
 
     // Utility: random personality/appearance/skills.
     void randomize(Character& c, Rng& rng);

@@ -20,6 +20,13 @@ var _body: VBoxContainer
 var _scroll: ScrollContainer
 var _tab := "status"
 var _timer := 0.0
+var _whisper_dir := 1
+
+## Values a god can whisper about: [feature key, short name].
+const WHISPER_VALUES := [
+	["food_security", "粮食"], ["welfare", "民生"], ["fairness", "公平"], ["cooperation", "合作"],
+	["harshness", "严惩"], ["military", "武力"], ["self_power", "权力"], ["growth", "发展"],
+]
 var _tab_buttons := {}
 
 
@@ -130,8 +137,13 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_timer -= delta
+	# Rebuilding the body under a pressed mouse would swallow the click; while the
+	# pointer rests on the card, refresh more slowly so hover states stay put.
+	var over := get_global_rect().has_point(get_global_mouse_position())
+	if over and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		return
 	if _timer <= 0.0:
-		_timer = 0.35
+		_timer = 1.2 if over else 0.35
 		_refresh()
 
 
@@ -167,6 +179,65 @@ func _bar(label: String, v: float, bipolar := false, text := "") -> UIBar:
 	b.set_value(v, text)
 	_body.add_child(b)
 	return b
+
+
+## The god's hand on a magical girl: a whisper shifting what she values for two days,
+## or strength (a level and full mana). Both are recorded and traceable.
+func _god_hand(d: Dictionary, girl: Dictionary) -> void:
+	_section("神之手")
+	var w: Dictionary = girl.get("whisper", {})
+	if not w.is_empty():
+		_line("低语仍在回响：她%s「%s」（还剩 %d 小时）" % ["更在意" if int(w["dir"]) > 0 else "不再在意", w["name"], int(w["hours_left"])], 12, UITheme.MAGIC)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 4)
+	_body.add_child(head)
+	head.add_child(UITheme.label("低语：让她", 12, UITheme.TEXT_DIM))
+	for opt in [[1, "更在意"], [-1, "不再在意"]]:
+		var b := Button.new()
+		b.text = opt[1]
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		b.add_theme_font_size_override("font_size", 12)
+		b.button_pressed = _whisper_dir == opt[0]
+		var dir: int = opt[0]
+		b.pressed.connect(func() -> void:
+			_whisper_dir = dir
+			_refresh())
+		head.add_child(b)
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 4)
+	flow.add_theme_constant_override("v_separation", 4)
+	flow.custom_minimum_size = Vector2(340, 0)
+	_body.add_child(flow)
+	var gid := int(d["id"])
+	for v in WHISPER_VALUES:
+		var b := Button.new()
+		b.text = v[1]
+		b.focus_mode = Control.FOCUS_NONE
+		b.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		b.add_theme_font_size_override("font_size", 12)
+		b.add_theme_stylebox_override("normal", UITheme.flat(Color(UITheme.MAGIC, 0.12), 7, 9, 3))
+		b.add_theme_stylebox_override("hover", UITheme.flat(Color(UITheme.MAGIC, 0.26), 7, 9, 3))
+		b.add_theme_color_override("font_color", UITheme.MAGIC.lightened(0.2))
+		b.tooltip_text = "在她耳边低语，两天内她做决定时会%s%s" % ["更看重" if _whisper_dir > 0 else "更轻视", v[1]]
+		var key: String = v[0]
+		var dir := _whisper_dir
+		b.pressed.connect(func() -> void:
+			Game.admin("whisper_value", {"girl": gid, "feature": key, "dir": dir})
+			_timer = 0.1)
+		flow.add_child(b)
+	var emp := Button.new()
+	emp.text = "赐予力量（升一级，魔力回满）"
+	emp.focus_mode = Control.FOCUS_NONE
+	emp.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	emp.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	emp.add_theme_font_size_override("font_size", 12)
+	emp.add_theme_color_override("font_color", UITheme.ACCENT)
+	emp.pressed.connect(func() -> void:
+		Game.admin("empower", {"girl": gid})
+		_timer = 0.1)
+	_body.add_child(emp)
 
 
 func _refresh() -> void:
@@ -317,6 +388,8 @@ func _refresh_character() -> void:
 				var did := int(ids[i])
 				b.pressed.connect(func() -> void: decision_requested.emit(did))
 				_body.add_child(b)
+			if d["alive"]:
+				_god_hand(d, girl)
 		"magic":
 			if girl.is_empty():
 				return

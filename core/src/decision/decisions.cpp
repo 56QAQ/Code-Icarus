@@ -39,6 +39,8 @@ void Decisions::reset(u64 seed) {
     list_.assign(1, Decision{});
     replay_.clear();
     whispers_.clear();
+    value_whispers_.clear();
+    whisper_cause_.clear();
     remote_used_today = 0;
 }
 
@@ -78,7 +80,19 @@ std::vector<float> Decisions::weights(const Character& g) const {
     w[kFairness] += 0.4f * c(p.idealism);
     w[kFrugality] -= 0.3f * c(p.idealism);
     w[kSpeed] -= 0.2f * c(p.idealism);
+    if (const ValueWhisper* vw = active_value_whisper(g.id)) w[(size_t)vw->feature] += vw->delta;
     return w;
+}
+
+const Decisions::ValueWhisper* Decisions::active_value_whisper(EntityId girl) const {
+    auto it = value_whispers_.find(girl);
+    if (it == value_whispers_.end() || now_ - it->second.at >= kTicksPerDay * 2) return nullptr;
+    return &it->second;
+}
+
+void Decisions::whisper_value(EntityId girl, int feature, float delta, EventId cause) {
+    if (feature < 0 || feature >= kFeatureCount) return;
+    value_whispers_[girl] = ValueWhisper{feature, delta, now_, cause};
 }
 
 u32 Decisions::open(Decision d) {
@@ -557,6 +571,9 @@ void Decisions::decide_local(Decision& d, const std::string& source) {
         why += "她没有选「" + o2.title + "」，因为那在" + feature_name_zh(worst) + "上不合她的心意。";
     }
     if (wh != whispers_.end() && wh->second.first == o.key) why += "（冥冥中似乎有声音在耳边低语）";
+    if (const ValueWhisper* vw = active_value_whisper(g->id))
+        if (vw->delta * o.f[vw->feature] > 0.05f)
+            why += std::string("（近来她莫名地") + (vw->delta > 0 ? "更在意" : "不再在意") + feature_name_zh(vw->feature) + "）";
     finalize(d, best, why, source);
 }
 
@@ -631,6 +648,9 @@ std::string Decisions::remote_system_prompt(u32 id) const {
     s += "她是「象征" + drive + "的魔法少女，" + g->name + "」。源动力「" + drive + "」是" +
          (valence > 0 ? "正面" : "负面") + "的源动力。";
     s += "她最看重：" + likes + "；最不在意或排斥：" + dislikes + "。\n";
+    if (const ValueWhisper* vw = active_value_whisper(g->id))
+        s += std::string("近来她心中莫名地") + (vw->delta > 0 ? "更在意" : "不再在意") + feature_name_zh(vw->feature) +
+             "，却说不清缘由。\n";
     s += "她的性情：" + gd.temperament + "（性格数值 0~1：" + pers + "）。\n";
     s += "职位：" + gd.role + "，魔法等级 " + std::to_string(gd.level) + "，对统治者的忠诚度 " + strfmt("%+.2f", gd.loyalty) + "。\n";
     s += "规则：方案的资源、耗时与可行性已由程序计算，不要质疑其中的数字。你要判断的是她重视什么、愿意承担什么代价、在冲突目标之间如何取舍。"
@@ -680,7 +700,7 @@ Json Decisions::remote_schema(u32 id) const {
 
 void Decisions::whisper(EntityId girl, const std::string& key, EventId cause) {
     whispers_[girl] = {key, now_};
-    (void)cause;
+    whisper_cause_[girl] = cause;
 }
 
 void Decisions::load_replay(const Json& log) {
@@ -810,6 +830,19 @@ void Decisions::save(BinWriter& w) const {
         w.str(v.first);
         w.u64v(v.second);
     }
+    w.varu(value_whispers_.size());
+    for (auto& [g, v] : value_whispers_) {
+        w.u32v(g);
+        w.vari(v.feature);
+        w.f32(v.delta);
+        w.u64v(v.at);
+        w.u64v(v.cause);
+    }
+    w.varu(whisper_cause_.size());
+    for (auto& [g, c] : whisper_cause_) {
+        w.u32v(g);
+        w.u64v(c);
+    }
     w.end_section(s);
 }
 
@@ -874,6 +907,25 @@ void Decisions::load(BinReader& outer) {
         std::string key = r.str();
         Tick t = r.u64v();
         whispers_[g] = {key, t};
+    }
+    value_whispers_.clear();
+    whisper_cause_.clear();
+    if (!r.at_end()) {
+        u64 nv = r.varu();
+        for (u64 k = 0; k < nv; ++k) {
+            EntityId g = r.u32v();
+            ValueWhisper v;
+            v.feature = (int)r.vari();
+            v.delta = r.f32();
+            v.at = r.u64v();
+            v.cause = r.u64v();
+            value_whispers_[g] = v;
+        }
+        u64 nc = r.varu();
+        for (u64 k = 0; k < nc; ++k) {
+            EntityId g = r.u32v();
+            whisper_cause_[g] = r.u64v();
+        }
     }
 }
 

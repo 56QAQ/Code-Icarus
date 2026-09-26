@@ -44,6 +44,21 @@ func _ready() -> void:
 	grow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(grow)
 	head.add_child(UITheme.label("研究方向由魔法少女在议事中决定", 12, UITheme.TEXT_FAINT))
+	# The god can still hand knowledge down; it goes to whatever they are studying.
+	var reveal := Button.new()
+	reveal.text = "  降下启示"
+	reveal.focus_mode = Control.FOCUS_NONE
+	reveal.tooltip_text = "神迹：为当前研究（无人研究时为最便宜的可研究科技）增加 40 研究点。会记入编年史。"
+	reveal.add_theme_font_size_override("font_size", 13)
+	reveal.add_theme_color_override("font_color", UITheme.MAGIC)
+	var ric := UIIcon.new("blessing", 14)
+	ric.color = UITheme.MAGIC
+	ric.position = Vector2(6, 8)
+	reveal.add_child(ric)
+	reveal.pressed.connect(func() -> void:
+		Game.admin("enlighten", {"polity": polity_id, "points": 40})
+		_timer = 0.15)
+	head.add_child(reveal)
 	var close := Button.new()
 	close.focus_mode = Control.FOCUS_NONE
 	close.custom_minimum_size = Vector2(32, 30)

@@ -729,6 +729,12 @@ void Decisions::finalize(Decision& d, int idx, const std::string& rationale, con
     e.polity = d.polity;
     e.causes[0] = d.cause;
     e.causes[1] = d.request_event;
+    // A god's whisper that pushed her this way is part of the story.
+    if (const ValueWhisper* vw = active_value_whisper(d.girl); vw && vw->delta * o.f[vw->feature] > 0.05f)
+        e.causes[2] = vw->cause;
+    if (auto wh = whispers_.find(d.girl);
+        !e.causes[2] && wh != whispers_.end() && wh->second.first == o.key && now_ - wh->second.second < kTicksPerDay * 2)
+        e.causes[2] = whisper_cause_[d.girl];
     e.text = strfmt("%s决定：「%s」", g ? g->name.c_str() : "?", o.title.c_str());
     e.data.set("decision", (double)d.id);
     e.data.set("rationale", rationale);
@@ -772,25 +778,28 @@ void Decisions::finalize(Decision& d, int idx, const std::string& rationale, con
     execute(d);
     d.status = DecisionStatus::Executed;
     d.review_at = now_ + kTicksPerDay * 3 / 2;
-    // Level ups.
-    if (g && g->girl) {
-        GirlData& gd = *g->girl;
-        while (gd.level < 8 && gd.xp >= 40.0f * (float)gd.level) {
-            gd.xp -= 40.0f * (float)gd.level;
-            gd.level++;
-            std::string learned;
-            if (const Json* dj = drive_of(*ctx_.reg, gd.drive))
-                for (const Json& sp : (*dj)["spells"].items())
-                    if (sp.integer("level", 1) == gd.level) learned = sp.str("name");
-            Event le;
-            le.type = EventType::LevelUp;
-            le.severity = learned.empty() ? 1 : 3;
-            le.actor = g->id;
-            le.polity = g->polity;
-            le.text = learned.empty() ? strfmt("%s升到了 %d 级", g->name.c_str(), gd.level)
-                                      : strfmt("%s升到了 %d 级，领悟了「%s」", g->name.c_str(), gd.level, learned.c_str());
-            ctx_.chron->emit(std::move(le));
-        }
+    if (g) level_ups(*g, d.decision_event);
+}
+
+void Decisions::level_ups(Character& g, EventId cause) {
+    if (!g.girl) return;
+    GirlData& gd = *g.girl;
+    while (gd.level < 8 && gd.xp >= 40.0f * (float)gd.level) {
+        gd.xp -= 40.0f * (float)gd.level;
+        gd.level++;
+        std::string learned;
+        if (const Json* dj = drive_of(*ctx_.reg, gd.drive))
+            for (const Json& sp : (*dj)["spells"].items())
+                if (sp.integer("level", 1) == gd.level) learned = sp.str("name");
+        Event le;
+        le.type = EventType::LevelUp;
+        le.severity = learned.empty() ? 1 : 3;
+        le.actor = g.id;
+        le.polity = g.polity;
+        le.causes[0] = cause;
+        le.text = learned.empty() ? strfmt("%s升到了 %d 级", g.name.c_str(), gd.level)
+                                  : strfmt("%s升到了 %d 级，领悟了「%s」", g.name.c_str(), gd.level, learned.c_str());
+        ctx_.chron->emit(std::move(le));
     }
 }
 

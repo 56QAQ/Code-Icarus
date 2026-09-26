@@ -240,6 +240,36 @@ void Society::add_research(u16 id, float points, EntityId by) {
     if (*prog >= t->flt("cost", 100.0f)) discover(*p, key, by, 0);
 }
 
+std::string Society::grant_target(u16 id) const {
+    const Polity* p = polity(id);
+    if (!p) return "";
+    if (!p->policies.research.empty() && !p->has_tech(p->policies.research) && tech(p->policies.research))
+        return p->policies.research;
+    std::string key;
+    float best = 1e30f;
+    for (const std::string& k : available_techs(*p))
+        if (const Json* t = tech(k); t && t->flt("cost", 100.0f) < best) {
+            best = t->flt("cost", 100.0f);
+            key = k;
+        }
+    return key;
+}
+
+void Society::grant_research(u16 id, const std::string& key, float points, EventId cause) {
+    Polity* p = polity(id);
+    const Json* t = key.empty() ? nullptr : tech(key);
+    if (!p || !t || p->has_tech(key)) return;
+    float* prog = nullptr;
+    for (auto& r : p->research)
+        if (r.first == key) prog = &r.second;
+    if (!prog) {
+        p->research.push_back({key, 0.0f});
+        prog = &p->research.back().second;
+    }
+    *prog += points;
+    if (*prog >= t->flt("cost", 100.0f)) discover(*p, key, kNoEntity, cause);
+}
+
 void Society::discover(Polity& p, const std::string& key, EntityId by, EventId cause) {
     if (p.has_tech(key)) return;
     const Json* t = tech(key);
