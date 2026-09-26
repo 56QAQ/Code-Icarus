@@ -194,7 +194,25 @@ growth depends on irrigation from real water nearby.
 ## 9. Presentation (game/)
 
 Godot renders cell meshes from the kernel, characters as voxel parts, debris and
-meteors. The UI is built in code (`ui/ui_theme.gd`) as floating cards over the world —
+meteors.
+
+* **Cubes** are textured from a texture array painted at start-up from the rules'
+  colours (`scripts/texture_forge.gd`): every material gets 16x16 pixel-art faces (top,
+  side, bottom where they differ), natural ones in three variants that each cube picks by
+  a hash and turns or mirrors. The mesher writes material, face kind and damage into the
+  vertex UV; the shared shader include (`shaders/voxel_common.gdshaderinc`) looks up the
+  layer, draws cracks on damaged cubes, lets meadows drift between lush and dry, makes
+  ores and glass glint, levistone and magma glow, windows light up at night and surfaces
+  darken when wet. Grass tufts, flowers and wheat are alpha-cut sprites.
+* **Water** surfaces share heights at cube corners (smooth lakes); the shader colours by
+  the thickness of water in view, refracts the bed, foams at shores and streaks where
+  water falls.
+* **Figures** are interpolated between simulation snapshots; the walk cycle is driven by
+  distance covered, each job has its motion and tool, magical girls carry twin tails, a
+  flared skirt and a floating emblem.
+* **Effects** (`scripts/fx_renderer.gd`) read the kernel's presentation-only feed of
+  broken and landed cubes (chips, dust), its fire list (flames, smoke) and the weather
+  (rain); the sky, clouds and light follow the hour. The UI is built in code (`ui/ui_theme.gd`) as floating cards over the world —
 time pill, civilisation card with polity switcher, tool dock, toasts, contextual
 selection card with tabs — plus centred overlays: **议事录** (decisions), **编年史**
 (history with a causal-chain graph), **科技** (the tech tree) and the round's ending
