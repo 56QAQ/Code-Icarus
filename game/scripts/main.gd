@@ -4,6 +4,7 @@ extends Node3D
 ##   godot --path game -- --shot out.png [--seed N | --load FILE] [--layout classic|continent] [--scenario key]
 ##        [--ticks N] [--cam x,y,z,yaw,pitch,dist]
 ##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
+##        [--focus-job job[,dist]]
 ##        [--hide-ui] [--frames N] [--late-admin type:{json} [--late-frames N] [--late-ticks N] [--late-run]]
 
 var renderer: WorldRenderer
@@ -108,6 +109,25 @@ func _ready() -> void:
 			for c in Game.sim.characters():
 				if int(c["id"]) == int(_cli["select"]):
 					rig.focus(c["pos"] + Vector3(0, 1.3, 0), float(_cli["focus"]), true)
+	if _cli.has("focus-job"):
+		# Screenshot helper: look at someone doing this work (e.g. chop, till, build).
+		var parts: PackedStringArray = String(_cli["focus-job"]).split(",")
+		var d := float(parts[1]) if parts.size() > 1 else 7.0
+		# Someone at it right now, else someone on the way to it (run the clock on).
+		var seen_jobs := {}
+		for attempt in 40:
+			var found := {}
+			for c in Game.sim.characters():
+				seen_jobs[String(c.get("job", ""))] = true
+				if String(c.get("job", "")) == parts[0] and (c.get("working", false) or attempt == 39):
+					found = c
+					break
+			if not found.is_empty():
+				rig.focus(found["pos"] + Vector3(0, 1.2, 0), d, true)
+				_select_character(int(found["id"]))
+				break
+			Game.sim.step(20)
+		print("focus-job: jobs seen ", seen_jobs.keys())
 	if _cli.has("focus-soldiers"):
 		# Screenshot helper: look at the soldiers (select the first one).
 		var sum := Vector3.ZERO

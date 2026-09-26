@@ -62,8 +62,10 @@ private:
 
 // Body-part voxel mesh (character parts, debris). vox is sx*sy*sz palette indices
 // (0 = empty), palette holds 0xRRGGBB colors indexed by value-1.
+// `vary` (optional, per palette slot): how much each voxel's colour varies (a weave of
+// leaves or fur rather than flat cloth).
 void build_voxel_model(const u8* vox, int sx, int sy, int sz, const std::vector<u32>& palette, float scale,
-                       MeshData& out);
+                       MeshData& out, const std::vector<float>* vary = nullptr);
 
 // Debris body mesh (world material cubes at offsets).
 void build_debris_mesh(const Registry& reg, const std::vector<std::pair<Vec3i, Voxel>>& cubes, MeshData& out);

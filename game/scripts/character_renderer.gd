@@ -25,7 +25,8 @@ var _gear_mats := {}   # name -> StandardMaterial3D
 const GEAR_COLORS := {
 	"wood": Color(0.52, 0.36, 0.2), "stone": Color(0.55, 0.55, 0.56), "copper": Color(0.78, 0.5, 0.28),
 	"iron": Color(0.62, 0.65, 0.7), "hide": Color(0.62, 0.52, 0.33), "leather": Color(0.42, 0.3, 0.18),
-	"string": Color(0.9, 0.88, 0.8),
+	"string": Color(0.9, 0.88, 0.8), "flint": Color(0.33, 0.36, 0.42), "leaf": Color(0.36, 0.55, 0.24),
+	"leaf_light": Color(0.5, 0.68, 0.3), "fur": Color(0.84, 0.77, 0.62), "fur_dark": Color(0.44, 0.3, 0.19),
 }
 var _pile_timer := 0.0
 
@@ -96,9 +97,12 @@ func _process(delta: float) -> void:
 		if n.is_empty():
 			n = _create(c)
 			_nodes[id] = n
-		if n["version"] != c["body_version"]:
+		var bsig := "%d|%d" % [int(c["body_version"]), int(c.get("clothes_id", -1))]
+		if n["version"] != bsig:
+			n["clothes"] = String(c.get("clothes", ""))
+			n["girl"] = c.get("girl", false)
 			_rebuild_body(n, id)
-			n["version"] = c["body_version"]
+			n["version"] = bsig
 		_animate(n, c, delta)
 	for id in _nodes.keys():
 		if not seen.has(id):
@@ -125,7 +129,7 @@ func _create(c: Dictionary) -> Dictionary:
 	var body := Node3D.new()  # tilts when lying down
 	root.add_child(body)
 	var now := Time.get_ticks_usec() / 1e6
-	var n := {"root": root, "body": body, "parts": [], "version": -1, "pos": c["pos"], "label": null, "crate": null,
+	var n := {"root": root, "body": body, "parts": [], "version": "", "pos": c["pos"], "label": null, "crate": null,
 		"aabbs": [], "gear_sig": "", "tool_sig": "", "prev": c["pos"], "cur": c["pos"], "t_cur": now, "dt": 0.05,
 		"walk": 0.0, "phase": 0.0, "speed": 0.0, "lean": 0.0}
 	root.position = c["pos"]
@@ -200,6 +204,8 @@ func _rebuild_body(n: Dictionary, id: int) -> void:
 		n["parts"].append(pivot)
 	if n.has("look"):
 		_attach_look(n)
+	elif String(n.get("clothes", "")) != "":
+		_attach_clothes(n, String(n["clothes"]))
 
 
 func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
@@ -276,8 +282,13 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 		head_x = sin(t * 0.7) * 0.05
 	var job := String(c.get("job", ""))
 	var working: bool = c.get("working", false) and not lying
+	# The tool the work calls for, and whether it is in hand (bare-handed work looks —
+	# and is — slower and clumsier).
+	var need := String(c.get("job_tool", ""))
+	var held := String(c.get("tool_kind", ""))
+	var armed_for_it := need != "" and (held == need or held == "kit")
 	if working:
-		var pose := _work_pose(job, t)
+		var pose := _work_pose(job, need, armed_for_it, t)
 		al = pose[0]
 		ar = pose[1]
 		lean = pose[2]
@@ -344,11 +355,22 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 		em.visible = alive
 		em.position = Vector3(0, (3.05 if not lying else 0.9) + sin(t * 1.6) * 0.08, 0)
 		em.rotation = Vector3(0.785, t * 1.4, 0.615)
-	# The tool for the job in hand while working.
-	var tool_sig := "%s|%s" % [job, c.get("tool", "")] if working and weapon == "" else ""
+	# The tool in hand: carried hanging at the side, raised to work when it is the right
+	# one; put away for bare-handed work, a crate, or a soldier's weapon.
+	# Where the tool is: in the hand for the work it is made for; otherwise a long tool
+	# is slung across the back and a short one hangs at the belt. Gone while lying down.
+	var shown_kind := held if held != "kit" else (need if need != "" else "hammer")
+	var place := ""
+	if held != "" and not lying and not (c.get("drafted", false) and weapon != ""):
+		if working and armed_for_it:
+			place = "hand"
+		else:
+			place = "back" if shown_kind in ["axe", "pick", "hoe"] else "belt"
+	var prop := job if working and need == "" else ""
+	var tool_sig := "%s|%s|%s" % [c.get("tool", ""), place, prop]
 	if tool_sig != n["tool_sig"]:
 		n["tool_sig"] = tool_sig
-		_attach_tool(n, job, String(c.get("tool", "")), working and weapon == "")
+		_attach_tool(n, String(c.get("tool", "")), shown_kind, place, prop)
 	var pulling: bool = c.get("cart", false) and c.get("carrying", false) and not lying and not c.get("drafted", false)
 	(n["crate"] as MeshInstance3D).visible = c.get("carrying", false) and not lying and not c.get("drafted", false) and not pulling
 	var cart: Node3D = n["cart"]
@@ -429,38 +451,79 @@ func _attach_look(n: Dictionary) -> void:
 
 
 ## Arms, lean and head for a kind of work: [left arm, right arm, lean, head pitch,
-## right arm sideways]. Rhythms are per character (t already carries an offset).
-func _work_pose(job: String, t: float) -> Array:
+## right arm sideways]. `need` is the tool the work calls for, `armed` whether it is in
+## hand. Rhythms are per character (t already carries an offset).
+func _work_pose(job: String, need: String, armed: bool, t: float) -> Array:
+	match need:
+		"axe":
+			if armed:
+				# Felling: a two-handed horizontal swing into the trunk — wind back, strike.
+				var p := fposmod(t / 1.0, 1.0)
+				var side: float
+				if p < 0.62:
+					side = lerpf(-0.35, 1.0, smoothstep(0.0, 1.0, p / 0.62))
+				elif p < 0.74:
+					side = lerpf(1.0, -0.45, (p - 0.62) / 0.12)
+				else:
+					side = -0.45
+				return [-1.35, -1.45, 0.14, 0.12, side]
+			# No axe: tearing at branches with both hands.
+			var q := sin(t * TAU / 1.4)
+			return [-2.2 + q * 0.35, -2.2 - q * 0.35, -0.05, -0.35, 0.0]
+		"pick":
+			if armed:
+				# Quarrying: raise overhead slowly, bring it down hard, rest a moment.
+				var p := fposmod(t / 0.95, 1.0)
+				var arm: float
+				if p < 0.6:
+					arm = lerpf(-0.15, -2.4, smoothstep(0.0, 1.0, p / 0.6))
+				elif p < 0.72:
+					arm = lerpf(-2.4, -0.15, (p - 0.6) / 0.12)
+				else:
+					arm = -0.15
+				return [arm + 0.1, arm, 0.14 + 0.16 * (1.0 - absf(arm + 0.15) / 2.25), 0.15, 0.0]
+			# No pick: pounding at the rock with a stone held in both hands.
+			var p2 := fposmod(t / 0.7, 1.0)
+			var arm2 := lerpf(-1.9, -0.7, smoothstep(0.55, 0.7, p2)) if p2 < 0.7 else -0.7
+			return [arm2, arm2, 0.35, 0.3, 0.0]
+		"hoe":
+			if armed:
+				# Tilling: the hoe lifted in front and chopped into the ground.
+				var p := fposmod(t / 0.9, 1.0)
+				var arm := lerpf(-0.55, -1.7, smoothstep(0.0, 0.6, p)) if p < 0.6 else lerpf(-1.7, -0.55, smoothstep(0.6, 0.72, p))
+				return [arm + 0.15, arm, 0.3, 0.3, 0.0]
+			# No hoe: scratching at the soil with the hands, bent low.
+			var q2 := sin(t * TAU / 0.6)
+			return [-0.5 + q2 * 0.3, -0.5 - q2 * 0.3, 0.75, 0.45, 0.0]
+		"hammer":
+			if armed:
+				var p := fposmod(t / 0.45, 1.0)
+				var tap := -1.35 + 0.65 * smoothstep(0.55, 0.75, p) - 0.65 * smoothstep(0.75, 1.0, p)
+				return [-0.9, tap, 0.1, 0.2, 0.0]
+			# Bare hands: pushing pieces into place.
+			var q3 := sin(t * TAU / 1.1)
+			return [-1.2 + q3 * 0.2, -1.2 + q3 * 0.2, 0.18, 0.2, 0.0]
+		"sickle":
+			if armed:
+				# Reaping: bent low, the sickle sweeping sideways through the stalks.
+				var p := fposmod(t / 0.8, 1.0)
+				var side := lerpf(0.8, -0.5, smoothstep(0.0, 0.35, p)) if p < 0.5 else lerpf(-0.5, 0.8, smoothstep(0.5, 1.0, p))
+				return [-0.75, -0.8, 0.6, 0.4, side]
+			var q4 := sin(t * TAU / 0.75)
+			return [-0.5 - q4 * 0.3, -0.5 + q4 * 0.3, 0.55, 0.35, 0.1]
+		"knife":
+			# Small cutting strokes over the work in the other hand.
+			var q5 := sin(t * 11.0)
+			return [-0.95, -1.05 + q5 * 0.18, 0.15, 0.35, 0.15 + q5 * 0.12]
 	match job:
-		"chop", "mine", "dig":
-			# Wind up slowly overhead, strike fast, rest a moment.
-			var period := 1.1 if job == "chop" else 0.95
-			var p := fposmod(t / period, 1.0)
-			var raised := -2.6 if job == "chop" else -2.3
-			var hit := -0.45 if job == "chop" else -0.15
-			var arm: float
-			if p < 0.6:
-				arm = lerpf(hit, raised, smoothstep(0.0, 1.0, p / 0.6))
-			elif p < 0.72:
-				arm = lerpf(raised, hit, (p - 0.6) / 0.12)
-			else:
-				arm = hit
-			var lean := 0.12 + (0.18 if job != "chop" else 0.08) * (1.0 - absf(arm - hit) / absf(raised - hit))
-			return [arm + 0.1, arm, lean, 0.15, 0.0]
-		"till":
-			var p := sin(t * TAU / 0.9)
-			return [-0.9 + p * 0.35, -1.0 + p * 0.45, 0.32, 0.25, 0.0]
 		"sow":
 			var p := fposmod(t / 1.2, 1.0)
 			var fling := -1.0 + 0.7 * smoothstep(0.0, 0.3, p) - 0.7 * smoothstep(0.5, 1.0, p)
 			return [-0.55, fling, 0.28, 0.3, 0.35 * smoothstep(0.0, 0.3, p)]
 		"harvest", "forage":
+			# Picking: reaching in with one hand after the other.
 			var p := sin(t * TAU / 0.75)
-			return [-0.5 - p * 0.3, -0.5 + p * 0.3, 0.55, 0.35, 0.1]
-		"build", "craft":
-			var p := fposmod(t / 0.45, 1.0)
-			var tap := -1.35 + 0.65 * smoothstep(0.55, 0.75, p) - 0.65 * smoothstep(0.75, 1.0, p)
-			return [-0.9, tap, 0.1, 0.2, 0.0]
+			return [-0.9 - p * 0.35, -0.9 + p * 0.35, 0.3, 0.1, 0.1]
 		"cook":
 			return [-0.85, -0.95 + sin(t * 4.0) * 0.12, 0.12, 0.3, sin(t * 4.0 + 1.3) * 0.18]
 		"research":
@@ -471,62 +534,132 @@ func _work_pose(job: String, t: float) -> Array:
 	return [-0.6 + sin(t * 9.0 + 1.0) * 0.3, -1.2 + p2 * 0.7, 0.1, 0.1, 0.0]
 
 
-## A hand tool for the current work (axe, pick, hoe, hammer, sickle, ladle, book,
-## basket), its head in the tool's metal.
-func _attach_tool(n: Dictionary, job: String, tool_key: String, show: bool) -> void:
+## The tool in the right hand, drawn by kind (axe, pick, hoe, hammer, sickle, knife, a
+## digging stick) with its head in the tool's material; and props for work done
+## without a tool (a ladle, a book, a gathering bag).
+func _attach_tool(n: Dictionary, tool_key: String, kind: String, place: String, prop: String) -> void:
 	var parts: Array = n["parts"]
 	if parts.size() < 6:
 		return
-	for pi in [PART_ARM_R, PART_ARM_L]:
+	for pi in [PART_ARM_R, PART_ARM_L, PART_TORSO]:
 		for ch in (parts[pi] as Node3D).get_children():
 			if ch.has_meta("tool"):
 				ch.queue_free()
-	if not show:
-		return
 	var aabbs: Array = n["aabbs"]
 	var hand_r := Vector3(0, (aabbs[PART_ARM_R] as AABB).position.y + 0.06, 0)
 	var hand_l := Vector3(0, (aabbs[PART_ARM_L] as AABB).position.y + 0.06, 0)
-	var metal := "iron" if tool_key.begins_with("iron") else ("copper" if tool_key.begins_with("copper") else "stone")
 	var wood := _gear_mat("wood")
-	var head := _gear_mat(metal, metal != "stone")
-	var g := Node3D.new()
-	g.set_meta("tool", true)
-	g.position = hand_r
-	(parts[PART_ARM_R] as Node3D).add_child(g)
-	match job:
-		"chop":
-			_box(g, Vector3(0.05, 0.05, 0.8), Vector3(0, 0, 0.3), wood)
-			_box(g, Vector3(0.04, 0.24, 0.16), Vector3(0, 0.09, 0.62), head)
-		"mine", "dig":
-			_box(g, Vector3(0.05, 0.05, 0.8), Vector3(0, 0, 0.3), wood)
-			_box(g, Vector3(0.05, 0.56, 0.06), Vector3(0, 0, 0.66), head)
-			_box(g, Vector3(0.04, 0.08, 0.1), Vector3(0, 0.28, 0.63), head)
-			_box(g, Vector3(0.04, 0.08, 0.1), Vector3(0, -0.28, 0.63), head)
-		"till":
-			_box(g, Vector3(0.05, 0.05, 1.05), Vector3(0, 0, 0.42), wood)
-			_box(g, Vector3(0.16, 0.14, 0.03), Vector3(0, -0.07, 0.94), head)
-		"build", "craft":
-			_box(g, Vector3(0.05, 0.05, 0.45), Vector3(0, 0, 0.18), wood)
-			_box(g, Vector3(0.09, 0.2, 0.09), Vector3(0, 0.04, 0.4), head)
-		"harvest":
-			_box(g, Vector3(0.05, 0.05, 0.22), Vector3(0, 0, 0.08), wood)
-			_box(g, Vector3(0.03, 0.04, 0.2), Vector3(0, 0.03, 0.27), head)
-			_box(g, Vector3(0.03, 0.14, 0.04), Vector3(0, 0.1, 0.37), head)
+	if place != "":
+		var metal := "iron" if tool_key.begins_with("iron") else ("copper" if tool_key.begins_with("copper") else ("flint" if tool_key.begins_with("flint") else "stone"))
+		var head := _gear_mat(metal, metal == "iron" or metal == "copper")
+		var g := Node3D.new()
+		g.set_meta("tool", true)
+		g.scale = Vector3.ONE * 1.3
+		if place == "hand":
+			g.position = hand_r
+			(parts[PART_ARM_R] as Node3D).add_child(g)
+		else:
+			var torso: Node3D = parts[PART_TORSO]
+			var tb: AABB = aabbs[PART_TORSO]
+			# The right side of the body is where the right arm hangs.
+			var right := signf((parts[PART_ARM_R] as Node3D).position.x - torso.position.x)
+			if right == 0.0:
+				right = 1.0
+			if place == "back":
+				# Across the back, head up behind the right shoulder.
+				g.position = Vector3(tb.get_center().x, tb.position.y + tb.size.y * 0.35, tb.position.z - 0.07)
+				g.rotation = Vector3(-PI / 2.0, 0.0, -0.75 * right)
+			else:
+				# At the belt on the right hip, hanging.
+				g.position = Vector3(tb.get_center().x + right * (tb.size.x * 0.5 + 0.03), tb.position.y + 0.12, tb.get_center().z)
+				g.rotation = Vector3(PI / 2.0 - 0.2, 0.0, 0.0)
+				g.scale = Vector3.ONE * 1.1
+			torso.add_child(g)
+		if tool_key == "digging_stick":
+			_box(g, Vector3(0.05, 0.05, 1.0), Vector3(0, 0, 0.4), wood)
+			_box(g, Vector3(0.03, 0.03, 0.12), Vector3(0, 0, 0.94), _gear_mat("fur_dark"))
+		else:
+			match kind:
+				"axe":
+					_box(g, Vector3(0.05, 0.05, 0.8), Vector3(0, 0, 0.3), wood)
+					_box(g, Vector3(0.04, 0.24, 0.16), Vector3(0, 0.09, 0.62), head)
+					_box(g, Vector3(0.03, 0.3, 0.05), Vector3(0, 0.1, 0.7), head)
+				"pick":
+					_box(g, Vector3(0.05, 0.05, 0.8), Vector3(0, 0, 0.3), wood)
+					_box(g, Vector3(0.05, 0.56, 0.06), Vector3(0, 0, 0.66), head)
+					_box(g, Vector3(0.04, 0.08, 0.1), Vector3(0, 0.28, 0.63), head)
+					_box(g, Vector3(0.04, 0.08, 0.1), Vector3(0, -0.28, 0.63), head)
+				"hoe":
+					_box(g, Vector3(0.05, 0.05, 1.05), Vector3(0, 0, 0.42), wood)
+					_box(g, Vector3(0.16, 0.14, 0.03), Vector3(0, -0.07, 0.94), head)
+				"hammer":
+					_box(g, Vector3(0.05, 0.05, 0.45), Vector3(0, 0, 0.18), wood)
+					_box(g, Vector3(0.09, 0.2, 0.09), Vector3(0, 0.04, 0.4), head)
+				"sickle":
+					_box(g, Vector3(0.05, 0.05, 0.22), Vector3(0, 0, 0.08), wood)
+					_box(g, Vector3(0.03, 0.04, 0.2), Vector3(0, 0.03, 0.27), head)
+					_box(g, Vector3(0.03, 0.14, 0.04), Vector3(0, 0.1, 0.37), head)
+					_box(g, Vector3(0.03, 0.04, 0.08), Vector3(0, 0.17, 0.33), head)
+				"knife":
+					_box(g, Vector3(0.04, 0.04, 0.14), Vector3(0, 0, 0.05), wood)
+					_box(g, Vector3(0.02, 0.06, 0.22), Vector3(0, 0.01, 0.23), head)
+	if prop == "":
+		return
+	var pg := Node3D.new()
+	pg.set_meta("tool", true)
+	match prop:
 		"cook":
-			_box(g, Vector3(0.03, 0.03, 0.42), Vector3(0, 0, 0.2), wood)
-			_box(g, Vector3(0.1, 0.07, 0.1), Vector3(0, -0.03, 0.43), wood)
+			pg.position = hand_r
+			(parts[PART_ARM_R] as Node3D).add_child(pg)
+			_box(pg, Vector3(0.03, 0.03, 0.42), Vector3(0, 0, 0.2), wood)
+			_box(pg, Vector3(0.1, 0.07, 0.1), Vector3(0, -0.03, 0.43), wood)
 		"research":
+			pg.position = hand_r
+			(parts[PART_ARM_R] as Node3D).add_child(pg)
 			var cover := StandardMaterial3D.new()
 			cover.albedo_color = Color(0.55, 0.22, 0.2)
-			_box(g, Vector3(0.3, 0.05, 0.22), Vector3(-0.12, 0.02, 0.14), cover)
-			_box(g, Vector3(0.27, 0.02, 0.2), Vector3(-0.12, 0.055, 0.14), _gear_mat("string"))
-		"forage", "sow":
-			var bag := Node3D.new()
-			bag.set_meta("tool", true)
-			bag.position = hand_l
-			(parts[PART_ARM_L] as Node3D).add_child(bag)
-			_box(bag, Vector3(0.28, 0.2, 0.26), Vector3(0, -0.08, 0.1), _gear_mat("hide"))
-			_box(bag, Vector3(0.04, 0.14, 0.04), Vector3(0, 0.06, 0.1), _gear_mat("leather"))
+			_box(pg, Vector3(0.3, 0.05, 0.22), Vector3(-0.12, 0.02, 0.14), cover)
+			_box(pg, Vector3(0.27, 0.02, 0.2), Vector3(-0.12, 0.055, 0.14), _gear_mat("string"))
+		"forage", "sow", "harvest":
+			pg.position = hand_l
+			(parts[PART_ARM_L] as Node3D).add_child(pg)
+			_box(pg, Vector3(0.28, 0.2, 0.26), Vector3(0, -0.08, 0.1), _gear_mat("hide"))
+			_box(pg, Vector3(0.04, 0.14, 0.04), Vector3(0, 0.06, 0.1), _gear_mat("leather"))
+		_:
+			pg.queue_free()
+
+
+## Clothes a resident wears beyond the recoloured body: leaf flaps at the hem and on
+## the shoulders, or a pale fur collar and trim. Decoration only.
+func _attach_clothes(n: Dictionary, kind: String) -> void:
+	var parts: Array = n["parts"]
+	if parts.size() < 6 or kind == "cloth" or kind == "":
+		return
+	var aabbs: Array = n["aabbs"]
+	var tb: AABB = aabbs[PART_TORSO]
+	if tb.size.y <= 0.0:
+		return
+	var torso: Node3D = parts[PART_TORSO]
+	var cx := tb.get_center().x
+	var cz := tb.get_center().z
+	match kind:
+		"leaf":
+			# A skirt of overlapping leaves, alternately darker and lighter.
+			var i := 0
+			for ang in [0.0, 0.8, 1.6, 2.4, 3.2, 4.0, 4.8, 5.6]:
+				var ox := cos(ang) * tb.size.x * 0.52
+				var oz := sin(ang) * tb.size.z * 0.62
+				var leaf := _box(torso, Vector3(0.14, 0.2, 0.05), Vector3(cx + ox, tb.position.y - 0.02, cz + oz), _gear_mat("leaf" if i % 2 == 0 else "leaf_light"), Vector3(0.25, -ang + PI / 2.0, 0))
+				leaf.set_meta("look", true)
+				i += 1
+			for side in [-1.0, 1.0]:
+				var sh := _box(torso, Vector3(0.12, 0.05, 0.16), Vector3(cx + side * tb.size.x * 0.42, tb.end.y - 0.02, cz), _gear_mat("leaf_light"), Vector3(0, 0, side * 0.3))
+				sh.set_meta("look", true)
+		"fur":
+			var collar := _box(torso, Vector3(tb.size.x * 1.08, 0.08, tb.size.z * 1.12), Vector3(cx, tb.end.y - 0.03, cz), _gear_mat("fur"))
+			collar.set_meta("look", true)
+			var trim := _box(torso, Vector3(tb.size.x * 1.12, 0.07, tb.size.z * 1.16), Vector3(cx, tb.position.y + 0.02, cz), _gear_mat("fur"))
+			trim.set_meta("look", true)
 
 
 func _gear_mat(key: String, metal := false) -> StandardMaterial3D:

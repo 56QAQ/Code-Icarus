@@ -1,5 +1,7 @@
 #include "icarus/sim/physics.h"
 
+#include <chrono>
+
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -19,6 +21,7 @@ Physics::Physics(World& world, Chronicle& chronicle) : w_(world), chron_(chronic
 void Physics::reset(u64 seed) {
     rng_.seed(seed, 0x9A51C5);
     water_.clear();
+    puddles_.clear();
     fire_.clear();
     granular_.clear();
     support_.clear();
@@ -150,14 +153,29 @@ void Physics::step_evaporation() {
 
 void Physics::step(Tick now) {
     now_ = now;
+    using clk = std::chrono::steady_clock;
+    auto t0 = clk::now();
+    auto lap = [&](double& acc) {
+        const auto t = clk::now();
+        acc += std::chrono::duration<double, std::micro>(t - t0).count();
+        t0 = t;
+    };
     step_springs(now);
     step_evaporation();
+    step_puddles();
+    lap(stats_.us_evaporation);
     step_meteors();
+    lap(stats_.us_other);
     step_water();
+    lap(stats_.us_water);
     step_fire();
+    lap(stats_.us_fire);
     step_granular();
+    lap(stats_.us_granular);
     step_support();
+    lap(stats_.us_support);
     step_debris();
+    lap(stats_.us_other);
     stats_.water_active = water_.size();
     stats_.fire_active = fire_.size();
     stats_.granular_active = granular_.size();
@@ -301,19 +319,34 @@ void Physics::step_water() {
                 moved = true;
             }
         }
-        // 3) Shallow puddles evaporate slowly.
-        if (!moved && level <= 2) {
-            Vec3i up = p + Vec3i{0, 1, 0};
-            if (vmat(w_.get(up)) == M.air && rng_.chance(evaporation)) {
-                level -= 1;
-                stats_.water_units_evaporated++;
-                moved = true;
-            }
-            if (level > 0 && !moved) water_.push(p);  // keep checking until it dries
-        }
+        // 3) Shallow puddles that cannot flow only evaporate: they are checked now
+        // and then (step_puddles) until they dry or something around them changes.
+        if (!moved && level <= 2) puddles_.push(p);
         if (moved) {
             w_.set(p, level > 0 ? make_voxel(M.water, (u8)level) : make_voxel(M.air));
             water_.push(p);
+        }
+    }
+}
+
+void Physics::step_puddles() {
+    if (now_ % kPuddleTicks != 0 || puddles_.empty()) return;
+    const CoreMats& M = w_.reg().m();
+    const float chance = std::min(1.0f, evaporation * (float)kPuddleTicks);
+    for (const Vec3i& p : puddles_.take()) {
+        const Voxel v = w_.get(p);
+        if (vmat(v) != M.water) continue;
+        const int level = vlevel(v);
+        if (level > 2) {
+            water_.push(p);
+            continue;
+        }
+        if (vmat(w_.get(p + Vec3i{0, 1, 0})) == M.air && rng_.chance(chance)) {
+            stats_.water_units_evaporated++;
+            w_.set(p, level > 1 ? make_voxel(M.water, (u8)(level - 1)) : make_voxel(M.air));
+            water_.push(p);
+        } else {
+            puddles_.push(p);
         }
     }
 }
@@ -835,6 +868,7 @@ void Physics::save(BinWriter& w) const {
         w.u32v(ss.touch_cause);
         w.u32v(ss.lost_event);
     }
+    save_queue(w, puddles_);
     w.end_section(s);
 }
 
@@ -903,12 +937,15 @@ void Physics::load(BinReader& outer) {
         ss.touch_cause = r.u32v();
         ss.lost_event = r.u32v();
     }
+    puddles_.clear();
+    if (!r.at_end()) load_queue(r, puddles_);
     damage_.clear();
 }
 
 u64 Physics::hash() const {
     u64 h = hash_combine(rng_.state(), rng_.inc());
     for (const Vec3i& p : water_.items()) h = hash_combine(h, (u64)Vec3iHash{}(p));
+    for (const Vec3i& p : puddles_.items()) h = hash_combine(h, (u64)Vec3iHash{}(p) ^ 0x9D);
     for (const Vec3i& p : fire_.items()) h = hash_combine(h, (u64)Vec3iHash{}(p));
     h = hash_combine(h, debris_.size());
     for (const DebrisBody& b : debris_) {

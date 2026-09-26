@@ -621,7 +621,10 @@ Array IcarusSim::characters() const {
         float cargo = 0.0f;
         if (inv)
             for (const auto& st : inv->items) {
-                const int kept = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
+                const int kept = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart ||
+                                  st.item == c.clothes)
+                                     ? 1
+                                     : 0;
                 if (st.count > kept) cargo += (float)(st.count - kept) * reg_->item(st.item).weight;
             }
         d["carrying"] = cargo >= 2.0f;
@@ -630,7 +633,16 @@ Array IcarusSim::characters() const {
         // What the work is (for the animation) and the tool in hand.
         if (c.task.type == icarus::TaskType::Work)
             if (const icarus::Job* j = sim_->jobs().get(c.task.job)) d["job"] = String(job_key(j->type));
-        if (c.tool != icarus::kNoItem) d["tool"] = to_gd(reg_->item(c.tool).key);
+        if (c.tool != icarus::kNoItem) {
+            const icarus::ItemDef& td = reg_->item(c.tool);
+            d["tool"] = to_gd(td.key);
+            d["tool_kind"] = to_gd(td.tool_kind);
+        }
+        // The tool the current work calls for (bare-handed work looks different).
+        if (c.task.type == icarus::TaskType::Work)
+            if (const icarus::Job* j = sim_->jobs().get(c.task.job)) d["job_tool"] = to_gd(sim_->agents().tool_kind_for(*j));
+        d["clothes"] = c.clothes != icarus::kNoItem ? to_gd(reg_->item(c.clothes).clothes_kind) : String();
+        d["clothes_id"] = c.clothes != icarus::kNoItem ? (int64_t)c.clothes : (int64_t)-1;
         d["protest"] = c.task.type == icarus::TaskType::Protest && c.task.step == 2;
         if (c.is_girl()) {
             d["drive"] = drive_name(*reg_, c.girl->drive);
@@ -657,11 +669,31 @@ Array IcarusSim::character_body(int64_t id) const {
     const icarus::Character* c = sim_->agents().get((icarus::EntityId)id);
     if (!c) return out;
     std::vector<uint32_t> pal = c->look.palette();
+    // What residents wear recolours their clothes: leaves or fur instead of linen.
+    std::vector<float> vary(pal.size(), 0.0f);
+    if (!c->is_girl() && c->clothes != icarus::kNoItem) {
+        const std::string& kind = reg_->item(c->clothes).clothes_kind;
+        if (kind == "leaf") {
+            pal[icarus::kCloth - 1] = 0x557F37;
+            pal[icarus::kAccent - 1] = 0x7FA84A;
+            pal[icarus::kShoes - 1] = 0x6B4A2E;  // bark sandals
+            vary[icarus::kCloth - 1] = 0.22f;
+            vary[icarus::kAccent - 1] = 0.18f;
+        } else if (kind == "fur") {
+            pal[icarus::kCloth - 1] = 0x7A5536;
+            pal[icarus::kAccent - 1] = 0xD8C7A6;
+            pal[icarus::kShoes - 1] = 0x4E3522;
+            vary[icarus::kCloth - 1] = 0.16f;
+            vary[icarus::kAccent - 1] = 0.1f;
+        } else {
+            vary[icarus::kCloth - 1] = 0.04f;
+        }
+    }
     for (int p = 0; p < icarus::kPartCount; ++p) {
         const icarus::PartShape& s = icarus::part_shape(p);
         const icarus::BodyPart& bp = c->body.parts[p];
         icarus::MeshData m;
-        icarus::build_voxel_model(bp.vox.data(), s.size.x, s.size.y, s.size.z, pal, icarus::kBodyScale, m);
+        icarus::build_voxel_model(bp.vox.data(), s.size.x, s.size.y, s.size.z, pal, icarus::kBodyScale, m, &vary);
         // Pivot: hips/shoulders at the top of limbs, neck at the bottom of the head.
         float px = (float)s.origin.x + (float)s.size.x * 0.5f;
         float pz = (float)s.origin.z + (float)s.size.z * 0.5f;
@@ -734,14 +766,23 @@ Dictionary IcarusSim::character_info(int64_t id) const {
     d["drafted"] = c.drafted;
     Array equip;
     const std::pair<const char*, icarus::ItemId> slots[] = {
-        {"工具", c.tool}, {"武器", c.weapon}, {"护甲", c.armor}, {"推车", c.cart}};
+        {"工具", c.tool}, {"衣服", c.clothes}, {"武器", c.weapon}, {"护甲", c.armor}, {"推车", c.cart}};
     for (const auto& [slot, item] : slots) {
         if (item == icarus::kNoItem) continue;
+        const icarus::ItemDef& it = reg_->item(item);
         Dictionary t;
         t["slot"] = String::utf8(slot);
-        t["name"] = to_gd(reg_->item(item).name);
+        t["name"] = to_gd(it.name);
+        t["key"] = to_gd(it.key);
+        if (item == c.tool && it.durability > 0) {
+            t["wear"] = (double)c.tool_wear / (double)it.durability;  // 0 new .. 1 worn out
+            t["power"] = it.power;
+            t["kind"] = to_gd(it.tool_kind);
+        }
+        if (item == c.clothes) t["warmth"] = it.warmth;
         equip.push_back(t);
     }
+    d["exposure"] = sim_->agents().exposure(c);
     d["equipment"] = equip;
     if (c.treated_until > sim_->now())
         d["treated_hours"] = (double)(c.treated_until - sim_->now()) / (double)icarus::kTicksPerHour;

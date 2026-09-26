@@ -478,7 +478,7 @@ void Mesher::build_lod_column(int cx, int cz, int step, CellMesh& out) {
 }
 
 void build_voxel_model(const u8* vox, int sx, int sy, int sz, const std::vector<u32>& palette, float scale,
-                       MeshData& out) {
+                       MeshData& out, const std::vector<float>* vary) {
     auto get = [&](int x, int y, int z) -> u8 {
         if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) return 0;
         return vox[(y * sz + z) * sx + x];
@@ -490,6 +490,10 @@ void build_voxel_model(const u8* vox, int sx, int sy, int sz, const std::vector<
                 if (!v) continue;
                 u32 col = v - 1 < (int)palette.size() ? palette[v - 1] : 0xFF00FF;
                 RGBf c = rgb(col);
+                if (vary && v - 1 < (int)vary->size() && (*vary)[v - 1] > 0.0f) {
+                    const float k = 1.0f + (*vary)[v - 1] * (hash_to_unit(hash3(0xC107u, x, y, z)) * 2.0f - 1.0f);
+                    c = scalec(c, k);
+                }
                 for (int f = 0; f < 6; ++f) {
                     Vec3i d = kDir6[f];
                     if (get(x + d.x, y + d.y, z + d.z)) continue;

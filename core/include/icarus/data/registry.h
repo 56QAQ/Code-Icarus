@@ -73,6 +73,13 @@ struct ItemDef {
     float armor = 0.0f;       // armour: share of harm absorbed
     float range = 0.0f;       // weapons: reach in cubes (bows shoot)
     float carry = 0.0f;       // carts: extra carrying capacity (weight units)
+    // Tools: the kind of work they are made for (axe, pick, hoe, hammer, sickle, knife;
+    // "kit" = an all-round set) and how many uses they last.
+    std::string tool_kind;
+    int durability = 0;
+    // Clothes: leaf / fur / cloth; warmth against cold, night and rain (0..1).
+    std::string clothes_kind;
+    float warmth = 0.0f;
     std::vector<std::string> tags;
     bool has_tag(const std::string& t) const {
         for (auto& x : tags) if (x == t) return true;

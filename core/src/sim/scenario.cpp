@@ -180,7 +180,14 @@ void build_village_scenario(SimContext& ctx, const GameConfig& cfg, Rng& rng) {
         give("stone", 40);
         give("fiber", 30);
         give("clay", 10);
-        give("stone_tools", 8);
+        // Spare tools of every trade and a few changes of clothes.
+        give("stone_axe", 2);
+        give("stone_pick", 2);
+        give("stone_hoe", 1);
+        give("stone_hammer", 1);
+        give("flint_sickle", 2);
+        give("flint_knife", 1);
+        give("linen_clothes", 4);
         const Building* kb = ctx.buildings->get(kitchen);
         if (kb && kb->store) ctx.econ->add(kb->store, reg.item_id("bread"), 20, "initial");
     }
@@ -369,7 +376,12 @@ void build_village_scenario(SimContext& ctx, const GameConfig& cfg, Rng& rng) {
             float base = gi == 0 ? 0.35f : 0.1f;
             c->support_ref(girls[gi]) = clampv(rng.normalish(base, 0.12f), -1.0f, 1.0f);
         }
-        if (rng.chance(0.4f)) c->tool = reg.item_id("stone_tools");
+        // Village folk own the stone tool of their trade and wear linen.
+        const std::string trade = Agents::occupation_tool(c->occupation);
+        const ItemId tool = reg.find_item(trade == "hoe" ? "stone_hoe" : trade == "hammer" ? "stone_hammer" : "stone_axe");
+        if (tool != kNoItem && ctx.econ->add(c->inv, tool, 1, "initial") == 1) c->tool = tool;
+        const ItemId cloth = reg.find_item("linen_clothes");
+        if (cloth != kNoItem && ctx.econ->add(c->inv, cloth, 1, "initial") == 1) c->clothes = cloth;
     }
     // Housemates start as acquaintances.
     for (u32 h : huts) {

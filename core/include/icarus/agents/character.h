@@ -93,6 +93,7 @@ struct Task {
     float utility = 0;
     int fails = 0;
     std::string label;
+    u8 resume = 0;       // step to go back to after fetching a tool (step 9)
 };
 
 struct GirlData {
@@ -154,6 +155,8 @@ struct Character {
 
     StoreId inv = kNoStore;     // carried items
     ItemId tool = kNoItem, weapon = kNoItem, armor = kNoItem, cart = kNoItem;
+    ItemId clothes = kNoItem;   // worn (leaf wrap, fur cloak, linen...)
+    u16 tool_wear = 0;          // uses of the tool in hand since it was taken up
     Tick treated_until = 0;     // wounds dressed: they heal faster until then
     bool treated_well = false;  // ...and faster still when treated at a 药庐
     u32 home = 0;               // building id

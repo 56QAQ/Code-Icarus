@@ -11,6 +11,11 @@
 
 namespace icarus {
 
+namespace {
+// Per-character data added in version 2 (see Agents::save).
+constexpr u64 kCharBlockVersion = 1;
+}  // namespace
+
 Agents::Agents(SimContext& ctx) : ctx_(ctx) {}
 
 void Agents::reset(u64 seed) {
@@ -202,6 +207,17 @@ void Agents::update_physics(Character& c) {
 
 void Agents::hourly(Character& c) {
     update_equipment(c);
+    // Cold, rain and the night against what one wears: comfort goes, and a night in the
+    // snow without warm clothes bites.
+    {
+        const float ex = exposure(c);
+        if (ex > 0.0f) {
+            c.needs.comfort = std::max(0.0f, c.needs.comfort - 0.03f * ex);
+            if (ex > 0.55f && is_night(now_) && c.body.total_alive() > 0) damage(c, 0.002f * ex, -1, "冻伤", 0);
+        } else if (c.clothes != kNoItem) {
+            c.needs.comfort = std::min(1.0f, c.needs.comfort + 0.01f);
+        }
+    }
     // Regeneration costs food: missing voxels regrow slowly when fed and not bleeding.
     if (c.needs.food > 0.3f && c.needs.water > 0.3f && c.body.bleeding < 0.05f) {
         int missing = c.body.total_voxels() - c.body.total_alive();
@@ -466,21 +482,30 @@ void Agents::deposit_all(Character& c, StoreId to) {
     // Everything except one of each piece of equipment in use.
     std::vector<ItemStack> items = s->items;
     for (const ItemStack& st : items) {
-        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
+        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart ||
+                    st.item == c.clothes)
+                       ? 1
+                       : 0;
         if (st.count > keep) ctx_.econ->transfer(c.inv, to, st.item, st.count - keep);
     }
     // What the store could not take is set down here.
     s = ctx_.econ->store(c.inv);
     bool leftovers = false;
     for (const ItemStack& st : s->items) {
-        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
+        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart ||
+                    st.item == c.clothes)
+                       ? 1
+                       : 0;
         if (st.count > keep) leftovers = true;
     }
     if (leftovers) {
         StoreId pile = ctx_.econ->pile_at(c.foot);
         items = ctx_.econ->store(c.inv)->items;
         for (const ItemStack& st : items) {
-            i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
+            i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart ||
+                        st.item == c.clothes)
+                           ? 1
+                           : 0;
             if (st.count > keep) ctx_.econ->transfer(c.inv, pile, st.item, st.count - keep);
         }
     }
@@ -494,10 +519,13 @@ void Agents::update_equipment(Character& c) {
     auto verify = [&](ItemId& slot) {
         if (slot != kNoItem && (!inv || inv->count(slot) <= 0)) slot = kNoItem;
     };
+    const ItemId held = c.tool;
     verify(c.tool);
     verify(c.weapon);
     verify(c.armor);
     verify(c.cart);
+    verify(c.clothes);
+    if (c.tool != held) c.tool_wear = 0;
     if (inv) inv->capacity = carry_capacity(c);
     if (c.is_girl() || !c.body.can_hold()) return;
     // Pick up better gear from a public store within reach.
@@ -506,13 +534,13 @@ void Agents::update_equipment(Character& c) {
         if (!st || st->pos.dist2(c.foot) > 5 * 5) continue;
         auto upgrade = [&](ItemId& slot, const char* tag, bool want) {
             if (!want) return;
-            float cur = slot != kNoItem ? std::max(reg.item(slot).power, reg.item(slot).armor) : 0.0f;
+            float cur = slot != kNoItem ? std::max({reg.item(slot).power, reg.item(slot).armor, reg.item(slot).warmth}) : 0.0f;
             ItemId best = kNoItem;
             float bv = cur;
             for (const ItemStack& is : st->items) {
                 const ItemDef& d = reg.item(is.item);
                 if (!d.has_tag(tag) || ctx_.econ->available(sid, is.item, c.id) <= 0) continue;
-                float v = std::max(d.power, d.armor);
+                float v = std::max({d.power, d.armor, d.warmth});
                 if (v > bv + 1e-4f) {
                     bv = v;
                     best = is.item;
@@ -524,7 +552,32 @@ void Agents::update_equipment(Character& c) {
                 slot = best;
             }
         };
-        upgrade(c.tool, "tool", true);
+        // The tool of one's trade (any tool rather than none); a better one of the same
+        // kind replaces it.
+        {
+            const std::string trade = occupation_tool(c.occupation);
+            const float cur = tool_factor(c, trade);
+            ItemId best = kNoItem;
+            float bv = c.tool == kNoItem ? 0.0f : cur;
+            for (const ItemStack& is : st->items) {
+                const ItemDef& d = reg.item(is.item);
+                if (d.tool_kind.empty() || ctx_.econ->available(sid, is.item, c.id) <= 0) continue;
+                // A tool of the trade counts fully; any other only while the hands are empty.
+                const float v = (d.tool_kind == trade || trade.empty()) ? d.power
+                                : d.tool_kind == "kit"                  ? d.power * 0.8f
+                                                                        : 0.05f;
+                if (v > bv + 1e-4f) {
+                    bv = v;
+                    best = is.item;
+                }
+            }
+            if (best != kNoItem && ctx_.econ->transfer(sid, c.inv, best, 1) == 1) {
+                if (c.tool != kNoItem) ctx_.econ->transfer(c.inv, sid, c.tool, 1);  // return the old one
+                c.tool = best;
+                c.tool_wear = 0;
+            }
+        }
+        upgrade(c.clothes, "clothes", true);
         upgrade(c.weapon, "weapon", c.drafted);
         upgrade(c.armor, "armor", c.drafted);
         // A cart for anyone who hauls (soldiers march without one).
@@ -733,6 +786,16 @@ void Agents::save(BinWriter& w) const {
         w.vari(v);
     for (int v : fail_ring_) w.vari(v);
     w.vari(fail_ring_pos_);
+    // Version 2 per-character data. The block version comes first; later versions only
+    // append fields, so older loaders read what they know.
+    w.varu(kCharBlockVersion);
+    w.varu(chars_.size());
+    for (size_t i = 1; i < chars_.size(); ++i) {
+        const Character& c = *chars_[i];
+        w.u16v(c.clothes);
+        w.u16v(c.tool_wear);
+        w.u8v(c.task.resume);
+    }
     w.end_section(sec);
 }
 
@@ -934,6 +997,20 @@ void Agents::load(BinReader& outer) {
         for (int* v : counters) *v = (int)r.vari();
         for (int& v : fail_ring_) v = (int)r.vari();
         fail_ring_pos_ = (int)r.vari();
+    }
+    if (!r.at_end()) {
+        const u64 version = r.varu();
+        const u64 count = r.varu();
+        for (size_t i = 1; i < (size_t)count; ++i) {
+            Character* c = i < chars_.size() ? chars_[i].get() : nullptr;
+            Character dummy;
+            Character& ch = c ? *c : dummy;
+            if (version >= 1) {
+                ch.clothes = r.u16v();
+                ch.tool_wear = r.u16v();
+                ch.task.resume = r.u8v();
+            }
+        }
     }
 }
 

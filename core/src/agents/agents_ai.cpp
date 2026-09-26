@@ -45,6 +45,19 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     float dist = std::sqrt((float)c.foot.dist2(j.pos));
     float score = motivation * j.priority * cat_w * skill_f - dist / 260.0f;
     if (!c.occupation.empty() && c.occupation == cat) score += 0.08f;
+    // The right tool in hand makes a job more attractive (and bare hands less).
+    {
+        std::string kind;
+        switch (j.type) {
+            case JobType::Chop: kind = "axe"; break;
+            case JobType::Mine: kind = "pick"; break;
+            case JobType::Till: kind = "hoe"; break;
+            case JobType::Harvest: kind = "sickle"; break;
+            case JobType::Build: kind = "hammer"; break;
+            default: break;
+        }
+        if (!kind.empty()) score += 0.06f * (std::min(1.4f, tool_factor(c, kind)) - 0.7f);
+    }
     if (c.work_debt > 2.0f && pol.punishment > 0) score += pol.punishment * c.pers.conformity * 0.3f;
     if (!is_work_time(c)) score *= 0.25f + 0.4f * c.pers.diligence;
     why = strfmt("%s（优先级 %.1f，技能 %s，距离 %.0f）", job_name_zh(j.type), j.priority * cat_w, pct(skill), dist);

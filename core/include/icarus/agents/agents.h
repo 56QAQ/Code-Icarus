@@ -66,6 +66,22 @@ public:
     // mushrooms on the surface, or fruit in the lowest layers of a crown.
     bool food_plant_at(int x, int z, Vec3i& out);
 
+    // Equipment (agents_equipment.cpp). The tool a job is done with ("" = none helps).
+    std::string tool_kind_for(const Job& j) const;
+    // Speed of work of that kind with what c holds (1 = a stone tool of the kind; bare
+    // hands are much slower at felling, quarrying, tilling...).
+    float tool_factor(const Character& c, const std::string& kind) const;
+    // A public store not far out of the way holding a tool of that kind (reserved), or 0.
+    StoreId tool_store_for(Character& c, const std::string& kind, const Vec3i& work);
+    // Take the best tool of the kind from the store, handing back the one in hand.
+    bool swap_tool(Character& c, StoreId sid, const std::string& kind);
+    // One use of the tool in hand; a tool used up breaks.
+    void wear_tool(Character& c);
+    // What each occupation keeps in hand between jobs.
+    static const char* occupation_tool(const std::string& occupation);
+    // Cold, wet and dark against what c wears: 0 = comfortable .. 1 = freezing.
+    float exposure(const Character& c) const;
+
     AgentTuning tune;
     // Diagnostics (not saved): recent failed routes (who, from, to).
     struct PathFail { EntityId who; Vec3i from, to; Tick tick; };

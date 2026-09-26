@@ -757,11 +757,22 @@ bool Agents::task_work(Character& c) {
         }
     }
     if (j) ctx_.jobs->claim(t.job, c.id, now_ + kTicksPerHour);  // keep the claim alive
+    // The tool this work is done with, and how fast it goes with what is in hand.
+    const std::string kind = j ? tool_kind_for(*j) : std::string();
     auto work_ticks = [&](float base) {
         float skill = j ? c.skills[job_skill(j->type)] : 0.3f;
         float f = (0.6f + 0.8f * skill) * std::max(0.2f, c.body.manipulation());
-        if (c.tool != kNoItem) f *= std::max(1.0f, reg.item(c.tool).power);
+        f *= tool_factor(c, kind);
         return (Tick)std::max(10.0f, base / f);
+    };
+    // Before setting out: fetch the right tool from a store not far out of the way.
+    auto fetch_tool = [&](u8 resume) {
+        const StoreId sid = tool_store_for(c, kind, j->pos);
+        if (!sid) return false;
+        t.store = sid;
+        t.resume = resume;
+        t.step = 9;
+        return true;
     };
     auto fail = [&](const char* msg) {
         say(c, msg);
@@ -806,6 +817,27 @@ bool Agents::task_work(Character& c) {
         return true;
     }
 
+    // Step 9: fetching a tool, then on with the job where it left off.
+    if (t.step == 9) {
+        const Store* s = ctx_.econ->store(t.store);
+        if (!s) {
+            t.step = t.resume;
+            return true;
+        }
+        say(c, "去仓库取" + std::string(kind == "axe" ? "斧头" : kind == "pick" ? "镐" : kind == "hoe" ? "锄头" :
+                                                 kind == "hammer" ? "锤子" : kind == "sickle" ? "镰刀" : "刀"));
+        Move m = move_to(c, s->pos, true);
+        if (m == Move::Failed) {
+            ctx_.econ->release(t.store, c.id);
+            t.step = t.resume;
+            return true;
+        }
+        if (m != Move::Arrived) return true;
+        swap_tool(c, t.store, kind);
+        t.step = t.resume;
+        return true;
+    }
+
     switch (j->type) {
         case JobType::Till:
         case JobType::Sow:
@@ -842,6 +874,7 @@ bool Agents::task_work(Character& c) {
                     }
                 } else {
                     t.step = 2;
+                    if (fetch_tool(2)) return true;
                 }
             }
             if (t.step == 1) {
@@ -962,10 +995,7 @@ bool Agents::task_work(Character& c) {
                     default: break;
                 }
                 // Tools wear out with use.
-                if (c.tool != kNoItem && rng_.chance(0.004f)) {
-                    ctx_.econ->remove(c.inv, c.tool, 1, "worn_out");
-                    c.tool = kNoItem;
-                }
+                if (!kind.empty() && tool_factor(c, kind) >= 0.99f) wear_tool(c);
                 JobType done_type = j->type;
                 Vec3i done_pos = j->pos;
                 ctx_.jobs->complete(t.job);
@@ -1179,6 +1209,7 @@ bool Agents::task_work(Character& c) {
                     if (it != kNoItem) ctx_.econ->reserve(b->site, it, 1, c.id, now_ + kTicksPerHour);
                 }
                 t.step = 1;
+                if (fetch_tool(1)) return true;
             }
             if (t.step == 1) {
                 say(c, "前往工地");
@@ -1215,6 +1246,7 @@ bool Agents::task_work(Character& c) {
                     return true;
                 }
                 if (!ctx_.buildings->place_cell(*b, idx, j->cause)) return fail("材料不足，无法施工");
+                if (tool_factor(c, kind) >= 0.99f) wear_tool(c);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 if (ctx_.buildings->site_done(*b)) {
@@ -1329,6 +1361,8 @@ bool Agents::task_work(Character& c) {
                 Move m = move_to(c, s->pos, true);
                 if (m == Move::Failed) return fail("到不了材料仓库");
                 if (m != Move::Arrived) return true;
+                // The store may hold the tool for this work.
+                if (tool_factor(c, kind) < 0.99f) swap_tool(c, j->from, kind);
                 // A working workshop nearby makes the job quicker.
                 float speed = 1.0f;
                 for (const Building& b : ctx_.buildings->all())
@@ -1353,6 +1387,7 @@ bool Agents::task_work(Character& c) {
                 }
                 ctx_.econ->release(j->from, c.id);
                 c.skills[kCrafting] = std::min(1.0f, c.skills[kCrafting] + 0.01f * (float)done);
+                if (done > 0 && tool_factor(c, kind) >= 0.99f) wear_tool(c);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 end_task(c, done > 0);

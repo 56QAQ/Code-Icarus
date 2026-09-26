@@ -23,7 +23,7 @@ float output_rank(const Registry& reg, const Json& r) {
     for (const auto& [k, n] : r["outputs"].members()) {
         (void)n;
         ItemId it = reg.find_item(k);
-        if (it != kNoItem) v = std::max({v, reg.item(it).power, reg.item(it).armor});
+        if (it != kNoItem) v = std::max({v, reg.item(it).power, reg.item(it).armor, reg.item(it).warmth});
     }
     return v;
 }
@@ -52,10 +52,11 @@ void Agents::production_jobs() {
             for (StoreId sid : stores) n += econ.available(sid, it);
             return n;
         };
-        int residents = 0, armed = 0, armoured = 0, archers = 0;
+        int residents = 0, armed = 0, armoured = 0, archers = 0, unclothed = 0;
         for (auto& cp : chars_) {
             if (!cp || !cp->alive || cp->departed || cp->is_girl() || cp->polity != pc.id) continue;
             ++residents;
+            if (cp->clothes == kNoItem) ++unclothed;
             if (cp->weapon != kNoItem) (reg.item(cp->weapon).range > 3.0f ? archers : armed)++;
             if (cp->armor != kNoItem) ++armoured;
         }
@@ -82,6 +83,7 @@ void Agents::production_jobs() {
             const Json& r = recipes[(size_t)ri];
             ItemId out = reg.find_item(r["outputs"].members().front().first);
             if (r.has("stock_per_resident")) want[out] += (i64)std::ceil(r.flt("stock_per_resident") * (float)residents);
+            if (g == "clothes") want[out] += unclothed;  // everyone should have something to wear
             if (r.boolean("military") && pc.policies.army > 0) {
                 i64 soldiers = pc.policies.army;
                 if (g == "weapon") want[out] += std::max<i64>(0, soldiers * 7 / 10 - armed);

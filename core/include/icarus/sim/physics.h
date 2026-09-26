@@ -71,6 +71,8 @@ struct PhysicsStats {
     size_t water_active = 0, fire_active = 0, granular_active = 0, support_checks = 0;
     size_t debris = 0, meteors = 0;
     i64 water_units_to_void = 0, water_units_spring = 0, water_units_evaporated = 0, water_units_rain = 0;
+    // Diagnostics (not saved): accumulated microseconds per sub-step since reset.
+    double us_water = 0, us_evaporation = 0, us_fire = 0, us_granular = 0, us_support = 0, us_other = 0;
 };
 
 class Physics {
@@ -127,6 +129,7 @@ private:
     void step_springs(Tick now);
     void step_evaporation();
     void step_water();
+    void step_puddles();
     void step_fire();
     void step_granular();
     void step_support();
@@ -142,6 +145,11 @@ private:
     Chronicle& chron_;
     Rng rng_;
     PosQueue water_, fire_, granular_, support_;
+    // Still, shallow water that can only evaporate: looked at every kPuddleTicks
+    // instead of every tick (a thin sheet over a lake would otherwise keep hundreds of
+    // cubes busy).
+    PosQueue puddles_;
+    static constexpr Tick kPuddleTicks = 50;
     std::vector<Vec3i> springs_;
     std::vector<SpringState> spring_state_;
     std::vector<DebrisBody> debris_;

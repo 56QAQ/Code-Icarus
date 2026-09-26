@@ -254,6 +254,68 @@ int cmd_meshbench(const Args& a) {
     return 0;
 }
 
+// Debug: where is water flowing after a run? Lists cells with the most non-full water.
+int cmd_waterdump(const Args& a) {
+    Registry reg;
+    reg.load_from_dir(a.data);
+    GameConfig cfg;
+    cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
+    cfg.scenario = a.scenario;
+    Simulation sim(reg);
+    sim.new_game(cfg);
+    sim.run((Tick)(a.days * (double)kTicksPerDay));
+    World& w = const_cast<World&>(sim.world());
+    std::map<Vec3i, int> cells;
+    for (int cy = 0; cy < w.cells_y(); ++cy)
+        for (int cz = 0; cz < w.cells_z(); ++cz)
+            for (int cx = 0; cx < w.cells_x(); ++cx) {
+                const Cell* c = w.cell({cx, cy, cz});
+                if (!c || c->state != CellState::Active) continue;
+                for (int y = 0; y < kCellSize; ++y)
+                    for (int z = 0; z < kCellSize; ++z)
+                        for (int x = 0; x < kCellSize; ++x) {
+                            Voxel v = w.peek({cx * kCellSize + x, cy * kCellSize + y, cz * kCellSize + z});
+                            if (vmat(v) == reg.m().water && vlevel(v) < kFluidFull) cells[{cx, cy, cz}]++;
+                        }
+            }
+    std::vector<std::pair<int, Vec3i>> list;
+    for (auto& [c, n] : cells) list.push_back({n, c});
+    std::sort(list.rbegin(), list.rend());
+    for (size_t i = 0; i < list.size() && i < 12; ++i)
+        std::printf("cell %s: %d partial water cubes\n", list[i].second.str().c_str(), list[i].first);
+    if (!list.empty()) {
+        // Top-down view of the busiest cell: the highest water / solid material per column.
+        const Vec3i c = list[0].second;
+        for (int z = 0; z < kCellSize; ++z) {
+            std::string row;
+            for (int x = 0; x < kCellSize; ++x) {
+                char ch = ' ';
+                for (int y = kCellSize - 1; y >= 0; --y) {
+                    Voxel v = w.peek({c.x * kCellSize + x, c.y * kCellSize + y, c.z * kCellSize + z});
+                    MatId m = vmat(v);
+                    if (m == 0) continue;
+                    if (m == reg.m().water) ch = vlevel(v) < kFluidFull ? '~' : 'W';
+                    else if (!reg.mat(m).solid) continue;
+                    else ch = reg.mat(m).key[0];
+                    if (ch != ' ') {
+                        if (y > 0 && ch != '~' && ch != 'W') ch = (char)(ch - 32 * (y >= 1));
+                        break;
+                    }
+                }
+                row += ch;
+            }
+            std::printf("  %s\n", row.c_str());
+        }
+    }
+    const IslandFeatures& f = sim.world().gen().features();
+    const PhysicsStats& ps = sim.physics().stats();
+    std::printf("physics us: water %.0f evap %.0f fire %.0f granular %.0f support %.0f other %.0f\n", ps.us_water,
+                ps.us_evaporation, ps.us_fire, ps.us_granular, ps.us_support, ps.us_other);
+    std::printf("village %s lake %s pond %s spring %s\n", f.village.str().c_str(), f.lake.str().c_str(),
+                f.pond.str().c_str(), f.spring.str().c_str());
+    return 0;
+}
+
 int cmd_run(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
@@ -515,6 +577,7 @@ int main(int argc, char** argv) {
     try {
         if (a.cmd == "map") return cmd_map(a);
         if (a.cmd == "meshbench") return cmd_meshbench(a);
+        if (a.cmd == "waterdump") return cmd_waterdump(a);
         if (a.cmd == "run") return cmd_run(a);
         if (a.cmd == "experiment") return cmd_experiment(a);
     } catch (const std::exception& e) {

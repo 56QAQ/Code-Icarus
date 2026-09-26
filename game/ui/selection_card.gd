@@ -311,11 +311,23 @@ func _refresh_character() -> void:
 				_line("伤口已包扎，正在加速愈合（还剩 %d 小时）" % int(d["treated_hours"]), 12, UITheme.GOOD)
 			var eq: Array = d.get("equipment", [])
 			if not eq.is_empty():
+				_section("装备")
 				var es := PackedStringArray()
 				for e in eq:
-					es.append("%s %s" % [e["slot"], e["name"]])
-				_section("装备")
-				_line("  ·  ".join(es), 13, UITheme.TEXT_DIM)
+					if e.has("wear"):
+						# The tool in hand: how much use it has left.
+						var left := 1.0 - float(e["wear"])
+						var b := _bar("%s %s" % [e["slot"], e["name"]], left, false, "耐用 %d%%" % int(round(left * 100.0)))
+						b.fixed_color = UITheme.GOOD if left > 0.5 else (UITheme.WARN if left > 0.2 else UITheme.BAD)
+					elif e.has("warmth"):
+						es.append("%s %s（保暖 %d%%）" % [e["slot"], e["name"], int(round(float(e["warmth"]) * 100.0))])
+					else:
+						es.append("%s %s" % [e["slot"], e["name"]])
+				if not es.is_empty():
+					_line("  ·  ".join(es), 13, UITheme.TEXT_DIM)
+			if float(d.get("exposure", 0.0)) > 0.05:
+				var cold := _bar("寒冷", float(d["exposure"]))
+				cold.fixed_color = Color(0.55, 0.75, 0.95)
 			var inv: Array = d["inventory"]
 			if not inv.is_empty():
 				var s := ""
