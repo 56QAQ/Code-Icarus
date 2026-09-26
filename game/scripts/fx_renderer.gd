@@ -24,6 +24,7 @@ var _next_dust := 0
 var _fire_timer := 0.0
 var _soft: Texture2D
 var _collider: GPUParticlesCollisionHeightField3D
+var _rain: GPUParticles3D
 
 
 func setup(s: IcarusSim, cam: Camera3D) -> void:
@@ -53,6 +54,7 @@ func _build_pools() -> void:
 	for i in FIRE_POOL:
 		_flames.append(_make_flames())
 		_smoke.append(_make_smoke())
+	_rain = _make_rain()
 
 
 func _process(delta: float) -> void:
@@ -63,6 +65,15 @@ func _process(delta: float) -> void:
 	if _fire_timer <= 0.0:
 		_fire_timer = 0.25
 		_place_fires()
+
+
+## Rain around where the camera looks, heavier as the shower builds.
+func set_rain(amount: float, focus: Vector3) -> void:
+	if _rain == null:
+		return
+	_rain.emitting = amount > 0.05
+	_rain.amount_ratio = clampf(amount, 0.0, 1.0)
+	_rain.global_position = focus + Vector3(0, 30, 0)
 
 
 # ------------------------------------------------------------------ bursts
@@ -263,6 +274,38 @@ func _make_smoke() -> GPUParticles3D:
 	pm.color_ramp = _ramp([Color(1, 1, 1, 0.0), Color(1, 1, 1, 0.72), Color(1, 1, 1, 0.0)], [0.0, 0.12, 1.0])
 	e.process_material = pm
 	e.draw_pass_1 = _billboard(1.5, false)
+	add_child(e)
+	return e
+
+
+func _make_rain() -> GPUParticles3D:
+	var e := GPUParticles3D.new()
+	e.amount = 4000
+	e.lifetime = 1.4
+	e.local_coords = false
+	e.emitting = false
+	e.visibility_aabb = AABB(Vector3(-60, -60, -60), Vector3(120, 90, 120))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(55, 1, 55)
+	pm.direction = Vector3(0.08, -1, 0.04)
+	pm.spread = 2.0
+	pm.initial_velocity_min = 26.0
+	pm.initial_velocity_max = 32.0
+	pm.gravity = Vector3(0, -10, 0)
+	pm.collision_mode = ParticleProcessMaterial.COLLISION_HIDE_ON_CONTACT
+	pm.color = Color(0.75, 0.82, 0.95, 0.5)
+	e.process_material = pm
+	var q := QuadMesh.new()
+	q.size = Vector2(0.045, 1.0)
+	var m := StandardMaterial3D.new()
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(1, 1, 1, 0.55)
+	q.material = m
+	e.draw_pass_1 = q
 	add_child(e)
 	return e
 

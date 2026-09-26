@@ -6,6 +6,7 @@ uniform sampler2DArray atlas : source_color, filter_nearest_mipmap_anisotropic, 
 uniform sampler2D layer_map : filter_nearest, repeat_disable;
 uniform int crack_base = 0;
 uniform float night = 0.0;  // windows light up after dusk
+uniform float wetness = 0.0;  // rain darkens surfaces and makes tops glisten
 
 const int FLAG_TINTED = 1;
 const int FLAG_NATURAL = 2;
@@ -108,6 +109,12 @@ VoxelSurface voxel_surface(vec2 uv_in, vec4 color, vec3 lpos, vec3 lnrm, vec3 wp
 		int stage = min(3, (dmg - 1) / 2);
 		float crack = textureGrad(atlas, vec3(uv, float(crack_base + stage)), gx, gy).a;
 		c *= 1.0 - crack * 0.72;
+	}
+	if (wetness > 0.0) {
+		c *= mix(1.0, 0.78, wetness);
+		if (face == 0) {
+			s.gloss = max(s.gloss, wetness * 0.55);
+		}
 	}
 	// A soft bevel on each cube face keeps the voxel grid readable.
 	vec2 e = min(uv, 1.0 - uv);

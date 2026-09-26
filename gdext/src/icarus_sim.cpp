@@ -156,6 +156,7 @@ Dictionary IcarusSim::clock_info() const {
     d["season"] = icarus::season_of(t);
     d["year"] = icarus::year_of(t);
     d["night"] = icarus::is_night(t);
+    d["raining"] = sim_->physics().raining();
     d["ticks_per_day"] = (int64_t)icarus::kTicksPerDay;
     d["ticks_per_second"] = (int64_t)icarus::kTicksPerSecond;
     d["text"] = to_gd(icarus::format_time_zh(t));

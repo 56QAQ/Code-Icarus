@@ -178,7 +178,8 @@ growth depends on irrigation from real water nearby.
 * **Miracles** (`sim/simulation.cpp`, `apply_admin`): besides matter (dig, place,
   meteor, fire, water) the god can bless food (items enter the ledger as
   `admin_bless`), inspire or terrify (fear, memories, a hazard people flee), heal (lost
-  limbs regrow; the dead stay dead), smite, grant research, empower a girl, or whisper
+  limbs regrow; the dead stay dead), smite, call rain (hours of it: water surfaces fill,
+  fires under the open sky go out and hardly spread), grant research, empower a girl, or whisper
   to her: a value whisper shifts one feature weight for two days, is told to the remote
   model, and is recorded as a cause of the decisions it pushed.
 * **Outcomes**: a round is won when one polity holds the whole island after there had

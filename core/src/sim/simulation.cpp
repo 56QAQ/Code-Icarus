@@ -158,6 +158,10 @@ void Simulation::note_fx(const std::vector<VoxelChange>& changes) {
         if (mb.solid && !mb.fluid && !mb.granular && !ma.solid)
             fx_.push_back({VisualFx::Break, c.p, vburning(c.before) ? reg_->m().ash : b});
         else if (!mb.solid && ma.solid && !ma.granular && !ma.fluid) fx_.push_back({VisualFx::Land, c.p, a});
+        // Sand or gravel settling on firm ground raises a little dust.
+        else if (!mb.solid && ma.granular && reg_->mat(vmat(world_.peek(c.p - Vec3i{0, 1, 0}))).solid &&
+                 !reg_->mat(vmat(world_.peek(c.p - Vec3i{0, 1, 0}))).granular)
+            fx_.push_back({VisualFx::Land, c.p, a});
     }
 }
 
@@ -260,6 +264,15 @@ EventId Simulation::apply_admin(const AdminCommand& cmd) {
         e.text = strfmt("管理员在 %s 引发了爆炸（半径 %.0f）", pos.str().c_str(), radius);
         EventId id = chronicle_.emit(std::move(e));
         physics_.explode(Vec3f((float)pos.x + 0.5f, (float)pos.y + 0.5f, (float)pos.z + 0.5f), radius, id, false);
+        return id;
+    }
+    if (cmd.type == "rain") {
+        // Clouds gather over the island: rain refills water surfaces and douses open
+        // fires through the ordinary weather rules.
+        const int hours = std::clamp(p.integer("hours", 6), 1, 48);
+        e.text = strfmt("管理员唤来了降雨（约 %d 小时）", hours);
+        EventId id = chronicle_.emit(std::move(e));
+        physics_.start_rain((Tick)hours * kTicksPerHour);
         return id;
     }
     if (cmd.type == "ignite") {

@@ -236,3 +236,43 @@ TEST("miracles: a whisper shifts what a girl values, and joins the causal chain 
     loaded.run(kTicksPerDay);
     CHECK_EQ(loaded.state_hash(), whispered.state_hash());
 }
+
+TEST("miracles: called rain falls for its hours, is on record, and puts out open fires") {
+    Simulation sim(test_registry());
+    sim.new_game(village(3));
+    sim.run(kTicksPerHour);
+    // A fire in the open, then rain.
+    const Vec3i v = sim.world().gen().features().village;
+    AdminCommand fire;
+    fire.type = "ignite";
+    fire.params = Json::object();
+    fire.params.set("pos", vec_json(v + Vec3i{12, 1, 12}));
+    fire.params.set("radius", 1.5);
+    sim.apply_admin(fire);
+    sim.run(20);
+    auto burning_near = [&]() {
+        int n = 0;
+        const Vec3i c = v + Vec3i{12, 1, 12};
+        for (int dy = -6; dy <= 10; ++dy)
+            for (int dz = -16; dz <= 16; ++dz)
+                for (int dx = -16; dx <= 16; ++dx)
+                    if (vburning(sim.world().peek(c + Vec3i{dx, dy, dz}))) ++n;
+        return n;
+    };
+    const int burning = burning_near();
+    AdminCommand rain;
+    rain.type = "rain";
+    rain.params = Json::object();
+    rain.params.set("hours", 3);
+    const EventId ev = sim.apply_admin(rain);
+    CHECK(ev != 0);
+    CHECK(sim.physics().raining());
+    const Event* e = sim.chronicle().get(ev);
+    REQUIRE(e != nullptr);
+    CHECK(e->type == EventType::AdminAction);
+    sim.run(kTicksPerHour * 2);
+    CHECK(sim.physics().raining());
+    CHECK(burning_near() <= burning);
+    sim.run(kTicksPerHour * 2);
+    CHECK(!sim.physics().raining());
+}

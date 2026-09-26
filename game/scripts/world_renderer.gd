@@ -69,6 +69,12 @@ func set_night(v: float) -> void:
 	mat_foliage.set_shader_parameter("night", v)
 
 
+## 0 dry .. 1 soaked by rain.
+func set_wetness(v: float) -> void:
+	mat_terrain.set_shader_parameter("wetness", v)
+	mat_foliage.set_shader_parameter("wetness", v)
+
+
 func pending_count() -> int:
 	return _pending.size()
 

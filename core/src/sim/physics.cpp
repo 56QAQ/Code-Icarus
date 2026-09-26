@@ -351,6 +351,12 @@ void Physics::step_fire() {
             w_.set(p, with_burning(v, false));
             continue;
         }
+        // Rain puts out what burns under the open sky, and wet fuel hardly catches.
+        const bool wet = raining() && vmat(w_.get(p + Vec3i{0, 1, 0})) == M.air;
+        if (wet && rng_.chance(0.08f)) {
+            w_.set(p, with_burning(v, false));
+            continue;
+        }
         // Spread.
         for (int i = 0; i < 6; ++i) {
             Vec3i n = p + kDir6[i];
@@ -358,7 +364,7 @@ void Physics::step_fire() {
             if (vburning(nv)) continue;
             const Material& nm = reg.mat(vmat(nv));
             if (nm.flammability <= 0) continue;
-            float chance = nm.flammability * (i == 2 ? 0.06f : 0.02f);
+            float chance = nm.flammability * (i == 2 ? 0.06f : 0.02f) * (wet ? 0.15f : 1.0f);
             if (rng_.chance(chance)) {
                 w_.set(n, with_burning(nv, true));
                 fire_.push(n);

@@ -14,6 +14,7 @@ var sun: DirectionalLight3D
 var env: Environment
 var sky_mat: ProceduralSkyMaterial
 var cloud_mats: Array[ShaderMaterial] = []
+var _rain := 0.0  # 0 clear .. 1 in the rain (eased)
 var brush: MeshInstance3D
 
 var _shot_path := ""
@@ -268,6 +269,8 @@ func _update_daylight() -> void:
 		return
 	var ci: Dictionary = Game.sim.clock_info()
 	var h: float = ci.get("hour", 12.0)
+	var raining: bool = ci.get("raining", false)
+	_rain = (1.0 if raining else 0.0) if _shot_path != "" else move_toward(_rain, 1.0 if raining else 0.0, get_process_delta_time() * 0.25)
 	# sun_h > 0 by day; lit: 0 at night .. 1 by day; dusk peaks at sunrise and sunset.
 	var sun_h := sin((h - 6.0) / 12.0 * PI)
 	var lit := smoothstep(-0.15, 0.35, sun_h)
@@ -299,7 +302,23 @@ func _update_daylight() -> void:
 	sky_mat.ground_horizon_color = horizon
 	sky_mat.ground_bottom_color = top.lerp(horizon, 0.5)
 	env.fog_light_color = horizon
+	# Rain: an overcast grey sky, flat light, wet ground.
+	if _rain > 0.0:
+		var grey := Color(0.46, 0.5, 0.56) * lerpf(0.35, 1.0, lit)
+		top = top.lerp(grey * 0.85, _rain * 0.8)
+		horizon = horizon.lerp(grey, _rain * 0.8)
+		sky_mat.sky_top_color = top
+		sky_mat.sky_horizon_color = horizon
+		sky_mat.ground_horizon_color = horizon
+		env.fog_light_color = horizon
+		sun.light_energy *= lerpf(1.0, 0.35, _rain)
+		env.fog_density = lerpf(0.0006, 0.0022, _rain)
+	else:
+		env.fog_density = 0.0006
+	renderer.set_wetness(_rain)
+	fx.set_rain(_rain, rig.target)
 	var cloud := Color(0.28, 0.32, 0.46).lerp(Color(0.93, 0.95, 1.0), lit).lerp(Color(1.0, 0.78, 0.66), dusk * 0.6)
+	cloud = cloud.lerp(Color(0.52, 0.55, 0.6) * lerpf(0.5, 1.0, lit), _rain * 0.65)
 	for cm in cloud_mats:
 		cm.set_shader_parameter("cloud_color", cloud)
 		cm.set_shader_parameter("shadow_color", cloud * Color(0.62, 0.66, 0.8))

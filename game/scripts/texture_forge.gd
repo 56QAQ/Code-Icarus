@@ -72,6 +72,24 @@ func _flags(key: String, m: Dictionary) -> int:
 	return f
 
 
+## A wooden crate face (carried goods, piles on the ground).
+static func crate_texture() -> ImageTexture:
+	var f := TextureForge.new()
+	f._rng.seed = 4242
+	var img := f._planks(Color("b08850"), false)
+	var frame := Color(0.36, 0.25, 0.15)
+	for i in SIZE:
+		for e in [0, 1, SIZE - 2, SIZE - 1]:
+			img.set_pixel(i, e, frame)
+			img.set_pixel(e, i, frame)
+		# A diagonal brace.
+		img.set_pixel(i, i, frame.lightened(0.1))
+		if i + 1 < SIZE:
+			img.set_pixel(i + 1, i, frame)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
 ## Decoration sprites: three grass tufts (in the grass colour) and four flowers.
 static func build_decor(grass: Color) -> Texture2DArray:
 	var f := TextureForge.new()
@@ -551,9 +569,6 @@ func _planks(c: Color, door: bool) -> Image:
 			elif by % 4 == 0:
 				col = _shade(col, 1.06)
 			img.set_pixel(x, y, col)
-		# Board ends.
-		if y % 4 != 3 and not door:
-			img.set_pixel((7 + board * 5) % SIZE, y, _shade(pal[0], 1.05))
 	if door:
 		# A frame and an iron handle.
 		for i in SIZE:
@@ -562,10 +577,6 @@ func _planks(c: Color, door: bool) -> Image:
 			img.set_pixel(i, 0, pal[0])
 		img.set_pixel(11, 8, Color(0.28, 0.28, 0.3))
 		img.set_pixel(11, 9, Color(0.45, 0.45, 0.48))
-	else:
-		# A couple of nail heads, not a grid of them.
-		img.set_pixel(1, 1, _shade(pal[1], 0.7))
-		img.set_pixel(14, 9, _shade(pal[1], 0.7))
 	return img
 
 

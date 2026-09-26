@@ -61,7 +61,11 @@ func _ready() -> void:
 	_crate_mesh = BoxMesh.new()
 	_crate_mesh.size = Vector3(0.45, 0.35, 0.35)
 	_crate_mat = StandardMaterial3D.new()
-	_crate_mat.albedo_color = Color(0.72, 0.56, 0.34)
+	_crate_mat.albedo_texture = TextureForge.crate_texture()
+	_crate_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_crate_mat.uv1_triplanar = true
+	_crate_mat.uv1_scale = Vector3(2.2, 2.2, 2.2)
+	_crate_mat.roughness = 0.85
 
 
 func setup(s: IcarusSim, cam: Camera3D) -> void:
