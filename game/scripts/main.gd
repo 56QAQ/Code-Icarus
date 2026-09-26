@@ -50,6 +50,7 @@ func _ready() -> void:
 	renderer.setup(Game.sim, rig.camera)
 	chars.setup(Game.sim, rig.camera)
 	hud.selection.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 40.0))
+	hud.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 45.0))
 	hud.civ_card.girl_selected.connect(func(id: int) -> void:
 		_select_character(id)
 		rig.focus(chars.position_of(id), 40.0))
@@ -58,6 +59,11 @@ func _ready() -> void:
 	for cmd in _cli.get("admin", []):
 		var parts: PackedStringArray = String(cmd).split(":", true, 1)
 		var params: Variant = JSON.parse_string(parts[1]) if parts.size() > 1 else {}
+		if parts[0] == "kill_spring":
+			# Scenario shortcut: bury the spring under stone.
+			var sp: Vector3i = info["features"]["spring"]
+			Game.sim.admin("place", {"pos": [sp.x, sp.y, sp.z], "radius": 2.5, "material": "stone"})
+			continue
 		if parts[0] == "break_bridge":
 			# Scenario shortcut: blow out the middle of the bridge deck.
 			var f: Dictionary = info["features"]
@@ -74,6 +80,15 @@ func _ready() -> void:
 	if _cli.has("council"):
 		var cid := int(_cli["council"]) if String(_cli["council"]).is_valid_int() else 0
 		hud.toggle_council(cid)
+	if _cli.has("chronicle-find"):
+		var needle := String(_cli["chronicle-find"])
+		for ev in Game.sim.recent_events("", 0, 5000, 0):
+			if String(ev["text"]).contains(needle):
+				hud.toggle_chronicle(int(ev["id"]))
+				break
+	if _cli.has("chronicle"):
+		var eid := int(_cli["chronicle"]) if String(_cli["chronicle"]).is_valid_int() else 0
+		hud.toggle_chronicle(eid)
 	if _cli.has("shot"):
 		_shot_path = _cli["shot"]
 		_shot_frames = int(_cli.get("frames", "20"))
@@ -267,12 +282,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_4:
 				Game.set_speed(20.0)
 			KEY_ESCAPE:
-				if hud.council.visible:
-					hud.council.visible = false
+				if hud.overlay_open():
+					hud.close_overlays()
 				else:
 					Game.set_tool("inspect")
 			KEY_J:
 				hud.toggle_council()
+			KEY_C:
+				hud.toggle_chronicle()
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_apply_tool()
 

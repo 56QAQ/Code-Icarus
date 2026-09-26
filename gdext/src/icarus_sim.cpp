@@ -59,6 +59,7 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("event", "id"), &IcarusSim::event);
     ClassDB::bind_method(D_METHOD("event_causes", "id"), &IcarusSim::event_causes);
     ClassDB::bind_method(D_METHOD("event_effects", "id"), &IcarusSim::event_effects);
+    ClassDB::bind_method(D_METHOD("recent_events", "category", "min_severity", "max_count", "polity"), &IcarusSim::recent_events);
     ClassDB::bind_method(D_METHOD("save_bytes"), &IcarusSim::save_bytes);
     ClassDB::bind_method(D_METHOD("load_bytes", "data"), &IcarusSim::load_bytes);
     ClassDB::bind_method(D_METHOD("state_hash"), &IcarusSim::state_hash);
@@ -361,6 +362,7 @@ Dictionary IcarusSim::event_to_dict(const icarus::Event& e) const {
     d["causes"] = causes;
     d["text"] = to_gd(e.text);
     d["time"] = to_gd(icarus::format_time_zh(e.tick));
+    d["category"] = event_category((int)e.type);
     if (!e.data.is_null()) d["data"] = json_to_variant(e.data);
     return d;
 }
@@ -393,6 +395,46 @@ PackedInt32Array IcarusSim::event_effects(int64_t id) const {
     PackedInt32Array out;
     if (!sim_) return out;
     for (icarus::EventId c : sim_->chronicle().effects_of((icarus::EventId)id)) out.push_back((int32_t)c);
+    return out;
+}
+
+String IcarusSim::event_category(int type) {
+    using T = icarus::EventType;
+    switch ((T)type) {
+        case T::DecisionRequested: case T::DecisionMade: case T::PolicyChanged: case T::Secession: case T::Coup:
+        case T::RulerChanged: case T::Protest: case T::Punishment: case T::Refusal: case T::Rebellion:
+        case T::SupportShift: case T::LevelUp: case T::WarDeclared: case T::Battle: case T::Peace:
+            return "politics";
+        case T::MeteorImpact: case T::FireStarted: case T::FireSpread: case T::Flood: case T::Collapse:
+        case T::DebrisLanded: case T::StructureDamaged: case T::StructureDestroyed: case T::WaterSourceLost:
+        case T::PathBlocked: case T::LogisticsDisrupted: case T::CropFailure:
+            return "disaster";
+        case T::Shortage: case T::ShortageResolved: case T::Harvest: case T::ProjectStarted: case T::ProjectCompleted:
+        case T::ProjectAbandoned: case T::Construction: case T::Theft: case T::TechDiscovered:
+            return "economy";
+        case T::Death: case T::Injury: case T::Starvation: case T::Rescue: case T::SpellCast: case T::Migration:
+            return "life";
+        case T::AdminAction:
+            return "admin";
+        default:
+            return "other";
+    }
+}
+
+Array IcarusSim::recent_events(const String& category, int64_t min_severity, int64_t max_count, int64_t polity) const {
+    Array out;
+    if (!sim_) return out;
+    const auto& ev = sim_->chronicle().events();
+    for (size_t i = ev.size(); i-- > 0 && out.size() < max_count;) {
+        const icarus::Event& e = ev[i];
+        if (e.severity < min_severity) continue;
+        if (polity > 0 && e.polity != 0 && e.polity != polity) continue;
+        String cat = event_category((int)e.type);
+        if (!category.is_empty() && cat != category) continue;
+        Dictionary d = event_to_dict(e);
+        d["category"] = cat;
+        out.push_back(d);
+    }
     return out;
 }
 

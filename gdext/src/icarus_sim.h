@@ -80,6 +80,9 @@ public:
     Dictionary event(int64_t id) const;
     PackedInt32Array event_causes(int64_t id) const;
     PackedInt32Array event_effects(int64_t id) const;
+    // Newest-first events filtered by category ("" = all) and minimum severity.
+    Array recent_events(const String& category, int64_t min_severity, int64_t max_count, int64_t polity) const;
+    static String event_category(int type);
 
     // Persistence.
     PackedByteArray save_bytes() const;

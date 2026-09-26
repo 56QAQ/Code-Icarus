@@ -34,13 +34,6 @@ func _ready() -> void:
 	head.add_child(crown)
 	_title = UITheme.label("—", 16, UITheme.TEXT, true)
 	head.add_child(_title)
-	var council := Button.new()
-	council.text = "议事录"
-	council.focus_mode = Control.FOCUS_NONE
-	council.tooltip_text = "魔法少女的决策记录（J）"
-	council.add_theme_font_size_override("font_size", 12)
-	council.pressed.connect(func() -> void: council_requested.emit())
-	head.add_child(council)
 	var toggle := Button.new()
 	toggle.text = "详情"
 	toggle.focus_mode = Control.FOCUS_NONE

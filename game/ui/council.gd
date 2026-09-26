@@ -7,6 +7,7 @@ extends PanelContainer
 ## provider settings (local persona model or Claude).
 
 signal closed
+signal event_requested(id: int)
 
 var sim: IcarusSim
 var selected_id := 0
@@ -354,6 +355,15 @@ func _rebuild_detail(d: Dictionary) -> void:
 	meta.add_child(UITheme.label(str(d["time"]), 13, UITheme.TEXT_FAINT))
 	if str(d["source"]) != "":
 		meta.add_child(_source_badge(str(d["source"])))
+	var ev_id := int(d.get("event", 0))
+	if ev_id > 0:
+		var why := Button.new()
+		why.text = "追溯因果"
+		why.focus_mode = Control.FOCUS_NONE
+		why.add_theme_font_size_override("font_size", 12)
+		why.add_theme_stylebox_override("normal", UITheme.flat(Color(1, 1, 1, 0.06), 8, 10, 3))
+		why.pressed.connect(func() -> void: event_requested.emit(ev_id))
+		meta.add_child(why)
 	_detail.add_child(meta)
 
 	# What she knew (collapsed to a few lines by default).

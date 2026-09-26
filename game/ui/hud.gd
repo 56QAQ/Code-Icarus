@@ -24,7 +24,10 @@ var _bottom_center: VBoxContainer
 var _bottom_right: VBoxContainer
 var civ_card: CivCard
 var selection: SelectionCard
+signal focus_requested(pos: Vector3)
+
 var council: CouncilPanel
+var chronicle: ChroniclePanel
 var _council_wrap: CenterContainer
 var _thinking: HBoxContainer
 
@@ -158,6 +161,13 @@ func _build_time_pill() -> void:
 		b.pressed.connect(func() -> void: Game.set_speed(sp))
 		row.add_child(b)
 		_speed_buttons.append(b)
+	row.add_child(VSeparator.new())
+	var council_btn := _icon_button("scroll", "议事录：魔法少女的决策（J）")
+	council_btn.pressed.connect(func() -> void: toggle_council())
+	row.add_child(council_btn)
+	var chron_btn := _icon_button("chronicle", "编年史与因果链（C）")
+	chron_btn.pressed.connect(func() -> void: toggle_chronicle())
+	row.add_child(chron_btn)
 	var right_pad := Control.new()
 	right_pad.custom_minimum_size = Vector2(2, 0)
 	row.add_child(right_pad)
@@ -198,6 +208,7 @@ func _build_status() -> void:
 		Game.select({}))
 	civ_card.council_requested.connect(func() -> void: toggle_council())
 	selection.decision_requested.connect(func(id: int) -> void: toggle_council(id))
+	selection.event_requested.connect(func(id: int) -> void: toggle_chronicle(id))
 
 
 func _process(_delta: float) -> void:
@@ -365,20 +376,51 @@ func _build_council() -> void:
 	council.sim = Game.sim
 	council.visible = false
 	_council_wrap.add_child(council)
+	chronicle = ChroniclePanel.new()
+	chronicle.sim = Game.sim
+	chronicle.visible = false
+	_council_wrap.add_child(chronicle)
+	chronicle.focus_requested.connect(func(p: Vector3) -> void:
+		chronicle.visible = false
+		focus_requested.emit(p))
+	chronicle.decision_requested.connect(func(id: int) -> void: toggle_council(id))
+	council.event_requested.connect(func(id: int) -> void: toggle_chronicle(id))
 	get_viewport().size_changed.connect(_size_council)
 	_size_council()
 
 
 func _size_council() -> void:
 	var vp := get_viewport_rect().size
-	council.custom_minimum_size = Vector2(minf(1040.0, vp.x * 0.9), minf(660.0, vp.y * 0.82))
+	var sz := Vector2(minf(1080.0, vp.x * 0.9), minf(660.0, vp.y * 0.82))
+	council.custom_minimum_size = sz
+	chronicle.custom_minimum_size = sz
 
 
+## Opens the decision ledger (at a decision if given); only one overlay at a time.
 func toggle_council(id: int = 0) -> void:
 	if council.visible and id == 0:
 		council.visible = false
 	else:
+		chronicle.visible = false
 		council.open_at(id)
+
+
+## Opens the chronicle (at an event if given).
+func toggle_chronicle(id: int = 0) -> void:
+	if chronicle.visible and id == 0:
+		chronicle.visible = false
+	else:
+		council.visible = false
+		chronicle.open_at(id)
+
+
+func overlay_open() -> bool:
+	return council.visible or chronicle.visible
+
+
+func close_overlays() -> void:
+	council.visible = false
+	chronicle.visible = false
 
 
 # ------------------------------------------------------------------ toasts
@@ -412,16 +454,21 @@ func _on_event(ev: Dictionary) -> void:
 	l.custom_minimum_size = Vector2(300, 0)
 	v.add_child(l)
 	var data = ev.get("data", {})
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var eid := int(ev.get("id", 0))
 	if ev.get("type", "") == "decision_made" and typeof(data) == TYPE_DICTIONARY and data.has("decision"):
 		# Decision toasts open the council at that decision.
 		var did := int(data["decision"])
-		var hint := UITheme.label("点击查看她的考量 →", 11, UITheme.MAGIC)
-		v.add_child(hint)
-		card.mouse_filter = Control.MOUSE_FILTER_STOP
-		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		v.add_child(UITheme.label("点击查看她的考量 →", 11, UITheme.MAGIC))
 		card.gui_input.connect(func(e: InputEvent) -> void:
 			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 				toggle_council(did))
+	else:
+		card.tooltip_text = "点击追溯因果"
+		card.gui_input.connect(func(e: InputEvent) -> void:
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+				toggle_chronicle(eid))
 	_toasts.add_child(card)
 	while _toasts.get_child_count() > 5:
 		_toasts.get_child(0).queue_free()

@@ -260,7 +260,22 @@ func _refresh_character() -> void:
 			for m in mems:
 				var who := ("（%s）" % m["subject"]) if m.has("subject") else ""
 				var c := UITheme.GOOD if float(m["valence"]) > 0.0 else UITheme.BAD
-				_line("%s  %s%s" % [m["time"], m["text"], who], 12, c)
+				var text := "%s  %s%s" % [String(m["time"]).substr(String(m["time"]).find("·") + 1), m["text"], who]
+				var ev_id := int(m.get("event", 0))
+				if ev_id > 0:
+					# Memories tied to a recorded event can be traced in the chronicle.
+					var b := Button.new()
+					b.text = text + "  ›"
+					b.focus_mode = Control.FOCUS_NONE
+					b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+					b.clip_text = true
+					b.add_theme_font_size_override("font_size", 12)
+					b.add_theme_color_override("font_color", c)
+					b.tooltip_text = "追溯这段经历的起因"
+					b.pressed.connect(func() -> void: event_requested.emit(ev_id))
+					_body.add_child(b)
+				else:
+					_line(text, 12, c)
 		"politics":
 			if girl.is_empty():
 				return
