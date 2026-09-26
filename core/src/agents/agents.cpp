@@ -408,6 +408,11 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
             blacklist(c, goal, kTicksPerHour * 3);
             day.path_failures++;
             fail_ring_[(size_t)fail_ring_pos_]++;
+            if (c.task.type == TaskType::Work && c.task.job)
+                if (Job* j = ctx_.jobs->get(c.task.job); j && ++j->path_fails >= 3) {
+                    j->path_fails = 0;
+                    j->suspended_until = now_ + kTicksPerHour * 12;
+                }
             if (debug_path_failures.size() < 200) debug_path_failures.push_back({c.id, c.foot, goal, now_});
             return Move::Failed;
         }

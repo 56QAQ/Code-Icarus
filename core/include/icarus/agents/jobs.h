@@ -35,6 +35,10 @@ struct Job {
     float priority = 1.0f;
     EntityId claimed_by = kNoEntity;
     Tick claim_expiry = 0;
+    // Nobody could get there: after a few failed routes the job rests for a while
+    // (for everyone), instead of each resident rediscovering it is out of reach.
+    u8 path_fails = 0;
+    Tick suspended_until = 0;
     Tick created = 0;
     EventId cause = 0;
 };

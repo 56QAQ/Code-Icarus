@@ -48,7 +48,13 @@ void Agents::generate_jobs() {
     }
     auto has = [&](JobType t, const Vec3i& p) { return existing.count({(int)t, p}) != 0; };
 
-    // Fields.
+    // Fields. Work on plots whose ground is gone is withdrawn (nobody can stand there).
+    for (const Job& j : jobs.all()) {
+        if (!j.alive || !j.farm || j.claimed_by != kNoEntity) continue;
+        Farm* f = ctx_.farming->get(j.farm);
+        if (!f || j.plot >= f->plots.size() || ctx_.farming->state(f->plots[j.plot]) == PlotState::Lost)
+            jobs.complete(j.id);
+    }
     for (auto& farm : ctx_.farming->all()) {
         if (!farm.alive) continue;
         Farm* f = ctx_.farming->get(farm.id);

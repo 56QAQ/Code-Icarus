@@ -57,6 +57,7 @@ u32 Agents::best_job(Character& c, float& best, std::string& why) {
     for (const Job& j : ctx_.jobs->all()) {
         if (!j.alive || j.polity != c.polity) continue;
         if (j.claimed_by != kNoEntity && j.claimed_by != c.id) continue;
+        if (j.suspended_until > now_) continue;
         if (blacklisted(c, j.pos)) continue;
         // Cheap straight-line cut-off before scoring.
         if (c.foot.chebyshev(j.pos) > 240) continue;

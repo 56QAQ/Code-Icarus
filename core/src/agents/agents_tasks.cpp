@@ -214,10 +214,21 @@ StoreId Agents::nearest_storage(u16 polity, const Vec3i& from, ItemId item) {
     StoreId best = kNoStore;
     float bd = 1e30f;
     float unit = item != kNoItem ? ctx_.reg->item(item).weight : 1.0f;
+    auto region = [&](const Vec3i& p) -> u16 {
+        for (int dy = 0; dy <= 1; ++dy)
+            if (auto it = region_map_.find(p + Vec3i{0, dy, 0}); it != region_map_.end()) return it->second;
+        return 0;
+    };
+    const u16 home = region(from);
     for (StoreId sid : ctx_.society->public_stores(polity)) {
         const Store* s = ctx_.econ->store(sid);
         if (!s || s->kind != StoreKind::Stockpile) continue;
         if (ctx_.econ->free_capacity(*s) < unit) continue;
+        // Skip stores that cannot be walked to from here: another region, or left
+        // hanging in the air (the ground beneath it blown away).
+        const u16 there = region(s->pos);
+        if (home && there && there != home) continue;
+        if (!there && !ctx_.world->solid(s->pos + Vec3i{0, -1, 0})) continue;
         float d = (float)from.dist2(s->pos);
         if (d < bd) {
             bd = d;

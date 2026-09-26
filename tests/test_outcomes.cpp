@@ -266,3 +266,31 @@ TEST("logistics: failed routes are judged over a rolling day, and survive a save
     loaded.run(kTicksPerHour * 6);
     CHECK_EQ(loaded.state_hash(), sim.state_hash());
 }
+
+TEST("farming: a plot whose ground is blown away gets no more work") {
+    Simulation sim(test_registry());
+    sim.new_game(village(3));
+    sim.run(kTicksPerHour);
+    const Farm* farm = nullptr;
+    for (const Farm& f : sim.farming().all())
+        if (f.alive && !f.plots.empty()) farm = &f;
+    REQUIRE(farm != nullptr);
+    const u32 fid = farm->id;
+    const Vec3i ground = farm->plots[0].ground;
+    // Blow the ground out from under the first plot.
+    AdminCommand c;
+    c.type = "dig";
+    c.params = Json::object();
+    Json p = Json::array();
+    p.push(ground.x);
+    p.push(ground.y - 1);
+    p.push(ground.z);
+    c.params.set("pos", p);
+    c.params.set("radius", 1.5);
+    sim.queue_admin(c);
+    sim.run(120);
+    CHECK(sim.farming().state(sim.farming().get(fid)->plots[0]) == PlotState::Lost);
+    CHECK(sim.farming().stats(fid).lost >= 1);
+    for (const Job& j : sim.jobs().all())
+        if (j.alive && j.farm == fid && j.plot == 0 && j.claimed_by == kNoEntity) CHECK(false);
+}

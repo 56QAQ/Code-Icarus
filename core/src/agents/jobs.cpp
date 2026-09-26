@@ -159,6 +159,16 @@ void JobBoard::save(BinWriter& w) const {
     }
     w.varu(free_.size());
     for (u32 f : free_) w.u32v(f);
+    // Unreachable jobs (added later; older saves have none).
+    std::vector<const Job*> resting;
+    for (size_t i = 1; i < jobs_.size(); ++i)
+        if (jobs_[i].alive && (jobs_[i].path_fails || jobs_[i].suspended_until)) resting.push_back(&jobs_[i]);
+    w.varu(resting.size());
+    for (const Job* j : resting) {
+        w.u32v(j->id);
+        w.u8v(j->path_fails);
+        w.u64v(j->suspended_until);
+    }
     w.end_section(s);
 }
 
@@ -191,6 +201,18 @@ void JobBoard::load(BinReader& outer) {
     free_.clear();
     u64 nf = r.varu();
     for (u64 k = 0; k < nf; ++k) free_.push_back(r.u32v());
+    if (!r.at_end()) {
+        u64 nr = r.varu();
+        for (u64 k = 0; k < nr; ++k) {
+            u32 id = r.u32v();
+            u8 fails = r.u8v();
+            Tick until = r.u64v();
+            if (Job* j = get(id)) {
+                j->path_fails = fails;
+                j->suspended_until = until;
+            }
+        }
+    }
 }
 
 u64 JobBoard::hash() const {

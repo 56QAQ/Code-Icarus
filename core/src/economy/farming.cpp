@@ -39,7 +39,7 @@ u32 Farming::create(u16 polity, const std::string& name, const std::vector<Vec3i
 PlotState Farming::state(const Plot& p) {
     const CoreMats& M = w_.reg().m();
     MatId g = w_.mat(p.ground);
-    if (g != M.farmland) return PlotState::NeedsTill;
+    if (g != M.farmland) return w_.reg().mat(g).solid ? PlotState::NeedsTill : PlotState::Lost;
     Voxel above = w_.get(p.ground + Vec3i{0, 1, 0});
     if (vmat(above) != M.crop) return PlotState::Empty;
     return vlevel(above) >= 7 ? PlotState::Mature : PlotState::Growing;
@@ -250,12 +250,18 @@ FarmStats Farming::stats(u32 farm_id) {
     Farm* f = get(farm_id);
     if (!f) return s;
     for (auto& p : f->plots) {
+        const PlotState st = state(p);
+        if (st == PlotState::Lost) {
+            s.lost++;
+            continue;
+        }
         s.plots++;
-        switch (state(p)) {
+        switch (st) {
             case PlotState::NeedsTill: s.needs_till++; break;
             case PlotState::Empty: s.empty++; break;
             case PlotState::Growing: s.growing++; break;
             case PlotState::Mature: s.mature++; break;
+            default: break;
         }
         if (p.irrigated) s.irrigated++;
     }

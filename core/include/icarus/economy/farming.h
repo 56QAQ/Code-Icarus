@@ -13,7 +13,8 @@
 
 namespace icarus {
 
-enum class PlotState : u8 { NeedsTill = 0, Empty, Growing, Mature };
+// Lost: the ground itself is gone (blasted away, dug out, flooded) — nothing to till.
+enum class PlotState : u8 { NeedsTill = 0, Empty, Growing, Mature, Lost };
 
 struct Plot {
     Vec3i ground;          // the farmland cube; the crop grows in ground + (0,1,0)
@@ -33,6 +34,7 @@ struct Farm {
 
 struct FarmStats {
     int plots = 0, needs_till = 0, empty = 0, growing = 0, mature = 0, irrigated = 0;
+    int lost = 0;  // plots whose ground is gone (not counted in `plots`)
 };
 
 class Farming {
