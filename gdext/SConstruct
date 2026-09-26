@@ -8,11 +8,24 @@ ARGUMENTS.setdefault("disable_exceptions", "no")
 
 env = SConscript("../thirdparty/godot-cpp/SConstruct")
 
-# godot-cpp archives ~1000 objects in one command; with a long checkout path that
-# exceeds the 128 KB single-argument limit of `sh -c`. Pass the list in a temp file.
-if not env.get("is_msvc", False):
-    env["ARCOM"] = "${TEMPFILE('$AR $ARFLAGS $TARGET $SOURCES', '$ARCOMSTR')}"
-    env["MAXLINELENGTH"] = 32000
+# godot-cpp archives ~1000 objects in one command. SCons runs commands through `sh -c`,
+# which takes the whole line as one argument, and Linux caps a single argument at
+# 128 KB; with a long checkout path the archive line exceeds that. Run such lines
+# directly (argument by argument) instead - this works for GNU ar, gcc-ar and BSD ar.
+if os.name != "nt":
+    import shlex
+    import subprocess
+
+    default_spawn = env["SPAWN"]
+    long_line = int(os.environ.get("ICARUS_LONG_LINE", "100000"))
+
+    def long_line_spawn(sh, escape, cmd, args, spawn_env):
+        line = " ".join(args)
+        if len(line) < long_line:
+            return default_spawn(sh, escape, cmd, args, spawn_env)
+        return subprocess.call(shlex.split(line), env={k: str(v) for k, v in spawn_env.items()})
+
+    env["SPAWN"] = long_line_spawn
 
 env.Append(CPPPATH=["src/", "../core/include/"])
 # The kernel is written against C++20 (godot-cpp itself only asks for C++17).
