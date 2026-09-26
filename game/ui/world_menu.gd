@@ -107,6 +107,27 @@ func _ready() -> void:
 		help.visible = not help.visible
 		help_toggle.text = "玩法与操作 ▴" if help.visible else "玩法与操作 ▾")
 
+	# Rendering: the compatibility (OpenGL) renderer as a fallback for graphics drivers
+	# that draw the standard (Vulkan / Direct3D) renderer wrongly.
+	_col.add_child(_section("画面"))
+	var gfx := HBoxContainer.new()
+	gfx.add_theme_constant_override("separation", 8)
+	_col.add_child(gfx)
+	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	var gl := UITheme.label("当前：%s" % ("兼容渲染（OpenGL）" if compat else "标准渲染"), 12, UITheme.TEXT_DIM)
+	gl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gfx.add_child(gl)
+	var sw := _button("改用标准渲染" if compat else "改用兼容渲染", UITheme.TEXT)
+	sw.tooltip_text = "画面出现大片黑色或花屏时，可改用兼容渲染。重启游戏后生效。"
+	sw.pressed.connect(func() -> void:
+		if _set_renderer(not compat):
+			_status.text = "已设置，重启游戏后生效"
+			_status.add_theme_color_override("font_color", UITheme.GOOD)
+		else:
+			_status.text = "无法写入设置文件（游戏目录可能只读）"
+			_status.add_theme_color_override("font_color", UITheme.BAD))
+	gfx.add_child(sw)
+
 	var foot := HBoxContainer.new()
 	_col.add_child(foot)
 	_status = UITheme.label("", 12, UITheme.GOOD)
@@ -191,6 +212,21 @@ func _refresh_slots() -> void:
 				_status.text = "读取失败：存档损坏或版本不符"
 				_status.add_theme_color_override("font_color", UITheme.BAD))
 		r.add_child(ld)
+
+
+## Writes (or removes) override.cfg next to the game, which Godot reads at start-up.
+func _set_renderer(compat: bool) -> bool:
+	var dir := ProjectSettings.globalize_path("res://") if OS.has_feature("editor") else OS.get_executable_path().get_base_dir()
+	var path := dir.path_join("override.cfg")
+	if not compat:
+		if FileAccess.file_exists(path):
+			return DirAccess.remove_absolute(path) == OK
+		return true
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string("[rendering]\n\nrenderer/rendering_method=\"gl_compatibility\"\nrenderer/rendering_method.mobile=\"gl_compatibility\"\n")
+	return true
 
 
 func _section(text: String) -> Control:

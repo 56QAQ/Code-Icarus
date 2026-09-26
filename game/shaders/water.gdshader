@@ -63,6 +63,9 @@ void fragment() {
 	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
 	// How much water lies between the surface and whatever is behind it.
 	float depth = texture(depth_tex, SCREEN_UV).r;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	depth = depth * 2.0 - 1.0;  // OpenGL's depth range
+#endif
 	vec4 view = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
 	// Nothing behind (the sky) or a degenerate depth: treat as deep water, never divide
 	// by zero (a NaN here would turn the pixel black).
