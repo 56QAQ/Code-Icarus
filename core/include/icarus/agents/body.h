@@ -3,6 +3,8 @@
 // is derived from what remains, so injuries have real consequences.
 #pragma once
 
+#include <algorithm>
+
 #include <array>
 #include <string>
 #include <vector>
@@ -26,7 +28,7 @@ struct PartShape {
 const PartShape& part_shape(int p);
 
 // Palette slots (value stored in voxels; 0 = empty).
-enum BodyPaint : u8 { kSkin = 1, kHair, kCloth, kAccent, kShoes, kEyes, kBone, kPaintCount };
+enum BodyPaint : u8 { kSkin = 1, kHair, kCloth, kAccent, kShoes, kEyes, kBone, kMouth, kBlush, kPaintCount };
 
 struct BodyPart {
     std::vector<u8> vox;  // size.x*size.y*size.z, index (y*sz+z)*sx+x
@@ -41,7 +43,14 @@ struct Appearance {
     bool long_hair = false;
     bool dress = false;
     bool ribbon = false;
-    std::vector<u32> palette() const { return {skin, hair, cloth, accent, shoes, eyes, 0xE8E0D0}; }
+    std::vector<u32> palette() const {
+        // Mouth: the skin a shade darker; blush: the skin warmed towards pink.
+        auto mul = [](u32 c, float r, float g, float b) {
+            auto ch = [](u32 v, float k) { return (u32)std::min(255.0f, (float)v * k); };
+            return (ch((c >> 16) & 0xFF, r) << 16) | (ch((c >> 8) & 0xFF, g) << 8) | ch(c & 0xFF, b);
+        };
+        return {skin, hair, cloth, accent, shoes, eyes, 0xE8E0D0, mul(skin, 0.72f, 0.58f, 0.58f), mul(skin, 1.04f, 0.8f, 0.82f)};
+    }
 };
 
 struct DamageReport {

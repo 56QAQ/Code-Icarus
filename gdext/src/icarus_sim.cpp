@@ -41,6 +41,7 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("perf"), &IcarusSim::perf);
     ClassDB::bind_method(D_METHOD("take_dirty_cells"), &IcarusSim::take_dirty_cells);
     ClassDB::bind_method(D_METHOD("render_cells"), &IcarusSim::render_cells);
+    ClassDB::bind_method(D_METHOD("material_table"), &IcarusSim::material_table);
     ClassDB::bind_method(D_METHOD("build_cell_mesh", "cell"), &IcarusSim::build_cell_mesh);
     ClassDB::bind_method(D_METHOD("raycast", "origin", "dir", "max_dist"), &IcarusSim::raycast);
     ClassDB::bind_method(D_METHOD("cube_info", "cube"), &IcarusSim::cube_info);
@@ -226,6 +227,26 @@ PackedInt32Array IcarusSim::take_dirty_cells() {
     return out;
 }
 
+Array IcarusSim::material_table() const {
+    Array out;
+    if (!reg_) return out;
+    for (size_t i = 0; i < reg_->mat_count(); ++i) {
+        const icarus::Material& m = reg_->mat((icarus::MatId)i);
+        Dictionary d;
+        d["id"] = (int64_t)i;
+        d["key"] = to_gd(m.key);
+        d["name"] = to_gd(m.name);
+        d["color"] = Color(((m.color >> 16) & 0xFF) / 255.0, ((m.color >> 8) & 0xFF) / 255.0, (m.color & 0xFF) / 255.0);
+        d["solid"] = m.solid;
+        d["opaque"] = m.opaque;
+        d["fluid"] = m.fluid;
+        d["granular"] = m.granular;
+        d["anchor"] = m.anchor;
+        out.push_back(d);
+    }
+    return out;
+}
+
 PackedInt32Array IcarusSim::render_cells() const {
     PackedInt32Array out;
     if (!sim_) return out;
@@ -251,6 +272,8 @@ Array IcarusSim::build_cell_mesh(const Vector3i& cell) {
     out.push_back(mesh_to_arrays(scratch_.opaque));
     out.push_back(mesh_to_arrays(scratch_.water));
     out.push_back(mesh_to_arrays(scratch_.foliage));
+    out.push_back(mesh_to_arrays(scratch_.decor));
+    out.push_back(mesh_to_arrays(scratch_.crops));
     return out;
 }
 
@@ -478,6 +501,28 @@ int64_t IcarusSim::state_hash() const { return sim_ ? (int64_t)sim_->state_hash(
 // ---------------------------------------------------------------------------------- characters
 
 namespace {
+const char* job_key(icarus::JobType t) {
+    using J = icarus::JobType;
+    switch (t) {
+        case J::Till: return "till";
+        case J::Sow: return "sow";
+        case J::Harvest: return "harvest";
+        case J::Chop: return "chop";
+        case J::Mine: return "mine";
+        case J::Dig: return "dig";
+        case J::HaulPile:
+        case J::HaulToSite:
+        case J::Trade: return "haul";
+        case J::Build: return "build";
+        case J::Cook: return "cook";
+        case J::Craft: return "craft";
+        case J::Research: return "research";
+        case J::Forage: return "forage";
+        case J::Guard: return "guard";
+        default: return "work";
+    }
+}
+
 String drive_name(const icarus::Registry& reg, const std::string& key) {
     for (const icarus::Json& d : reg.doc("drives")["drives"].items())
         if (d.str("key") == key) return to_gd(d.str("name", key));
@@ -524,6 +569,10 @@ Array IcarusSim::characters() const {
             }
         d["carrying"] = cargo;
         d["working"] = c.task.type == icarus::TaskType::Work && c.task.until > now && !c.moving;
+        // What the work is (for the animation) and the tool in hand.
+        if (c.task.type == icarus::TaskType::Work)
+            if (const icarus::Job* j = sim_->jobs().get(c.task.job)) d["job"] = String(job_key(j->type));
+        if (c.tool != icarus::kNoItem) d["tool"] = to_gd(reg_->item(c.tool).key);
         d["protest"] = c.task.type == icarus::TaskType::Protest && c.task.step == 2;
         if (c.is_girl()) d["drive"] = drive_name(*reg_, c.girl->drive);
         d["drafted"] = c.drafted;

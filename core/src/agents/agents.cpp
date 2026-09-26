@@ -583,7 +583,9 @@ void Agents::save(BinWriter& w) const {
         w.f32(c.fall_speed);
         w.f32(c.walk_phase);
         c.body.save(w);
-        for (u32 col : c.look.palette()) w.u32v(col);
+        // The seven stored colours (mouth and blush are derived from the skin).
+        for (u32 col : {c.look.skin, c.look.hair, c.look.cloth, c.look.accent, c.look.shoes, c.look.eyes, 0xE8E0D0u})
+            w.u32v(col);
         w.boolean(c.look.long_hair);
         w.boolean(c.look.dress);
         w.boolean(c.look.ribbon);

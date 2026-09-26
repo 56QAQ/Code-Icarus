@@ -41,6 +41,7 @@ public:
     // Rendering.
     PackedInt32Array take_dirty_cells();
     PackedInt32Array render_cells() const;  // all cells that may contain matter
+    Array material_table() const;           // by material id: key, name, colour, kind flags
     Array build_cell_mesh(const Vector3i& cell);
     Dictionary raycast(const Vector3& origin, const Vector3& dir, double max_dist) const;
     Dictionary cube_info(const Vector3i& cube) const;

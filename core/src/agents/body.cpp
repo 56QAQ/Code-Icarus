@@ -41,23 +41,30 @@ void Body::paint_part(int p, const Appearance& a) {
                         bool back = z == 0;
                         bool side = (x == 0 || x == s.size.x - 1) && y >= 2;
                         if (top || (back && y >= (a.long_hair ? 0 : 2)) || side) c = kHair;
-                        if (z == s.size.z - 1 && y == 2 && (x == 1 || x == s.size.x - 2)) c = kEyes;
+                        // The face: eyes two voxels tall, a small mouth; girls blush.
+                        const bool front = z == s.size.z - 1;
+                        if (front && (y == 2 || y == 3) && (x == 1 || x == s.size.x - 2)) c = kEyes;
+                        if (front && y == 1 && (x == 2 || x == 3)) c = kMouth;
+                        if (front && a.ribbon && y == 1 && (x == 1 || x == s.size.x - 2)) c = kBlush;
                         if (a.ribbon && y == s.size.y - 1 && (x == 1 || x == 4) && z == 1) c = kAccent;
                         break;
                     }
                     case kTorso:
                         c = kCloth;
                         if (y == 1) c = kAccent;  // belt / sash
+                        if (a.ribbon && y == s.size.y - 1) c = kAccent;  // a magical girl's collar
                         if (y == s.size.y - 1 && (x == 2 || x == 3) && z == s.size.z - 1) c = kSkin;  // neckline
                         break;
                     case kArmL:
                     case kArmR:
                         c = y <= 1 ? kSkin : kCloth;
+                        if (a.ribbon && y == 2) c = kAccent;  // cuffs
                         break;
                     case kLegL:
                     case kLegR:
                         c = y <= 1 ? kShoes : (a.dress && y >= 4 ? kCloth : kSkin);
                         if (!a.dress && y >= 2) c = kCloth;
+                        if (a.dress && a.ribbon && y == 4) c = kAccent;  // hem
                         break;
                 }
                 bp.vox[vidx(s, x, y, z)] = c;

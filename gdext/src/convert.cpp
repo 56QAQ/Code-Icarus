@@ -4,6 +4,7 @@
 
 #include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
+#include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 
 namespace godot {
@@ -104,6 +105,13 @@ Array mesh_to_arrays(const icarus::MeshData& m) {
     out[Mesh::ARRAY_VERTEX] = pos;
     out[Mesh::ARRAY_NORMAL] = nrm;
     out[Mesh::ARRAY_COLOR] = col;
+    if (m.uvs.size() == (size_t)nv * 2) {
+        PackedVector2Array uv;
+        uv.resize(nv);
+        Vector2* up = uv.ptrw();
+        for (int64_t i = 0; i < nv; ++i) up[i] = Vector2(m.uvs[i * 2], m.uvs[i * 2 + 1]);
+        out[Mesh::ARRAY_TEX_UV] = uv;
+    }
     out[Mesh::ARRAY_INDEX] = idx;
     return out;
 }

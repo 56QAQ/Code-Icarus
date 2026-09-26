@@ -30,15 +30,19 @@ inline RGBf rgb(u32 c) {
 inline RGBf mixc(RGBf a, RGBf b, float t) { return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t}; }
 inline RGBf scalec(RGBf a, float k) { return {a.r * k, a.g * k, a.b * k}; }
 
-constexpr float kAO[4] = {1.0f, 0.78f, 0.62f, 0.48f};
+// Ambient occlusion per corner (applied in linear light by the shader).
+constexpr float kAO[4] = {1.0f, 0.68f, 0.48f, 0.34f};
+
+inline int face_kind(int f) { return f == 2 ? 0 : (f == 3 ? 2 : 1); }
 
 void push_quad(MeshData& m, const float (&p)[4][3], const float n[3], const RGBf (&c)[4], float emission,
-               const int ao[4]) {
+               const int ao[4], float u = -1.0f, float v = 0.0f) {
     int base = (int)m.vertex_count();
     for (int i = 0; i < 4; ++i) {
         m.positions.insert(m.positions.end(), {p[i][0], p[i][1], p[i][2]});
         m.normals.insert(m.normals.end(), {n[0], n[1], n[2]});
         m.colors.insert(m.colors.end(), {c[i].r, c[i].g, c[i].b, emission});
+        m.uvs.insert(m.uvs.end(), {u, v});
     }
     // Godot treats clockwise triangles as front faces; corners are CCW, so reverse.
     // Flip the diagonal to avoid anisotropic AO artifacts.
@@ -49,7 +53,9 @@ void push_quad(MeshData& m, const float (&p)[4][3], const float n[3], const RGBf
     }
 }
 
-void push_box(MeshData& m, float x0, float y0, float z0, float x1, float y1, float z1, RGBf col, float emission) {
+// A box inside a cube (crops, bushes, berries). mat < 0 draws plain colour.
+void push_box(MeshData& m, float x0, float y0, float z0, float x1, float y1, float z1, RGBf col, float emission,
+              int mat = -1) {
     const float lo[3] = {x0, y0, z0}, hi[3] = {x1, y1, z1};
     const int ao0[4] = {0, 0, 0, 0};
     for (int f = 0; f < 6; ++f) {
@@ -60,7 +66,57 @@ void push_box(MeshData& m, float x0, float y0, float z0, float x1, float y1, flo
         float shade = f == 3 ? 0.7f : 1.0f;
         RGBf c = scalec(col, shade);
         RGBf cs[4] = {c, c, c, c};
-        push_quad(m, p, n, cs, emission, ao0);
+        push_quad(m, p, n, cs, emission, ao0, (float)mat, (float)face_kind(f));
+    }
+}
+
+// Two crossed quads standing on (cx, y0, cz): a tuft or a flower. Normals point up so
+// sprites are lit like the ground they grow from.
+void push_sprite(MeshData& m, float cx, float y0, float cz, float half, float h, float angle, int layer, RGBf col) {
+    const int ao0[4] = {0, 0, 0, 0};
+    const float n[3] = {0.0f, 1.0f, 0.0f};
+    RGBf cs[4] = {col, col, col, col};
+    for (int q = 0; q < 2; ++q) {
+        const float a = angle + (float)q * 1.5707963f;
+        const float dx = std::cos(a) * half, dz = std::sin(a) * half;
+        const float p[4][3] = {{cx - dx, y0, cz - dz}, {cx - dx, y0 + h, cz - dz}, {cx + dx, y0 + h, cz + dz}, {cx + dx, y0, cz + dz}};
+        const int base = (int)m.vertex_count();
+        const float us[4] = {0.001f, 0.001f, 0.999f, 0.999f}, vs[4] = {0.999f, 0.001f, 0.001f, 0.999f};
+        for (int i = 0; i < 4; ++i) {
+            m.positions.insert(m.positions.end(), {p[i][0], p[i][1], p[i][2]});
+            m.normals.insert(m.normals.end(), {n[0], n[1], n[2]});
+            m.colors.insert(m.colors.end(), {cs[i].r, cs[i].g, cs[i].b, 0.0f});
+            m.uvs.insert(m.uvs.end(), {(float)layer + us[i], vs[i]});
+        }
+        m.indices.insert(m.indices.end(), {base + 0, base + 2, base + 1, base + 0, base + 3, base + 2});
+        (void)ao0;
+    }
+}
+
+// Four upright planes in a # pattern filling a cube (crops).
+void push_crop(MeshData& m, float x, float y, float z, float h, int layer, RGBf col) {
+    const float n[3] = {0.0f, 1.0f, 0.0f};
+    const float us[4] = {0.001f, 0.001f, 0.999f, 0.999f}, vs[4] = {0.999f, 0.001f, 0.001f, 0.999f};
+    for (int q = 0; q < 4; ++q) {
+        const float off = (q % 2 == 0) ? 0.3f : 0.7f;
+        float p[4][3];
+        if (q < 2) {  // planes along x
+            const float pz = z + off;
+            const float c[4][3] = {{x, y, pz}, {x, y + h, pz}, {x + 1, y + h, pz}, {x + 1, y, pz}};
+            std::copy(&c[0][0], &c[0][0] + 12, &p[0][0]);
+        } else {  // planes along z
+            const float px = x + off;
+            const float c[4][3] = {{px, y, z}, {px, y + h, z}, {px, y + h, z + 1}, {px, y, z + 1}};
+            std::copy(&c[0][0], &c[0][0] + 12, &p[0][0]);
+        }
+        const int base = (int)m.vertex_count();
+        for (int i = 0; i < 4; ++i) {
+            m.positions.insert(m.positions.end(), {p[i][0], p[i][1], p[i][2]});
+            m.normals.insert(m.normals.end(), {n[0], n[1], n[2]});
+            m.colors.insert(m.colors.end(), {col.r, col.g, col.b, 0.0f});
+            m.uvs.insert(m.uvs.end(), {(float)layer + us[i], vs[i]});
+        }
+        m.indices.insert(m.indices.end(), {base + 0, base + 2, base + 1, base + 0, base + 3, base + 2});
     }
 }
 
@@ -86,6 +142,8 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
     out.opaque.clear();
     out.water.clear();
     out.foliage.clear();
+    out.decor.clear();
+    out.crops.clear();
     const Cell* cell = w_.cell(cc);
     if (!cell) return;
     // Fast path: a uniform cell of air produces nothing; a uniform solid cell only has
@@ -110,20 +168,38 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                 const Material& m = reg.mat(mid);
                 const int wx = o.x + x, wy = o.y + y, wz = o.z + z;
                 float var = (hash_to_unit(hash3(cseed, wx, wy, wz)) - 0.5f) * 2.0f * m.color_var;
-                RGBf base = scalec(rgb(m.color), 1.0f + var);
+                // Textured faces: the colour is only a shade (per-cube variation, burning).
+                RGBf shade{1.0f + var, 1.0f + var, 1.0f + var};
                 float emission = 0.0f;
                 if (vburning(v)) {
-                    base = mixc(base, RGBf{1.0f, 0.45f, 0.1f}, 0.7f);
+                    shade = RGBf{1.6f, 0.75f, 0.35f};
                     emission = 0.9f;
                 } else if (mid == M.magma) {
                     emission = 1.0f;
                 }
-                if (vdamage(v) > 0) base = scalec(base, 1.0f - 0.06f * (float)vdamage(v));
+                const float dmg = (float)std::min<int>(vdamage(v), 7);
 
                 if (m.fluid) {
-                    // Water: faces toward air/non-water; top at level height.
+                    // Water: faces toward air/non-water. The surface height at each corner
+                    // is shared by the water cubes around it, so the surface is smooth
+                    // instead of stepped by each cube's level.
+                    RGBf base = scalec(rgb(m.color), 1.0f + var);
                     bool water_above = vmat(at(x, y + 1, z)) == mid;
                     float h = water_above ? 1.0f : std::max(0.08f, (float)vlevel(v) / (float)kFluidFull);
+                    auto corner_h = [&](int cx, int cz) {
+                        float sum = 0.0f;
+                        int n = 0;
+                        for (int dz = cz - 1; dz <= cz; ++dz)
+                            for (int dx = cx - 1; dx <= cx; ++dx) {
+                                const Voxel nv = at(x + dx, y, z + dz);
+                                if (vmat(nv) != mid) continue;
+                                if (vmat(at(x + dx, y + 1, z + dz)) == mid) return 1.0f;
+                                sum += std::max(0.08f, (float)vlevel(nv) / (float)kFluidFull);
+                                ++n;
+                            }
+                        return n ? sum / (float)n : h;
+                    };
+                    const float ch[2][2] = {{corner_h(0, 0), corner_h(0, 1)}, {corner_h(1, 0), corner_h(1, 1)}};
                     for (int f = 0; f < 6; ++f) {
                         Vec3i d = kDir6[f];
                         Voxel nv = at(x + d.x, y + d.y, z + d.z);
@@ -134,15 +210,20 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                         if (f == 2 && nm.opaque && nm.solid && h >= 1.0f) continue;
                         float p[4][3];
                         for (int k = 0; k < 4; ++k) {
-                            p[k][0] = (float)(wx + kFaceCorners[f][k][0]);
-                            p[k][1] = (float)wy + (float)kFaceCorners[f][k][1] * h;
-                            p[k][2] = (float)(wz + kFaceCorners[f][k][2]);
+                            const int cx = kFaceCorners[f][k][0], cz = kFaceCorners[f][k][2];
+                            const float top = water_above ? 1.0f : ch[cx][cz];
+                            p[k][0] = (float)(wx + cx);
+                            p[k][1] = (float)wy + (float)kFaceCorners[f][k][1] * top;
+                            p[k][2] = (float)(wz + cz);
                         }
                         float n[3] = {(float)d.x, (float)d.y, (float)d.z};
                         RGBf c = base;
                         RGBf cs[4] = {c, c, c, c};
                         const int ao0[4] = {0, 0, 0, 0};
-                        push_quad(out.water, p, n, cs, (float)vlevel(v) / (float)kFluidFull, ao0);
+                        // v: 1 where water keeps falling below (a cascade), 0 otherwise.
+                        const Material& below = reg.mat(vmat(at(x, y - 1, z)));
+                        const float falling = (!below.solid && vmat(at(x, y - 1, z)) != mid) ? 1.0f : 0.0f;
+                        push_quad(out.water, p, n, cs, (float)vlevel(v) / (float)kFluidFull, ao0, (float)mid, falling);
                     }
                     continue;
                 }
@@ -150,26 +231,47 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                 if (!m.solid && !m.passable) {
                     // Small plants: crops and bushes as boxes inside the cube.
                     if (mid == M.crop) {
-                        int stage = vlevel(v);
-                        float hgt = 0.18f + 0.1f * (float)stage;
-                        RGBf young{0.45f, 0.72f, 0.28f}, ripe = rgb(m.color);
-                        RGBf c = mixc(young, ripe, (float)stage / 7.0f);
-                        c = scalec(c, 1.0f + var);
-                        push_box(out.foliage, wx + 0.18f, (float)wy, wz + 0.18f, wx + 0.82f, wy + hgt, wz + 0.82f, c,
-                                 emission);
+                        // Wheat: rows of stalks (a # of four planes) that grow and ripen;
+                        // decoration layers 7 sprout, 8 green, 9 ripe.
+                        const int stage = vlevel(v);
+                        const float hgt = 0.28f + 0.09f * (float)stage;
+                        const int layer = stage <= 2 ? 7 : (stage <= 5 ? 8 : 9);
+                        const float g = 1.0f + var;
+                        push_crop(out.crops, (float)wx, (float)wy, (float)wz, hgt, layer, RGBf{g, g, g});
                     } else {
                         float s = 0.1f;
-                        push_box(out.foliage, wx + s, (float)wy, wz + s, wx + 1 - s, wy + 0.75f, wz + 1 - s, base,
-                                 emission);
+                        push_box(out.foliage, wx + s, (float)wy, wz + s, wx + 1 - s, wy + 0.75f, wz + 1 - s, shade,
+                                 emission, mid);
                         if (mid == M.berry_bush) {
                             RGBf berry{0.75f, 0.12f, 0.2f};
-                            float bx = wx + 0.3f + 0.4f * hash_to_unit(hash3(cseed + 1, wx, wy, wz));
-                            float bz = wz + 0.3f + 0.4f * hash_to_unit(hash3(cseed + 2, wx, wy, wz));
-                            push_box(out.foliage, bx - 0.09f, wy + 0.72f, bz - 0.09f, bx + 0.09f, wy + 0.84f,
-                                     bz + 0.09f, berry, 0.0f);
+                            for (int b = 0; b < 3; ++b) {
+                                float bx = wx + 0.22f + 0.56f * hash_to_unit(hash3(cseed + 1 + b, wx, wy, wz));
+                                float bz = wz + 0.22f + 0.56f * hash_to_unit(hash3(cseed + 11 + b, wx, wy, wz));
+                                float by = wy + 0.5f + 0.22f * hash_to_unit(hash3(cseed + 21 + b, wx, wy, wz));
+                                push_box(out.foliage, bx - 0.07f, by, bz - 0.07f, bx + 0.07f, by + 0.12f, bz + 0.07f, berry,
+                                         0.0f);
+                            }
                         }
                     }
                     continue;
+                }
+
+                // Tufts of grass and the odd flower on open meadow (layers 0-2 tufts,
+                // 3-6 flowers in the decoration textures).
+                if (mid == M.grass && vmat(at(x, y + 1, z)) == M.air) {
+                    const u64 hh = hash3(cseed + 77, wx, wy, wz);
+                    const float r = hash_to_unit(hh);
+                    if (r < 0.62f) {
+                        const bool flower = r < 0.045f;
+                        const int layer = flower ? 3 + (int)((hh >> 20) % 4) : (int)((hh >> 12) % 3);
+                        const float cx = (float)wx + 0.25f + 0.5f * hash_to_unit(hh >> 5);
+                        const float cz = (float)wz + 0.25f + 0.5f * hash_to_unit(hh >> 9);
+                        const float size = flower ? 0.46f + 0.14f * hash_to_unit(hh >> 14)
+                                                  : 0.5f + 0.4f * hash_to_unit(hh >> 14);
+                        const float g = 1.0f + var;
+                        push_sprite(out.decor, cx, (float)(wy + 1), cz, size * 0.5f, size, 0.785f * hash_to_unit(hh >> 17),
+                                    layer, RGBf{g, g, g});
+                    }
                 }
 
                 const bool foliage = !m.opaque;  // leaves, glass
@@ -181,10 +283,6 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                     const Material& nm = reg.mat(nid);
                     if (nm.opaque && nm.solid) continue;
                     if (foliage && nid == mid) continue;
-                    RGBf fc = base;
-                    if (mid == M.grass && f != 2) {
-                        fc = mixc(base, scalec(rgb(reg.mat(M.dirt).color), 1.0f + var), f == 3 ? 1.0f : 0.55f);
-                    }
                     float p[4][3];
                     int ao[4];
                     RGBf cs[4];
@@ -203,10 +301,13 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                         bool s2 = opaque_at(bx + dv[0], by + dv[1], bz + dv[2]);
                         bool cr = opaque_at(bx + du[0] + dv[0], by + du[1] + dv[1], bz + du[2] + dv[2]);
                         ao[k] = (s1 && s2) ? 3 : (int)s1 + (int)s2 + (int)cr;
-                        cs[k] = scalec(fc, kAO[ao[k]]);
+                        cs[k] = scalec(shade, kAO[ao[k]]);
                     }
                     float n[3] = {(float)d.x, (float)d.y, (float)d.z};
-                    push_quad(dst, p, n, cs, emission, ao);
+                    // A grass cube buried under another shows dirt on its sides.
+                    int kind = face_kind(f);
+                    if (mid == M.grass && kind == 1 && reg.mat(vmat(at(x, y + 1, z))).opaque) kind = 2;
+                    push_quad(dst, p, n, cs, emission, ao, (float)mid, (float)kind + 3.0f * dmg);
                 }
             }
         }
@@ -252,7 +353,9 @@ void build_debris_mesh(const Registry& reg, const std::vector<std::pair<Vec3i, V
     auto has = [&](const Vec3i& p) { return std::binary_search(sorted.begin(), sorted.end(), p); };
     for (auto& [p, v] : cubes) {
         const Material& m = reg.mat(vmat(v));
-        RGBf c = rgb(m.color);
+        const float var = (hash_to_unit(hash3(0xDEB415ull, p.x, p.y, p.z)) - 0.5f) * 2.0f * m.color_var;
+        RGBf c{1.0f + var, 1.0f + var, 1.0f + var};
+        const float dmg = (float)std::min<int>(vdamage(v), 7);
         for (int f = 0; f < 6; ++f) {
             if (has(p + kDir6[f])) continue;
             float q[4][3];
@@ -264,7 +367,7 @@ void build_debris_mesh(const Registry& reg, const std::vector<std::pair<Vec3i, V
             float n[3] = {(float)kDir6[f].x, (float)kDir6[f].y, (float)kDir6[f].z};
             RGBf cs[4] = {c, c, c, c};
             const int ao0[4] = {0, 0, 0, 0};
-            push_quad(out, q, n, cs, 0.0f, ao0);
+            push_quad(out, q, n, cs, 0.0f, ao0, (float)m.id, (float)face_kind(f) + 3.0f * dmg);
         }
     }
 }

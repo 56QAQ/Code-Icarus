@@ -13,6 +13,10 @@ struct MeshData {
     std::vector<float> positions;  // xyz
     std::vector<float> normals;    // xyz
     std::vector<float> colors;     // rgba (a = emission strength)
+    // Texture lookup per vertex: u = material id (-1: plain vertex colour), v = face
+    // kind (0 top, 1 side, 2 bottom) + 3 * damage. The shader turns these into a layer
+    // of the material texture array; colours then carry only shading (AO, variation).
+    std::vector<float> uvs;
     std::vector<int> indices;
     size_t vertex_count() const { return positions.size() / 3; }
     bool empty() const { return indices.empty(); }
@@ -20,6 +24,7 @@ struct MeshData {
         positions.clear();
         normals.clear();
         colors.clear();
+        uvs.clear();
         indices.clear();
     }
 };
@@ -28,6 +33,10 @@ struct CellMesh {
     MeshData opaque;
     MeshData water;
     MeshData foliage;  // leaves, crops, bushes (alpha-scissor-friendly, double sided)
+    // Decoration sprites (grass tufts, flowers): crossed quads, u = layer + x (0..1),
+    // v = y (0 at the top) in the decoration texture array.
+    MeshData decor;
+    MeshData crops;  // wheat, drawn like decoration but at any distance
 };
 
 class Mesher {

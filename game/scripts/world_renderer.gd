@@ -11,6 +11,7 @@ var budget_ms := 7.0
 var mat_terrain: ShaderMaterial
 var mat_water: ShaderMaterial
 var mat_foliage: ShaderMaterial
+var mat_decor: ShaderMaterial
 
 var _cells := {}      # Vector3i -> Node3D
 var _pending := {}    # Vector3i -> true
@@ -32,11 +33,24 @@ func _ready() -> void:
 	mat_water.render_priority = 1
 	mat_foliage = ShaderMaterial.new()
 	mat_foliage.shader = load("res://shaders/foliage.gdshader")
+	mat_decor = ShaderMaterial.new()
+	mat_decor.shader = load("res://shaders/decor.gdshader")
 
 
 func setup(s: IcarusSim, cam: Camera3D) -> void:
 	sim = s
 	camera = cam
+	# Cube textures for every material in the rules.
+	var tex := TextureForge.build(sim.material_table())
+	for m in [mat_terrain, mat_foliage]:
+		m.set_shader_parameter("atlas", tex["atlas"])
+		m.set_shader_parameter("layer_map", tex["map"])
+		m.set_shader_parameter("crack_base", tex["crack_base"])
+	var grass := Color("5f9e3d")
+	for m in sim.material_table():
+		if m["key"] == "grass":
+			grass = m["color"]
+	mat_decor.set_shader_parameter("decor", TextureForge.build_decor(grass))
 	for c in _cells.values():
 		c.queue_free()
 	_cells.clear()
@@ -104,7 +118,7 @@ func _build(c: Vector3i) -> void:
 		for ch in holder.get_children():
 			ch.queue_free()
 	var any := false
-	for i in 3:
+	for i in arrays.size():
 		var arr: Array = arrays[i]
 		if arr.is_empty():
 			continue
@@ -126,6 +140,15 @@ func _build(c: Vector3i) -> void:
 				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			2:
 				mi.material_override = mat_foliage
+			3:
+				# Tufts and flowers: only near the camera, fading out.
+				mi.material_override = mat_decor
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				mi.visibility_range_end = 110.0
+				mi.visibility_range_end_margin = 20.0
+				mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			4:
+				mi.material_override = mat_decor  # crops
 		holder.add_child(mi)
 	if not any and holder:
 		holder.queue_free()

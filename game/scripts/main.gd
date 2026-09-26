@@ -2,7 +2,7 @@ extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N | --load FILE] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
 ##        [--hide-ui] [--frames N]
 
 var renderer: WorldRenderer
@@ -84,6 +84,11 @@ func _ready() -> void:
 		hud.selection._tab = _cli["tab"]
 	if _cli.has("select"):
 		_select_character(int(_cli["select"]))
+		if _cli.has("focus"):
+			# Screenshot helper: frame the selected character from this far away.
+			for c in Game.sim.characters():
+				if int(c["id"]) == int(_cli["select"]):
+					rig.focus(c["pos"], float(_cli["focus"]), true)
 	if _cli.has("focus-soldiers"):
 		# Screenshot helper: look at the soldiers (select the first one).
 		var sum := Vector3.ZERO
