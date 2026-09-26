@@ -57,7 +57,10 @@ tools/test.sh                                    # 以上 + Godot 冒烟测试 +
 build/tools/cli/icarus_cli run --seed 3 --days 5 --events --admin 30:break_bridge
 build/tools/cli/icarus_cli experiment --seeds 1-8 --days 7 --admin 30:kill_spring --report out.md
 tools/screenshot.sh out.png --ticks 1500 --council   # 无头渲染一帧游戏画面
+godot --path game --script res://tests/render_test.gd -- --seed 1 --hide-ui  # 本机 GPU 多视角黑面回归（需要显示环境）
 ```
+
+本机 Vulkan 出现黑面问题的定位、修复与渲染验证见 [`docs/rendering-black-surfaces.md`](docs/rendering-black-surfaces.md)。
 
 `experiment` 在多个种子上施加同样的冲击，报告每个文明的应对、魔法少女的主张与结局（恢复 / 衰落 / 分裂 / 政变 / 战争 / 重归统一），以及林木保有率。示例报告见 [`docs/experiments/`](docs/experiments/)。
 
