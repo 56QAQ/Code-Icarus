@@ -172,6 +172,9 @@ growth depends on irrigation from real water nearby.
   move between stores, so the ledger holds. A caravan that cannot get there turns back;
   the cut trade road is an event caused by the latest destruction. War ends the pact;
   each day's exchanges are summed up in the chronicle; dealing slowly warms relations.
+  A hungry neighbour cannot pay, so a ruler with food to spare may instead **send aid**:
+  the same carriers take it over and ask nothing back (warm-hearted drives are drawn to
+  it; others would rather raid the full granary or let the neighbour starve).
 * **Miracles** (`sim/simulation.cpp`, `apply_admin`): besides matter (dig, place,
   meteor, fire, water) the god can bless food (items enter the ledger as
   `admin_bless`), inspire or terrify (fear, memories, a hazard people flee), heal (lost

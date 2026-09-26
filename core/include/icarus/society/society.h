@@ -100,6 +100,9 @@ public:
     // allows. Units only move between stores.
     TradeDeal exchange(u16 from, u16 to, StoreId inv, StoreId at, ItemId load, i32 count, float carry);
     void trade_road_blocked(u16 from, u16 to);
+    // Aid: food `from` can spare for a hungry `to` (kNoItem if none), and its delivery.
+    ItemId aid_food(u16 from, u16 to, i32* amount = nullptr) const;
+    void aid_delivered(u16 from, u16 to, ItemId item, i32 n, EntityId carrier, EventId cause);
     void refresh_passives(Polity& p);
     // Set once one polity holds the whole island after there had been several.
     EventId unification_event() const { return unification_; }

@@ -317,9 +317,10 @@ void Agents::generate_jobs() {
     // taking. The load leaves from our store holding most of it for the partner's store
     // nearest our seat.
     if (now_ % kTicksPerHour == 0) {
-        // A load nobody set out with for half a day is planned afresh.
+        // A load nobody set out with for half a day is planned afresh (aid waits longer).
         for (const Job& j : jobs.all())
-            if (j.alive && j.type == JobType::Trade && j.claimed_by == kNoEntity && now_ - j.created > kTicksPerDay / 2)
+            if (j.alive && j.type == JobType::Trade && j.claimed_by == kNoEntity &&
+                now_ - j.created > (j.plot == 1 ? kTicksPerDay * 2 : kTicksPerDay / 2))
                 jobs.complete(j.id);
         for (const Polity& pc : ctx_.society->polities()) {
             if (!pc.alive) continue;

@@ -305,6 +305,35 @@ TradeDeal Society::exchange(u16 from, u16 to, StoreId inv, StoreId at, ItemId lo
     return deal;
 }
 
+ItemId Society::aid_food(u16 from, u16 to, i32* amount) const {
+    const Registry& reg = *ctx_.reg;
+    const TradeBook a = trade_book(from), b = trade_book(to);
+    for (auto& [it, n] : a.spare) {
+        if (reg.item(it).nutrition <= 0) continue;
+        const i32 lack = b.want_of(it);
+        if (lack <= 0) continue;
+        if (amount) *amount = std::min({n, lack, 120});
+        return it;
+    }
+    return kNoItem;
+}
+
+void Society::aid_delivered(u16 from, u16 to, ItemId item, i32 n, EntityId carrier, EventId cause) {
+    Polity* pa = polity(from);
+    Polity* pb = polity(to);
+    if (!pa || !pb || n <= 0) return;
+    if (float& att = pb->attitude_ref(from); att < 0.8f) att = std::min(0.8f, att + 0.06f);
+    Event e;
+    e.type = EventType::Trade;
+    e.severity = 3;
+    e.actor = carrier;
+    e.polity = from;
+    e.causes[0] = cause;
+    e.text = strfmt("「%s」的援粮送抵「%s」：%s×%d", pa->name.c_str(), pb->name.c_str(), ctx_.reg->item(item).name.c_str(), n);
+    e.data.set("other", (int)to);
+    ctx_.chron->emit(std::move(e));
+}
+
 void Society::trade_road_blocked(u16 from, u16 to) {
     Polity* pa = polity(from);
     Polity* pb = polity(to);

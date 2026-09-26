@@ -958,7 +958,8 @@ bool Agents::task_work(Character& c) {
             const u16 partner = (u16)j->project;
             const Polity* home = ctx_.society->polity(c.polity);
             const Polity* other = ctx_.society->polity(partner);
-            if (!home || !other || !home->pact_with(partner) || ctx_.society->at_war(c.polity, partner)) {
+            const bool aid = j->plot == 1;
+            if (!home || !other || (!aid && !home->pact_with(partner)) || ctx_.society->at_war(c.polity, partner)) {
                 ctx_.econ->release(j->from, c.id);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
@@ -1014,17 +1015,26 @@ bool Agents::task_work(Character& c) {
                         return true;
                     }
                 }
-                say(c, "带着货物前往「" + other->name + "」");
+                say(c, (aid ? "押送援粮前往「" : "带着货物前往「") + other->name + "」");
                 Move m = move_to(c, d->pos, true);
                 if (m == Move::Failed) {
                     // The road there is cut: the caravan turns back with its load.
-                    ctx_.society->trade_road_blocked(c.polity, partner);
+                    if (!aid) ctx_.society->trade_road_blocked(c.polity, partner);
                     ctx_.jobs->complete(t.job);
                     t.job = 0;
                     t.step = 10;
                     return true;
                 }
                 if (m != Move::Arrived) return true;
+                if (aid) {
+                    const i32 given = ctx_.econ->transfer(c.inv, j->to, j->item, t.count);
+                    ctx_.society->aid_delivered(c.polity, partner, j->item, given, c.id, j->cause);
+                    say(c, strfmt("把%s×%d送到了「%s」", reg.item(j->item).name.c_str(), given, other->name.c_str()));
+                    ctx_.jobs->complete(t.job);
+                    t.job = 0;
+                    t.step = 10;
+                    return true;
+                }
                 const TradeDeal deal =
                     ctx_.society->exchange(c.polity, partner, c.inv, j->to, j->item, t.count, carry_capacity(c));
                 if (deal.out_n > 0) {

@@ -7,6 +7,7 @@
 
 #include "decision_util.h"
 #include "icarus/agents/agents.h"
+#include "icarus/agents/jobs.h"
 #include "icarus/decision/decisions.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/sim/clock.h"
@@ -19,6 +20,7 @@ using decision_util::act;
 using decision_util::make;
 
 namespace {
+constexpr float kAidHunger = 3.0f;  // a neighbour with less food than this (days) may be helped
 int residents_of(SimContext& ctx, u16 polity) {
     int n = 0;
     for (auto& cp : ctx.agents->all())
@@ -71,12 +73,16 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
     }
     // Trade: what each side could spare for the other.
     if (const TradePact* pact = p.pact_with(other.id)) {
+        i32 n_out = 0, n_in = 0;
+        const ItemId out = ctx_.society->trade_export(p.id, other.id, &n_out);
+        const ItemId in = ctx_.society->trade_export(other.id, p.id, &n_in);
         DecisionOption o = make("end_trade", "断绝与「" + other.name + "」的通商",
                                 strfmt("通商以来我方商队往来 %d 次，送出价值 %.0f，换回 %.0f。", pact->trips, pact->sent,
                                        pact->received),
                                 {{kSelfPower, 0.4f}, {kHarshness, 0.3f}, {kCooperation, -0.8f}, {kGrowth, -0.3f}, {kWelfare, -0.2f}},
                                 act("end_trade"));
         o.action.set("other", (int)other.id);
+        o.bias -= trade_gain(*ctx_.reg, p, in, out);  // what the trade still brings
         O.push_back(o);
     } else {
         const Registry& reg = *ctx_.reg;
@@ -105,6 +111,31 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         } else if (att < -0.4f) {
             o.feasible = false;
             o.why_not = "两国积怨太深，对方不会接受";
+        }
+        O.push_back(o);
+    }
+    // Aid: food we can spare for a neighbour going hungry, given without payment.
+    {
+        const Registry& reg = *ctx_.reg;
+        i32 n = 0;
+        const ItemId food = ctx_.society->aid_food(p.id, other.id, &n);
+        DecisionOption o = make("send_aid",
+                                food != kNoItem ? strfmt("援助「%s」粮食（%s×%d）", other.name.c_str(), reg.item(food).name.c_str(), n)
+                                                : "援助「" + other.name + "」粮食",
+                                strfmt("对方存粮只够 %.1f 天。由我方的人把粮食送去，不求回报。", other.stats.food_days),
+                                {{kWelfare, 0.6f}, {kCooperation, 0.8f}, {kFairness, 0.5f}, {kFrugality, -0.6f},
+                                 {kFoodSecurity, -0.2f}, {kSelfPower, -0.1f}, {kRisk, -0.1f}},
+                                act("send_aid"));
+        o.action.set("other", (int)other.id);
+        o.action.set("item", food != kNoItem ? reg.item(food).key : std::string());
+        o.action.set("n", n);
+        o.facts.set("their_food_days", other.stats.food_days);
+        if (food == kNoItem) {
+            o.feasible = false;
+            o.why_not = other.stats.food_days < kAidHunger ? "我们自己也没有富余的粮食" : "对方并不缺粮";
+        } else if (att < -0.5f) {
+            o.feasible = false;
+            o.why_not = "两国积怨太深";
         }
         O.push_back(o);
     }
@@ -419,6 +450,59 @@ bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Cha
         }
         return true;
     }
+    if (what == "send_aid") {
+        // Carriers take the food over in loads, like caravans that ask nothing back.
+        const ItemId item = ctx_.reg->find_item(a.str("item"));
+        i32 left = a.integer("n", 0);
+        if (item == kNoItem || left <= 0 || !ctx_.society->polity(other)) return true;
+        Event e;
+        e.type = EventType::Trade;
+        e.severity = 4;
+        e.actor = g.id;
+        e.polity = p.id;
+        e.causes[0] = cause;
+        e.text = strfmt("「%s」向「%s」送出援粮：%s×%d", p.name.c_str(), ctx_.society->polity(other)->name.c_str(),
+                        ctx_.reg->item(item).name.c_str(), left);
+        e.data.set("other", (int)other);
+        const EventId ev = ctx_.chron->emit(std::move(e));
+        StoreId dst = kNoStore;
+        const Building* seat = ctx_.buildings->get(p.seat);
+        float bd = 1e30f;
+        for (StoreId sid : ctx_.society->public_stores(other))
+            if (const Store* s = ctx_.econ->store(sid)) {
+                const float d = seat ? (float)s->pos.dist2(seat->entrance) : 0.0f;
+                if (d < bd) {
+                    bd = d;
+                    dst = sid;
+                }
+            }
+        if (!dst) return true;
+        const i32 load = std::max(1, (i32)std::floor(ctx_.agents->tune.carry_capacity / std::max(0.05f, ctx_.reg->item(item).weight)));
+        for (StoreId sid : ctx_.society->public_stores(p.id)) {
+            const Store* src = ctx_.econ->store(sid);
+            i32 here = src ? std::min(left, ctx_.econ->available(sid, item)) : 0;
+            while (here > 0) {
+                Job j;
+                j.type = JobType::Trade;
+                j.polity = p.id;
+                j.pos = src->pos;
+                j.from = sid;
+                j.to = dst;
+                j.item = item;
+                j.count = std::min(here, load);
+                j.project = other;
+                j.plot = 1;  // aid
+                j.priority = 1.2f;
+                j.created = now_;
+                j.cause = ev;
+                ctx_.jobs->add(j);
+                here -= j.count;
+                left -= j.count;
+            }
+            if (left <= 0) break;
+        }
+        return true;
+    }
     if (what == "trade_accept") {
         ctx_.society->open_trade(other, p.id, g.id, cause);
         return true;
@@ -467,7 +551,9 @@ void Decisions::consider_foreign(Polity& p, Character& ruler) {
         }
         // A newly founded polity is left alone for a day or so.
         const bool settled = now_ > p.founded + kTicksPerDay && now_ > other.founded + kTicksPerDay;
-        const bool prospect = !w && !p.pact_with(other.id) && att > -0.4f && ctx_.society->trade_prospect(p.id, other.id);
+        const bool prospect = !w && att > -0.5f &&
+                              ((!p.pact_with(other.id) && ctx_.society->trade_prospect(p.id, other.id)) ||
+                               (other.stats.food_days < kAidHunger && ctx_.society->aid_food(p.id, other.id) != kNoItem));
         if (!w && settled && (att < 0.1f || prospect) && now_ > kTicksPerDay / 2) {
             Decision d;
             d.girl = ruler.id;

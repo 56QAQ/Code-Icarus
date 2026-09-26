@@ -129,7 +129,8 @@ TEST("trade: caravans carry goods both ways, nothing is created, and war ends th
         loaded.run(kTicksPerHour * 3);
         CHECK_EQ(loaded.state_hash(), sim.state_hash());
     }
-    // War cuts the trade.
+    // War cuts the trade. (A ruler may have cut it already of her own accord.)
+    if (!sim.society().polity(1)->pact_with(nid)) REQUIRE(sim.society().open_trade(1, nid, 0, 0) != 0);
     const EventId war = sim.society().declare_war(nid, 1, "raid", sim.society().polity(nid)->ruler, 0);
     REQUIRE(war != 0);
     CHECK(sim.society().polity(1)->pact_with(nid) == nullptr);
@@ -246,4 +247,53 @@ TEST("trade: an accepted offer opens the pact, traced to the decisions") {
     REQUIRE(e != nullptr);
     CHECK(e->type == EventType::Trade);
     CHECK(e->causes[0] == sim.decisions().get(accepted)->decision_event);
+}
+
+TEST("aid: food to spare goes to a starving neighbour, carried over and asked nothing for") {
+    Simulation sim(test_registry());
+    sim.new_game(village(6));
+    sim.run(kTicksPerHour);
+    const u16 nid = make_neighbour(sim, 18);
+    REQUIRE(nid != 0);
+    const Registry& reg = sim.reg();
+    const ItemId grain = reg.find_item("grain");
+    sim.economy().add(store_of(sim, 1), grain, 400, "admin_bless");
+    sim.society().polity(1)->attitude_ref(nid) = 0.3f;
+    sim.society().polity(nid)->attitude_ref(1) = 0.3f;
+    sim.decisions().mode = "remote";
+    std::string err;
+    u32 chosen = 0;
+    for (int h = 0; h < 24 * 4 && !chosen; ++h) {
+        sim.run(kTicksPerHour);
+        for (u32 id : sim.decisions().awaiting_remote()) {
+            const Decision* d = sim.decisions().get(id);
+            if (d->kind != "diplomacy" || d->polity != 1) continue;
+            for (const DecisionOption& o : d->options)
+                if (o.key == "send_aid" && o.feasible) {
+                    REQUIRE(sim.decisions().submit(id, o.key, "邻人挨饿", "remote", err));
+                    chosen = id;
+                    break;
+                }
+            if (chosen) break;
+        }
+    }
+    REQUIRE(chosen != 0);
+    sim.decisions().mode = "local";
+    const float att0 = sim.society().polity(nid)->attitude_to(1);
+    int delivered = 0;
+    for (int h = 0; h < 36 && delivered == 0; ++h) {
+        sim.run(kTicksPerHour);
+        for (const Event& e : sim.chronicle().events())
+            if (e.type == EventType::Trade && e.text.find("援粮送抵") != std::string::npos) ++delivered;
+    }
+    CHECK(delivered > 0);
+    CHECK(sim.society().polity(nid)->attitude_to(1) > att0);
+    // The gift is traced to the ruler's decision, and nothing came back.
+    const Decision* d = sim.decisions().get(chosen);
+    bool traced = false;
+    for (const Event& e : sim.chronicle().events())
+        if (e.type == EventType::Trade && e.causes[0] == d->decision_event) traced = true;
+    CHECK(traced);
+    CHECK(sim.society().polity(1)->pact_with(nid) == nullptr);
+    check_ledger(sim);
 }
