@@ -34,6 +34,7 @@ const char* memory_kind_zh(MemoryKind k) {
         case MemoryKind::Healed: return "被治愈";
         case MemoryKind::Blessed: return "受到神恩";
         case MemoryKind::Cursed: return "遭受天罚";
+        case MemoryKind::Migrated: return "投奔他乡";
         default: return "";
     }
 }
@@ -54,7 +55,7 @@ const char* task_name_zh(TaskType t) {
         case TaskType::Govern: return "处理政务";
         case TaskType::Cast: return "施放魔法";
         case TaskType::Fight: return "战斗";
-        case TaskType::Leave: return "出走";
+        case TaskType::Leave: return "投奔他国";
         case TaskType::Escape: return "设法脱困";
         default: return "无";
     }

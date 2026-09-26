@@ -33,6 +33,14 @@ int armed_stock(SimContext& ctx, u16 polity) {
                 if (ctx.reg->item(st.item).has_tag("weapon")) n += st.count;
     return n;
 }
+// How tired of this war a polity is: its length, the dead, and hunger at home.
+float war_weariness(const Polity& p, const War& w, Tick now) {
+    const float days = (float)(now - w.since) / (float)kTicksPerDay;
+    bool hungry = false;
+    for (const Crisis& c : p.crises)
+        if (c.active && c.kind == CrisisKind::Food) hungry = true;
+    return std::min(0.6f, 0.08f * days) + std::min(0.5f, 0.08f * (float)w.losses) + (hungry ? 0.3f : 0.0f);
+}
 }  // namespace
 
 void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
@@ -99,26 +107,69 @@ void Decisions::build_war_options(Decision& d, Polity& p, War& w) {
     const std::string en = enemy ? enemy->name : "?";
     d.petition = Json::object();
     d.petition.set("other", (int)w.enemy);
-    O.push_back(make("press_on", "继续作战", strfmt("战况：杀敌 %d，阵亡 %d。", w.kills, w.losses),
-                     {{kMilitary, 0.6f}, {kSelfPower, 0.4f}, {kRisk, 0.3f}}, act("wait")));
-    {
+    const int ours = residents_of(ctx_, p.id), theirs = enemy ? residents_of(ctx_, enemy->id) : 0;
+    const int fit = ctx_.society->soldiers(p.id) + ctx_.society->draftable(p.id);
+    const float days = (float)(now_ - w.since) / (float)kTicksPerDay;
+    const float weary = war_weariness(p, w, now_);
+    const std::string tally = strfmt("开战 %.1f 天，杀敌 %d，阵亡 %d。", days, w.kills, w.losses);
+    if (p.op.active) {
+        O.push_back(make("press_on", "继续作战", "军队正在出征。" + tally, {{kMilitary, 0.6f}, {kSelfPower, 0.4f}, {kRisk, 0.3f}},
+                         act("wait")));
         DecisionOption o = make("reinforce", "增派兵力（再征召 3 人）", "更多人离开田地与工坊奔赴战场。",
                                 {{kMilitary, 0.8f}, {kRisk, 0.4f}, {kFoodSecurity, -0.3f}, {kWelfare, -0.3f}}, act("reinforce"));
         o.action.set("n", 3);
+        if (fit <= ctx_.society->soldiers(p.id)) {
+            o.feasible = false;
+            o.why_not = "已没有能再征召的人";
+        }
         O.push_back(o);
+        O.push_back(make("withdraw", "撤回军队", "结束这次出征，士兵回家。",
+                         {{kWelfare, 0.3f}, {kRisk, -0.4f}, {kMilitary, -0.4f}, {kSelfPower, -0.2f}}, act("withdraw")));
+    } else {
+        // No army in the field: holding the war without fighting costs nothing today but
+        // settles nothing either.
+        O.push_back(make("hold", "按兵不动，维持战争状态", "不出兵也不议和。" + tally,
+                         {{kMilitary, 0.2f}, {kSelfPower, 0.3f}, {kFrugality, 0.3f}, {kRisk, -0.2f}, {kCooperation, -0.3f}},
+                         act("wait")));
+        const int raiders = std::max(3, ours / 4);
+        DecisionOption r = make("raid_again", strfmt("出兵劫掠「%s」（出动 %d 人）", en.c_str(), raiders),
+                                "夺取对方仓库里的粮食，士兵会离开田地。",
+                                {{kFoodSecurity, 0.4f}, {kMilitary, 0.7f}, {kSelfPower, 0.3f}, {kRisk, 0.5f}, {kHarshness, 0.4f},
+                                 {kWelfare, -0.2f}, {kFairness, -0.4f}},
+                                act("launch"));
+        r.action.set("aim", "raid");
+        r.action.set("soldiers", raiders);
+        r.facts.set("fit_to_fight", fit);
+        if (fit < 3) {
+            r.feasible = false;
+            r.why_not = "能上阵的人太少";
+        }
+        O.push_back(r);
+        const int army = std::max(4, ours / 3);
+        DecisionOption c = make("assault", strfmt("进攻「%s」的议事厅（出动 %d 人）", en.c_str(), army),
+                                strfmt("攻下议事厅便能结束这场战争。对方居民 %d 人，我方 %d 人。", theirs, ours),
+                                {{kSelfPower, 0.9f}, {kMilitary, 0.9f}, {kRisk, 0.8f}, {kGrowth, 0.4f}, {kHarshness, 0.5f},
+                                 {kWelfare, -0.4f}},
+                                act("launch"));
+        c.action.set("aim", "conquest");
+        c.action.set("soldiers", army);
+        if (fit < 4) {
+            c.feasible = false;
+            c.why_not = "能上阵的人太少";
+        } else if (ours * 10 < theirs * 12) {
+            c.feasible = false;
+            c.why_not = "兵力不足以攻下对方";
+        }
+        O.push_back(c);
     }
-    {
-        DecisionOption o = make("offer_peace", "向「" + en + "」提出议和", "由对方的统治者决定是否接受。",
-                                {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kSelfPower, -0.3f}, {kMilitary, -0.5f}},
-                                act("offer_peace"));
-        o.action.set("other", (int)w.enemy);
-        O.push_back(o);
-    }
-    if (w.attacker && p.op.active) {
-        DecisionOption o = make("withdraw", "撤回军队", "结束这次出征，士兵回家。",
-                                {{kWelfare, 0.3f}, {kRisk, -0.4f}, {kMilitary, -0.4f}, {kSelfPower, -0.2f}}, act("withdraw"));
-        O.push_back(o);
-    }
+    DecisionOption o = make("offer_peace", "向「" + en + "」提出议和", "由对方的统治者决定是否接受。" + tally,
+                            {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kSelfPower, -0.3f}, {kMilitary, -0.5f}},
+                            act("offer_peace"));
+    o.action.set("other", (int)w.enemy);
+    o.bias += weary;  // war-weariness
+    o.facts.set("war_days", days);
+    o.facts.set("losses", w.losses);
+    O.push_back(o);
 }
 
 void Decisions::build_defense_options(Decision& d, Polity& p, const Crisis& c) {
@@ -173,7 +224,6 @@ void Decisions::build_defense_options(Decision& d, Polity& p, const Crisis& c) {
 }
 
 void Decisions::build_peace_options(Decision& d, Polity& p, u16 from) {
-    (void)p;
     auto& O = d.options;
     Polity* other = ctx_.society->polity(from);
     const std::string on = other ? other->name : "?";
@@ -182,6 +232,11 @@ void Decisions::build_peace_options(Decision& d, Polity& p, u16 from) {
     DecisionOption a = make("accept_peace", "接受「" + on + "」的议和", "停战，士兵回家。",
                             {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kMilitary, -0.4f}}, act("peace_accept"));
     a.action.set("other", (int)from);
+    if (const War* w = p.war_with(from)) {
+        a.bias += war_weariness(p, *w, now_);
+        a.facts.set("war_days", (float)(now_ - w->since) / (float)kTicksPerDay);
+        a.facts.set("losses", w->losses);
+    }
     O.push_back(a);
     DecisionOption r = make("refuse_peace", "拒绝议和", "战争继续。",
                             {{kMilitary, 0.6f}, {kSelfPower, 0.5f}, {kRisk, 0.4f}, {kCooperation, -0.6f}}, act("wait"));
@@ -211,6 +266,13 @@ bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Cha
         e.causes[0] = cause;
         e.text = strfmt("「%s」遣使前往「%s」修好", p.name.c_str(), op ? op->name.c_str() : "?");
         ctx_.chron->emit(std::move(e));
+        return true;
+    }
+    if (what == "launch") {
+        if (!ctx_.society->at_war(p.id, other) || p.op.active) return true;
+        ctx_.society->draft(p.id, a.integer("soldiers", 4), cause);
+        ctx_.society->start_operation(p.id, other, a.str("aim", "raid"), cause);
+        if (Polity* pp = ctx_.society->polity(p.id)) pp->op.party = ctx_.society->soldiers(p.id);
         return true;
     }
     if (what == "reinforce") {
@@ -281,7 +343,10 @@ void Decisions::consider_foreign(Polity& p, Character& ruler) {
         }
         if (recent) continue;
         War* w = p.war_with(other.id);
-        if (w && w->attacker) {
+        // Both sides decide how to carry on a war; the attacked leave it to their
+        // defence while the enemy's army is actually upon them.
+        const bool under_attack = other.op.active && other.op.enemy == p.id;
+        if (w && (w->attacker || !under_attack)) {
             Decision d;
             d.girl = ruler.id;
             d.polity = p.id;

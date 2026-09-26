@@ -88,3 +88,126 @@ TEST("outcomes: one polity holding the island after several ends the round, once
     loaded.load(bytes);
     CHECK_EQ(loaded.society().unification_event(), u);
 }
+
+TEST("war: after an operation ends, rulers can launch new ones; launching drafts and marches") {
+    Simulation sim(test_registry());
+    sim.new_game(village(4));
+    sim.run(kTicksPerHour);
+    // A rival polity led by one of the girls, holding half the residents.
+    Polity* home = sim.society().polity(1);
+    REQUIRE(home != nullptr);
+    Character* rival = nullptr;
+    for (auto& cp : sim.agents().all())
+        if (cp && cp->is_girl() && cp->id != home->ruler) rival = cp.get();
+    REQUIRE(rival != nullptr);
+    const u16 nid = sim.society().create_polity("对岸", 0x7799CC, 1);
+    rival->polity = nid;
+    sim.society().set_ruler(nid, rival->id, "secession", 0);
+    int n = 0;
+    for (auto& cp : sim.agents().all())
+        if (cp && !cp->is_girl() && (n++ % 2 == 1)) cp->polity = nid;
+    const EventId war = sim.society().declare_war(1, nid, "raid", home->ruler, 0);
+    REQUIRE(war != 0);
+    sim.society().draft(1, 3, war);
+    CHECK(sim.society().soldiers(1) >= 3);
+    // Run until the first operation is over.
+    for (int h = 0; h < 48 && sim.society().polity(1) && sim.society().polity(1)->op.active; ++h) sim.run(kTicksPerHour);
+    REQUIRE(sim.society().polity(1) != nullptr);
+    CHECK(!sim.society().polity(1)->op.active);
+    // The next war decision offers to fight on, not only to wait.
+    const Decision* next = nullptr;
+    for (int h = 0; h < 30 && !next; ++h) {
+        sim.run(kTicksPerHour);
+        for (const Decision& d : sim.decisions().all())
+            if (d.id && d.kind == "war" && d.polity == 1 && d.created > sim.now() - kTicksPerHour * 2) next = &d;
+    }
+    REQUIRE(next != nullptr);
+    bool raid = false, hold = false, peace = false;
+    for (const DecisionOption& o : next->options) {
+        raid |= o.key == "raid_again";
+        hold |= o.key == "hold";
+        peace |= o.key == "offer_peace";
+    }
+    CHECK(raid);
+    CHECK(hold);
+    CHECK(peace);
+    // Launching drafts soldiers and starts an operation.
+    if (sim.society().polity(1) && !sim.society().polity(1)->op.active && sim.society().at_war(1, nid)) {
+        sim.society().draft(1, 3, 0);
+        sim.society().start_operation(1, nid, "raid", 0);
+        CHECK(sim.society().polity(1)->op.active);
+        CHECK(sim.society().soldiers(1) >= 3);
+    }
+}
+
+TEST("migration: hungry, resentful residents walk over to a neighbour that feeds its people") {
+    const Registry& reg = test_registry();
+    Simulation sim(reg);
+    sim.new_game(village(5));
+    sim.run(kTicksPerHour);
+    Polity* home = sim.society().polity(1);
+    REQUIRE(home != nullptr);
+    Character* rival = nullptr;
+    for (auto& cp : sim.agents().all())
+        if (cp && cp->is_girl() && cp->id != home->ruler) rival = cp.get();
+    REQUIRE(rival != nullptr);
+    const u16 nid = sim.society().create_polity("丰饶", 0x88AA66, 1);
+    rival->polity = nid;
+    sim.society().set_ruler(nid, rival->id, "secession", 0);
+    // The rival's seat: the old hall serves both for this test.
+    sim.society().polity(nid)->seat = home->seat;
+    int n = 0;
+    for (auto& cp : sim.agents().all())
+        if (cp && !cp->is_girl() && (n++ % 3 == 0)) cp->polity = nid;
+    // At home: hungry and resentful of the ruler.
+    for (auto& cp : sim.agents().all())
+        if (cp && !cp->is_girl() && cp->polity == 1) {
+            cp->needs.food = 0.15f;
+            cp->support_ref(home->ruler) = -0.6f;
+            cp->support_ref(rival->id) = 0.4f;
+        }
+    const int before = sim.agents().count_alive(1);
+    int moved = 0;
+    for (int h = 0; h < 24 && moved == 0; ++h) {
+        sim.run(kTicksPerHour);
+        moved = 0;
+        for (const Event& e : sim.chronicle().events())
+            if (e.type == EventType::Migration) ++moved;
+    }
+    CHECK(moved > 0);
+    CHECK(sim.agents().count_alive(1) < before);
+    for (const Event& e : sim.chronicle().events())
+        if (e.type == EventType::Migration) {
+            const Character* m = sim.agents().get(e.actor);
+            REQUIRE(m != nullptr);
+            CHECK_EQ(m->polity, nid);
+            bool remembers = false;
+            for (const Memory& mem : m->memories) remembers |= mem.kind == MemoryKind::Migrated;
+            CHECK(remembers);
+        }
+    // Nothing is created or lost by moving.
+    for (size_t i = 0; i < reg.item_count(); ++i) {
+        const LedgerLine& l = sim.economy().ledger((ItemId)i);
+        CHECK_EQ(sim.economy().total((ItemId)i), l.produced - l.consumed);
+    }
+}
+
+TEST("migration: contented residents stay") {
+    Simulation sim(test_registry());
+    sim.new_game(village(5));
+    sim.run(kTicksPerHour);
+    Polity* home = sim.society().polity(1);
+    Character* rival = nullptr;
+    for (auto& cp : sim.agents().all())
+        if (cp && cp->is_girl() && cp->id != home->ruler) rival = cp.get();
+    REQUIRE(rival != nullptr);
+    const u16 nid = sim.society().create_polity("邻邦", 0x88AA66, 1);
+    rival->polity = nid;
+    sim.society().set_ruler(nid, rival->id, "secession", 0);
+    sim.society().polity(nid)->seat = home->seat;
+    sim.run(kTicksPerDay);
+    int moved = 0;
+    for (const Event& e : sim.chronicle().events())
+        if (e.type == EventType::Migration) ++moved;
+    CHECK_EQ(moved, 0);
+}

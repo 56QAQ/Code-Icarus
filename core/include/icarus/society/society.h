@@ -52,6 +52,8 @@ public:
     // War and peace.
     EventId declare_war(u16 attacker, u16 defender, const std::string& aim, EntityId by, EventId cause);
     EventId make_peace(u16 a, u16 b, const std::string& how, EventId cause);
+    // A new undertaking of the army (raid / conquest) against an enemy already at war.
+    void start_operation(u16 polity, u16 enemy, const std::string& aim, EventId cause);
     bool at_war(u16 a, u16 b) const;
     // Drafts up to n residents (strongest, most combative first); returns how many serve.
     int draft(u16 polity, int n, EventId cause);

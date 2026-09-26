@@ -611,7 +611,8 @@ Dictionary IcarusSim::character_info(int64_t id) const {
     d["skills"] = skills;
     d["drafted"] = c.drafted;
     Array equip;
-    const std::pair<const char*, icarus::ItemId> slots[] = {{"工具", c.tool}, {"武器", c.weapon}, {"护甲", c.armor}};
+    const std::pair<const char*, icarus::ItemId> slots[] = {
+        {"工具", c.tool}, {"武器", c.weapon}, {"护甲", c.armor}, {"推车", c.cart}};
     for (const auto& [slot, item] : slots) {
         if (item == icarus::kNoItem) continue;
         Dictionary t;
@@ -620,6 +621,8 @@ Dictionary IcarusSim::character_info(int64_t id) const {
         equip.push_back(t);
     }
     d["equipment"] = equip;
+    if (c.treated_until > sim_->now())
+        d["treated_hours"] = (double)(c.treated_until - sim_->now()) / (double)icarus::kTicksPerHour;
     Array trace;
     for (const auto& o : c.trace) {
         Dictionary t;

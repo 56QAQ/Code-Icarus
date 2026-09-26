@@ -102,6 +102,17 @@
       ]
     },
     {
+      "key": "herbalist", "name": "药庐", "category": "medicine", "workstation": "medicine", "tech": "herbalism",
+      "description": "晾晒草药、为伤者包扎的小屋。伤者在这里治疗痊愈得更快。",
+      "layers": [
+        ["LLLLL", "L...L", "L...L", "LLDLL"],
+        ["LPPPL", "P...P", "P...P", "LPDPL"],
+        ["LLLLL", "L...L", "L...L", "LLLLL"],
+        ["TTTTT", "TTTTT", "TTTTT", "TTTTT"],
+        [".....", ".TTT.", ".TTT.", "....."]
+      ]
+    },
+    {
       "key": "watchtower", "name": "瞭望塔", "category": "defense", "tech": "fortification",
       "description": "警戒与防御。",
       "layers": [

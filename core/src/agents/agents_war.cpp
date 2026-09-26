@@ -128,7 +128,7 @@ bool Agents::task_fight(Character& c) {
                 for (const ItemStack& st : items) {
                     if (ctx_.reg->item(st.item).nutrition <= 0) continue;
                     float unit = std::max(0.1f, ctx_.reg->item(st.item).weight);
-                    i32 room = (i32)std::floor((tune.carry_capacity + 4.0f - carried_weight(c)) / unit);
+                    i32 room = (i32)std::floor((carry_capacity(c) + 4.0f - carried_weight(c)) / unit);
                     if (room > 0) ctx_.econ->transfer(sid, c.inv, st.item, std::min(room, st.count));
                 }
             }

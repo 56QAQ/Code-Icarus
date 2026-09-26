@@ -161,6 +161,29 @@ void Agents::think(Character& c) {
         if (grievance > 0.18f + calm) add("抗议", grievance * 1.6f, strfmt("对统治者不满（支持度 %.2f），心情 %s", s, pct(c.mood)));
     }
 
+    // Wounds: with herbalism known and herbs in store, the injured get them dressed.
+    if (const float tn = treatment_need(c); tn > 0.0f) {
+        const ItemId herbs = ctx_.reg->find_item("herbs");
+        bool have = false;
+        if (const Store* inv = ctx_.econ->store(c.inv)) have = inv->count(herbs) > 0;
+        for (StoreId sid : ctx_.society->public_stores(c.polity))
+            if (!have && ctx_.econ->available(sid, herbs, c.id) > 0) have = true;
+        if (have) add("疗伤", 0.35f + tn * 1.2f, strfmt("伤势 %s，仓库里有草药", pct(std::min(1.0f, tn))));
+    }
+
+    // Going over to a neighbour that treats its people better.
+    const Polity* migrate_to = nullptr;
+    if (p && ctx_.society->polities().size() > 2) {
+        std::string why;
+        const float m = migration_pull(c, *p, migrate_to, why);
+        if (migrate_to && m > 0.3f && !blacklisted(c, ctx_.buildings->get(migrate_to->seat)
+                                                          ? ctx_.buildings->get(migrate_to->seat)->entrance
+                                                          : c.foot))
+            add("投奔他国", m * 1.6f, why);
+        else
+            migrate_to = nullptr;
+    }
+
     // Desperate theft when public food is withheld.
     if (hunger > 0.6f && !carrying_food && !food_known && p && ctx_.society->public_food(c.polity) > 1.0f) {
         float steal = hunger * hunger * (0.4f + c.pers.aggression - 0.6f * c.pers.conformity - 0.5f * pol.punishment);
@@ -219,6 +242,8 @@ void Agents::think(Character& c) {
             case TaskType::Cast: return "施法";
             case TaskType::Escape: return "设法脱困";
             case TaskType::Fight: return "从军";
+            case TaskType::Leave: return "投奔他国";
+            case TaskType::Heal: return "疗伤";
             default: return "";
         }
     };
@@ -246,6 +271,11 @@ void Agents::think(Character& c) {
     else if (best.label == "偷取食物") start_task(c, TaskType::Steal, best.score, best.why);
     else if (best.label == "设法脱困") start_task(c, TaskType::Escape, best.score, best.why);
     else if (best.label == "从军") start_task(c, TaskType::Fight, best.score, best.why);
+    else if (best.label == "疗伤") start_task(c, TaskType::Heal, best.score, best.why);
+    else if (best.label == "投奔他国" && migrate_to) {
+        start_task(c, TaskType::Leave, best.score, best.why);
+        c.task.count = migrate_to->id;
+    }
     else if (best.label == "施法") {
         start_task(c, TaskType::Cast, best.score, best.why);
         c.task.count = spell.effect;

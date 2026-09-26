@@ -481,6 +481,38 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         }
         O.push_back(o);
     }
+    // Buildings a known technology allows but the polity does not have yet.
+    {
+        int offered = 0;
+        for (const Json& bd : ctx_.reg->doc("buildings")["buildings"].items()) {
+            if (offered >= 2 || !bd.has("tech") || !p.has_tech(bd.str("tech"))) continue;
+            const std::string key = bd.str("key");
+            bool have = false;
+            for (const Building& b : ctx_.buildings->all())
+                if (b.alive && b.polity == p.id && b.def == key) have = true;
+            if (have) continue;
+            const std::string cat = bd.str("category");
+            std::vector<std::pair<int, float>> vals = {{kGrowth, 0.5f}, {kFrugality, -0.3f}};
+            if (cat == "production") vals = {{kGrowth, 0.8f}, {kSpeed, 0.2f}, {kFrugality, -0.3f}};
+            else if (cat == "research") vals = {{kGrowth, 0.9f}, {kOrder, 0.2f}, {kFrugality, -0.4f}};
+            else if (cat == "storage") vals = {{kFoodSecurity, 0.7f}, {kFrugality, 0.2f}, {kGrowth, 0.3f}};
+            else if (cat == "defense") vals = {{kMilitary, 0.8f}, {kOrder, 0.3f}, {kFrugality, -0.3f}};
+            else if (cat == "medicine") vals = {{kWelfare, 0.9f}, {kGrowth, 0.2f}, {kFrugality, -0.2f}};
+            else if (cat == "housing") vals = {{kWelfare, 0.5f}, {kGrowth, 0.5f}, {kFrugality, -0.4f}};
+            DecisionOption o = make("build_" + key, "兴建" + bd.str("name"), bd.str("description"), {}, act("build"));
+            for (const auto& [f, v] : vals) o.f[f] = v;
+            o.action.set("def", key);
+            if (const Building* seat = ctx_.buildings->get(p.seat)) {
+                Json near = Json::array();
+                near.push(seat->entrance.x);
+                near.push(seat->entrance.y);
+                near.push(seat->entrance.z);
+                o.action.set("near", near);
+            }
+            O.push_back(o);
+            ++offered;
+        }
+    }
     if (polity_farm(ctx_, p.id)) {
         DecisionOption o = make("expand_farms", "扩建田地", "为将来储备粮食；每块新田要一份谷种。",
                                 {{kFoodSecurity, 0.5f}, {kGrowth, 0.7f}, {kFrugality, -0.2f}, {kSpeed, -0.4f}}, act("expand_farm"));

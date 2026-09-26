@@ -33,6 +33,8 @@ void Agents::run_task(Character& c) {
         case TaskType::Cast: ok = task_cast(c); break;
         case TaskType::Escape: ok = task_escape(c); break;
         case TaskType::Fight: ok = task_fight(c); break;
+        case TaskType::Leave: ok = task_leave(c); break;
+        case TaskType::Heal: ok = task_treat(c); break;
         case TaskType::Wander:
         case TaskType::Idle: ok = task_wander(c); break;
         default: break;
@@ -282,11 +284,11 @@ bool Agents::task_eat(Character& c) {
         }
         // Hands full of cargo (e.g. building materials for an unreachable site)? Put it
         // into this store, or set it down here, before taking food.
-        if (carried_weight(c) > tune.carry_capacity - 2.0f) {
+        if (carried_weight(c) > carry_capacity(c) - 2.0f) {
             StoreId here = t.store;
             const Store* hs = ctx_.econ->store(here);
             if (hs && hs->kind == StoreKind::Stockpile) deposit_all(c, here);
-            if (carried_weight(c) > tune.carry_capacity - 2.0f) ctx_.econ->drop(c.inv, c.foot);
+            if (carried_weight(c) > carry_capacity(c) - 2.0f) ctx_.econ->drop(c.inv, c.foot);
             s = ctx_.econ->store(t.store);
             if (!s) {
                 end_task(c, false);
@@ -844,7 +846,9 @@ bool Agents::task_work(Character& c) {
                     case JobType::Forage:
                         if (w.mat(j->pos) == reg.m().berry_bush) {
                             w.set(j->pos, make_voxel(0), j->cause);
-                            ctx_.econ->add(c.inv, reg.find_item("berries"), 3, "forage");
+                            // Herb gatherers look for the medicinal plants among the bushes.
+                            if (j->item != kNoItem) ctx_.econ->add(c.inv, j->item, 3, "forage");
+                            else ctx_.econ->add(c.inv, reg.find_item("berries"), 3, "forage");
                             carrying = true;
                         }
                         break;
@@ -876,7 +880,7 @@ bool Agents::task_work(Character& c) {
                         if (leaves >= 6) ctx_.econ->add(c.inv, reg.find_item("fiber"), leaves / 6, "chop");
                         // Too heavy to carry: the rest waits in a pile at the stump.
                         const Store* inv = ctx_.econ->store(c.inv);
-                        if (inv && ctx_.econ->weight(*inv) > tune.carry_capacity) {
+                        if (inv && ctx_.econ->weight(*inv) > carry_capacity(c)) {
                             StoreId pile = ctx_.econ->pile_at(c.foot);
                             ctx_.econ->transfer(c.inv, pile, wood, logs / 2);
                         }
@@ -909,7 +913,7 @@ bool Agents::task_work(Character& c) {
                 // Chain to the next similar job nearby instead of walking back first.
                 bool can_chain = false;
                 if (done_type == JobType::Sow) can_chain = ctx_.econ->store(c.inv)->count(reg.find_item("grain")) > 0;
-                else if (done_type == JobType::Harvest) can_chain = carried_weight(c) < tune.carry_capacity - 2.0f;
+                else if (done_type == JobType::Harvest) can_chain = carried_weight(c) < carry_capacity(c) - 2.0f;
                 else if (done_type == JobType::Till) can_chain = true;
                 if (can_chain && is_work_time(c) && c.needs.food > 0.25f && c.needs.water > 0.25f) {
                     u32 next = 0;
@@ -960,7 +964,7 @@ bool Agents::task_work(Character& c) {
                 if (m == Move::Failed) return fail("到不了货源");
                 if (m != Move::Arrived) return true;
                 float unit = std::max(0.01f, reg.item(j->item).weight);
-                i32 cap = (i32)std::floor((tune.carry_capacity - carried_weight(c)) / unit);
+                i32 cap = (i32)std::floor((carry_capacity(c) - carried_weight(c)) / unit);
                 i32 k = ctx_.econ->transfer(j->from, c.inv, j->item, std::min(j->count, cap));
                 ctx_.econ->release(j->from, c.id);
                 if (k <= 0) return fail("货已经被拿走了");

@@ -51,13 +51,21 @@ EventId Society::declare_war(u16 attacker, u16 defender, const std::string& aim,
     d->wars.push_back(wd);
     a->attitude_ref(defender) = std::min(a->attitude_to(defender), -0.6f);
     d->attitude_ref(attacker) = std::min(d->attitude_to(attacker), -0.8f);
-    // The attackers march on the enemy seat (a raid aims at its storehouse).
+    start_operation(attacker, defender, aim, ev);
+    return ev;
+}
+
+void Society::start_operation(u16 id, u16 enemy, const std::string& aim, EventId cause) {
+    Polity* a = polity(id);
+    Polity* d = polity(enemy);
+    if (!a || !d) return;
+    // The army marches on the enemy seat; a raid aims at its nearest stockpile.
     const Building* home = ctx_.buildings->get(a->seat);
     const Building* target = ctx_.buildings->get(d->seat);
     Vec3i objective = target ? target->entrance : Vec3i{};
     if (aim == "raid") {
         float bd = 1e30f;
-        for (StoreId sid : public_stores(defender)) {
+        for (StoreId sid : public_stores(enemy)) {
             const Store* s = ctx_.econ->store(sid);
             if (!s || s->kind != StoreKind::Stockpile) continue;
             float dd = home ? (float)s->pos.dist2(home->entrance) : 0.0f;
@@ -69,14 +77,13 @@ EventId Society::declare_war(u16 attacker, u16 defender, const std::string& aim,
     }
     a->op = Operation{};
     a->op.active = true;
-    a->op.enemy = defender;
+    a->op.enemy = enemy;
     a->op.aim = aim;
     a->op.rally = home ? home->entrance : objective;
     a->op.objective = objective;
     a->op.phase = 0;
     a->op.since = ctx_.now;
-    a->op.event = ev;
-    return ev;
+    a->op.event = cause;
 }
 
 EventId Society::make_peace(u16 a, u16 b, const std::string& how, EventId cause) {
@@ -210,6 +217,21 @@ void Society::update_wars(Polity& p) {
         }
     }
     p.wars.erase(std::remove_if(p.wars.begin(), p.wars.end(), [](const War& w) { return w.enemy == 0; }), p.wars.end());
+    // War-weariness at home: after the first day the peaceable tire of the war and of
+    // the ruler who keeps it going, faster when there is hunger.
+    Tick oldest = ctx_.now;
+    for (const War& w : p.wars) oldest = std::min(oldest, w.since);
+    if (!p.wars.empty() && ctx_.now - oldest > kTicksPerDay) {
+        bool hungry = false;
+        for (const Crisis& c : p.crises)
+            if (c.active && c.kind == CrisisKind::Food) hungry = true;
+        for (const auto& cp : ctx_.agents->all()) {
+            Character* c = cp.get();
+            if (!c || !c->alive || c->departed || c->is_girl() || c->polity != p.id) continue;
+            const float drop = 0.0015f * (1.0f - c->pers.aggression) * (hungry ? 2.0f : 1.0f);
+            c->support_ref(p.ruler) = clampv(c->support_for(p.ruler) - drop, -1.0f, 1.0f);
+        }
+    }
     if (!op.active) return;
     if (!polity(op.enemy) || !p.war_with(op.enemy)) {
         op.active = false;

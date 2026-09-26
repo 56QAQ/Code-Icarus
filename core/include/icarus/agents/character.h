@@ -54,7 +54,7 @@ struct Support {
 
 enum class MemoryKind : u8 {
     None = 0, AteWell, Hungry, Thirsty, Injured, SawDeath, FriendDied, Punished, Rewarded, Helped, Saved,
-    Disaster, HomeLost, Rationed, Feast, Protested, Insulted, LostJob, Healed, Blessed, Cursed
+    Disaster, HomeLost, Rationed, Feast, Protested, Insulted, LostJob, Healed, Blessed, Cursed, Migrated
 };
 const char* memory_kind_zh(MemoryKind k);
 
@@ -153,7 +153,9 @@ struct Character {
     std::vector<Memory> memories;
 
     StoreId inv = kNoStore;     // carried items
-    ItemId tool = kNoItem, weapon = kNoItem, armor = kNoItem;
+    ItemId tool = kNoItem, weapon = kNoItem, armor = kNoItem, cart = kNoItem;
+    Tick treated_until = 0;     // wounds dressed: they heal faster until then
+    bool treated_well = false;  // ...and faster still when treated at a 药庐
     u32 home = 0;               // building id
     std::string occupation;     // preferred work category
     Task task;

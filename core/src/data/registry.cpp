@@ -124,6 +124,7 @@ void Registry::parse_items(const Json& j) {
         d.place_mat = e.str("place_mat");
         d.power = e.flt("power", 0.0f);
         d.armor = e.flt("armor", 0.0f);
+        d.carry = e.flt("carry", 0.0f);
         d.range = e.flt("range", 0.0f);
         for (const Json& t : e["tags"].items()) d.tags.push_back(t.as_str());
         item_index_[d.key] = d.id;

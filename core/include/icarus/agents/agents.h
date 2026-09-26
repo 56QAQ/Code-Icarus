@@ -15,6 +15,8 @@
 
 namespace icarus {
 
+struct Polity;
+
 struct AgentTuning {
     float walk_speed = 0.38f;       // cubes per tick at full mobility (days are compressed)
     float food_per_day = 1.0f;
@@ -46,6 +48,8 @@ public:
     void kill(Character& c, const std::string& cause, EventId ev_cause);
     void apply_area_damage(const AreaDamage& d);
     void damage(Character& c, float fraction, int part, const std::string& what, EventId cause);
+    // What a character can carry: more with a cart.
+    float carry_capacity(const Character& c) const;
     // A hazard residents will run from for a while (explosions, a god's wrath).
     void add_danger(const Vec3f& p, float radius) { dangers_.push_back({p, radius}); }
 
@@ -115,6 +119,13 @@ private:
     void strike(Character& attacker, Character& target, float power, const std::string& how, EventId cause);
     bool task_fight(Character& c);
     bool task_escape(Character& c);
+    bool task_leave(Character& c);
+    bool task_treat(Character& c);
+    // How badly a resident needs their wounds seen to (0 = not at all).
+    float treatment_need(const Character& c) const;
+    // Migration: how strongly an unhappy resident is drawn to another polity (0 if not).
+    float migration_pull(const Character& c, const Polity& own, const Polity*& dest, std::string& why) const;
+    void defect(Character& c, u16 to, EventId cause);
     // movement
     enum class Move { Moving, Arrived, Failed };
     Move move_to(Character& c, const Vec3i& goal, bool adjacent_ok);

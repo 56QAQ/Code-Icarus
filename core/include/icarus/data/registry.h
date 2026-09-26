@@ -57,6 +57,7 @@ struct ItemDef {
     float power = 0.0f;       // tools: work speed factor; weapons: harm per hit (body fraction)
     float armor = 0.0f;       // armour: share of harm absorbed
     float range = 0.0f;       // weapons: reach in cubes (bows shoot)
+    float carry = 0.0f;       // carts: extra carrying capacity (weight units)
     std::vector<std::string> tags;
     bool has_tag(const std::string& t) const {
         for (auto& x : tags) if (x == t) return true;

@@ -114,7 +114,15 @@ void Agents::generate_jobs() {
         for (auto& [item, count] : need) {
             i32 missing = count - in_transit[{b->site, item}];
             float unit = std::max(0.01f, reg.item(item).weight);
-            i32 load = std::max(1, (i32)std::floor(tune.carry_capacity / unit));
+            // Loads are sized for a hauler with a cart when the polity has any; one
+            // without takes what fits and the rest is planned again.
+            float cap = tune.carry_capacity;
+            for (const auto& cp : chars_)
+                if (cp && cp->alive && cp->polity == b->polity && cp->cart != kNoItem) {
+                    cap = carry_capacity(*cp);
+                    break;
+                }
+            i32 load = std::max(1, (i32)std::floor(cap / unit));
             while (missing > 0) {
                 // Source: nearest public store holding the item.
                 StoreId src = kNoStore;
@@ -237,6 +245,45 @@ void Agents::generate_jobs() {
         if (has(JobType::Cook, k.inside)) continue;
         Job& j = add(JobType::Cook, k.polity, k.inside, 0.9f);
         j.building = k.id;
+    }
+
+    // Herbs for the wounded: gatherers look for medicinal plants among the bushes when
+    // the stock runs low (one bundle for every four people, and one per wounded).
+    const ItemId herbs = reg.find_item("herbs");
+    for (auto& pc : ctx_.society->polities()) {
+        if (!pc.alive || herbs == kNoItem || !pc.has_tech("herbalism")) continue;
+        const Building* seat = ctx_.buildings->get(pc.seat);
+        if (!seat) continue;
+        int people = 0, wounded = 0;
+        for (const auto& cp : chars_)
+            if (cp && cp->alive && !cp->departed && cp->polity == pc.id) {
+                ++people;
+                if (treatment_need(*cp) > 0.0f) ++wounded;
+            }
+        i64 stock = 0;
+        for (StoreId sid : ctx_.society->public_stores(pc.id))
+            if (const Store* st = ctx_.econ->store(sid)) stock += st->count(herbs);
+        const int want = people / 4 + wounded;
+        int open = 0;
+        for (const Job& j : jobs.all())
+            if (j.alive && j.type == JobType::Forage && j.polity == pc.id && j.item == herbs) ++open;
+        if (stock + open * 3 >= want) continue;
+        World& w = *ctx_.world;
+        const MatId bush = reg.m().berry_bush;
+        for (int r = 6; r <= 60 && open < 2; r += 4)
+            for (int i = 0; i < 24 && open < 2; ++i) {
+                float a = (float)i / 24.0f * 6.2831853f + 0.13f;
+                int x = seat->entrance.x + (int)std::lround(std::cos(a) * (float)r);
+                int z = seat->entrance.z + (int)std::lround(std::sin(a) * (float)r);
+                ColumnInfo col = w.gen().column(x, z);
+                if (!col.land) continue;
+                Vec3i p{x, col.top + 1, z};
+                if (w.mat(p) != bush || has(JobType::Forage, p)) continue;
+                Job& j = add(JobType::Forage, pc.id, p, 0.9f);
+                j.item = herbs;
+                existing[{(int)JobType::Forage, p}] = 1;
+                ++open;
+            }
     }
 
     // Foraging when food is short.

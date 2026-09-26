@@ -23,8 +23,12 @@
     {"key": "irrigation", "name": "水利", "era": 1, "cost": 60, "values": {"food_security": 0.8, "growth": 0.3}, "requires": ["farming"],
      "desc": "更远的水也能灌溉田地。", "effects": {"irrigation_radius": 2}},
 
+    {"key": "herbalism", "name": "草药学", "era": 1, "cost": 45, "values": {"welfare": 0.8, "growth": 0.2}, "requires": ["gathering"],
+     "desc": "辨识与采集草药、包扎伤口；药庐让伤者更快痊愈。"},
     {"key": "writing", "name": "文字", "era": 2, "cost": 100, "values": {"growth": 0.6, "order": 0.3}, "requires": ["pottery"],
      "desc": "智者小屋；研究更快。", "effects": {"research_speed": 0.5}},
+    {"key": "wheel", "name": "车轮", "era": 2, "cost": 90, "values": {"growth": 0.6, "frugality": 0.2, "speed": 0.3}, "requires": ["carpentry"],
+     "desc": "手推车让搬运工一趟运得更多。"},
     {"key": "copper_working", "name": "炼铜", "era": 2, "cost": 120, "values": {"growth": 0.5, "military": 0.5}, "requires": ["pottery", "masonry"],
      "desc": "把铜矿石炼成铜锭，打造铜工具、铜剑与铜甲。"},
     {"key": "fortification", "name": "筑城", "era": 2, "cost": 110, "values": {"military": 0.7, "order": 0.3}, "requires": ["masonry"],

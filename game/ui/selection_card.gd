@@ -291,6 +291,8 @@ func _refresh_character() -> void:
 				elif p["integrity"] < 0.99:
 					parts += "%s %d%%  " % [p["name"], int(p["integrity"] * 100)]
 			_line(parts if parts != "" else "完好无损", 13, UITheme.TEXT_DIM if parts == "" else UITheme.WARN)
+			if d.has("treated_hours"):
+				_line("伤口已包扎，正在加速愈合（还剩 %d 小时）" % int(d["treated_hours"]), 12, UITheme.GOOD)
 			var eq: Array = d.get("equipment", [])
 			if not eq.is_empty():
 				var es := PackedStringArray()

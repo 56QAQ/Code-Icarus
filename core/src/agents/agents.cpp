@@ -200,7 +200,8 @@ void Agents::hourly(Character& c) {
     if (c.needs.food > 0.3f && c.needs.water > 0.3f && c.body.bleeding < 0.05f) {
         int missing = c.body.total_voxels() - c.body.total_alive();
         if (missing > 0) {
-            int grow = std::max(1, (int)(c.body.total_voxels() * 0.012f));
+            const float rate = c.treated_until > now_ ? (c.treated_well ? 0.05f : 0.03f) : 0.012f;
+            int grow = std::max(1, (int)(c.body.total_voxels() * rate));
             int done = c.body.regrow(std::min(grow, missing), c.look);
             c.needs.food = std::max(0.0f, c.needs.food - 0.0008f * (float)done);
         }
@@ -453,21 +454,21 @@ void Agents::deposit_all(Character& c, StoreId to) {
     // Everything except one of each piece of equipment in use.
     std::vector<ItemStack> items = s->items;
     for (const ItemStack& st : items) {
-        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor) ? 1 : 0;
+        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
         if (st.count > keep) ctx_.econ->transfer(c.inv, to, st.item, st.count - keep);
     }
     // What the store could not take is set down here.
     s = ctx_.econ->store(c.inv);
     bool leftovers = false;
     for (const ItemStack& st : s->items) {
-        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor) ? 1 : 0;
+        i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
         if (st.count > keep) leftovers = true;
     }
     if (leftovers) {
         StoreId pile = ctx_.econ->pile_at(c.foot);
         items = ctx_.econ->store(c.inv)->items;
         for (const ItemStack& st : items) {
-            i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor) ? 1 : 0;
+            i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart) ? 1 : 0;
             if (st.count > keep) ctx_.econ->transfer(c.inv, pile, st.item, st.count - keep);
         }
     }
@@ -482,6 +483,8 @@ void Agents::update_equipment(Character& c) {
     verify(c.tool);
     verify(c.weapon);
     verify(c.armor);
+    verify(c.cart);
+    if (inv) inv->capacity = carry_capacity(c);
     if (c.is_girl() || !c.body.can_hold()) return;
     // Pick up better gear from a public store within reach.
     for (StoreId sid : ctx_.society->public_stores(c.polity)) {
@@ -510,6 +513,15 @@ void Agents::update_equipment(Character& c) {
         upgrade(c.tool, "tool", true);
         upgrade(c.weapon, "weapon", c.drafted);
         upgrade(c.armor, "armor", c.drafted);
+        // A cart for anyone who hauls (soldiers march without one).
+        if (c.cart == kNoItem && !c.drafted)
+            for (const ItemStack& is : st->items)
+                if (reg.item(is.item).has_tag("cart") && ctx_.econ->available(sid, is.item, c.id) > 0 &&
+                    ctx_.econ->transfer(sid, c.inv, is.item, 1) == 1) {
+                    c.cart = is.item;
+                    if (Store* iv = ctx_.econ->store(c.inv)) iv->capacity = carry_capacity(c);
+                    break;
+                }
         break;
     }
     // Discharged soldiers hand their arms back when they pass a store.
@@ -688,6 +700,17 @@ void Agents::save(BinWriter& w) const {
             prev = p;
         }
     }
+    // Carts and dressed wounds (added later; loaders of older saves skip it).
+    std::vector<const Character*> extra;
+    for (const auto& c : chars_)
+        if (c && (c->cart != kNoItem || c->treated_until != 0)) extra.push_back(c.get());
+    w.varu(extra.size());
+    for (const Character* c : extra) {
+        w.u32v(c->id);
+        w.u32v(c->cart);
+        w.u64v(c->treated_until);
+        w.boolean(c->treated_well);
+    }
     w.end_section(sec);
 }
 
@@ -865,6 +888,20 @@ void Agents::load(BinReader& outer) {
         Vec3i p{prev.x + (i32)r.vari(), prev.y + (i32)r.vari(), prev.z + (i32)r.vari()};
         region_map_[p] = (u16)r.varu();
         prev = p;
+    }
+    if (!r.at_end()) {
+        u64 ne = r.varu();
+        for (u64 k = 0; k < ne; ++k) {
+            EntityId id = r.u32v();
+            ItemId cart = (ItemId)r.u32v();
+            Tick until = r.u64v();
+            bool well = r.boolean();
+            if (Character* c = get(id)) {
+                c->cart = cart;
+                c->treated_until = until;
+                c->treated_well = well;
+            }
+        }
     }
 }
 
