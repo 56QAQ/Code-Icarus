@@ -118,7 +118,9 @@ u32 Society::add_project(Project p) {
     e.pos = p.target;
     e.causes[0] = p.cause;
     e.text = "开工：" + p.title;
-    ctx_.chron->emit(std::move(e));
+    EventId ev = ctx_.chron->emit(std::move(e));
+    // Projects of the polity's own initiative trace back to their start.
+    if (!projects_.back().cause) projects_.back().cause = ev;
     return p.id;
 }
 
@@ -149,6 +151,25 @@ void Society::hourly(Tick now) {
         compute_stats(p);
         update_support(p);
         update_crises(p);
+        update_wars(p);
+        // A polity without any magical girl cannot hold together: after a few hours its
+        // people rejoin the polity it came from (or the nearest other).
+        bool has_girl = false;
+        for (const auto& cp : ctx_.agents->all())
+            if (cp && cp->alive && !cp->departed && cp->is_girl() && cp->polity == p.id) has_girl = true;
+        if (!has_girl && ctx_.now > p.founded + kTicksPerHour * 6) {
+            u16 into = 0;
+            if (const Polity* par = polity(p.parent); par && par->id != p.id) into = par->id;
+            for (const Polity& o : polities_)
+                if (!into && o.alive && o.id != p.id) into = o.id;
+            if (into) {
+                EventId why = p.reigns.empty() ? 0 : 0;
+                for (const auto& cp : ctx_.agents->all())
+                    if (cp && cp->id == p.ruler && cp->death_event) why = cp->death_event;
+                annex(into, p.id, why, "群龙无首，重新并入");
+                continue;
+            }
+        }
         p.history.push_back(p.stats);
         if (p.history.size() > 24 * 60) p.history.erase(p.history.begin());
     }
@@ -372,7 +393,8 @@ void Society::update_crises(Polity& p) {
         Event e;
         e.type = k == CrisisKind::Food ? EventType::Shortage
                  : k == CrisisKind::Logistics ? EventType::LogisticsDisrupted
-                 : k == CrisisKind::Unrest ? EventType::Protest : EventType::Shortage;
+                 : k == CrisisKind::Unrest ? EventType::Protest
+                 : k == CrisisKind::War    ? EventType::Battle : EventType::Shortage;
         e.severity = 4;
         e.polity = p.id;
         e.causes[0] = cause;
@@ -448,6 +470,20 @@ void Society::update_crises(Polity& p) {
                            : std::string("泉眼断流，湖水将逐渐干涸"));
     } else if (s.water_access > 0.85f) {
         resolve(CrisisKind::Water, "水源危机解除");
+    }
+
+    // War: attacked by a neighbour.
+    {
+        const War* attacked = nullptr;
+        for (const War& w : p.wars)
+            if (!w.attacker) attacked = &w;
+        if (attacked) {
+            const Polity* enemy = polity(attacked->enemy);
+            declare(CrisisKind::War, 0.8f, attacked->event,
+                    strfmt("遭到「%s」的进攻", enemy ? enemy->name.c_str() : "?"));
+        } else if (p.wars.empty()) {
+            resolve(CrisisKind::War, "战事平息");
+        }
     }
 
     // Unrest.
@@ -565,6 +601,27 @@ void Society::save(BinWriter& w) const {
         }
         w.varu(p.at_war.size());
         for (u16 x : p.at_war) w.u16v(x);
+        w.varu(p.wars.size());
+        for (const War& wr : p.wars) {
+            w.u16v(wr.enemy);
+            w.boolean(wr.attacker);
+            w.str(wr.aim);
+            w.u64v(wr.since);
+            w.u32v(wr.event);
+            w.vari(wr.kills);
+            w.vari(wr.losses);
+        }
+        w.boolean(p.op.active);
+        w.u16v(p.op.enemy);
+        w.str(p.op.aim);
+        w.vec3i(p.op.rally);
+        w.vec3i(p.op.objective);
+        w.u8v(p.op.phase);
+        w.u64v(p.op.since);
+        w.vari(p.op.party);
+        w.vari(p.op.lost);
+        w.u32v(p.op.event);
+        w.boolean(p.op.engaged);
         w.varu(p.techs.size());
         for (auto& t : p.techs) w.str(t);
         w.varu(p.research.size());
@@ -667,6 +724,29 @@ void Society::load(BinReader& outer) {
         }
         u64 nw = r.varu();
         for (u64 k = 0; k < nw; ++k) p.at_war.push_back(r.u16v());
+        u64 nwars = r.varu();
+        for (u64 k = 0; k < nwars; ++k) {
+            War wr;
+            wr.enemy = r.u16v();
+            wr.attacker = r.boolean();
+            wr.aim = r.str();
+            wr.since = r.u64v();
+            wr.event = r.u32v();
+            wr.kills = (int)r.vari();
+            wr.losses = (int)r.vari();
+            p.wars.push_back(wr);
+        }
+        p.op.active = r.boolean();
+        p.op.enemy = r.u16v();
+        p.op.aim = r.str();
+        p.op.rally = r.vec3i();
+        p.op.objective = r.vec3i();
+        p.op.phase = r.u8v();
+        p.op.since = r.u64v();
+        p.op.party = (int)r.vari();
+        p.op.lost = (int)r.vari();
+        p.op.event = r.u32v();
+        p.op.engaged = r.boolean();
         u64 nt = r.varu();
         for (u64 k = 0; k < nt; ++k) p.techs.push_back(r.str());
         u64 nrs = r.varu();

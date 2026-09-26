@@ -32,6 +32,7 @@ void Agents::run_task(Character& c) {
         case TaskType::Govern: ok = task_govern(c); break;
         case TaskType::Cast: ok = task_cast(c); break;
         case TaskType::Escape: ok = task_escape(c); break;
+        case TaskType::Fight: ok = task_fight(c); break;
         case TaskType::Wander:
         case TaskType::Idle: ok = task_wander(c); break;
         default: break;
@@ -547,6 +548,13 @@ bool Agents::task_flee(Character& c) {
                 worst = p;
             }
         }
+        if (Character* foe = nearest_enemy(c, 16.0f, true)) {  // enemy fighters too
+            float d = (c.pos - foe->pos).length();
+            if (d < wd) {
+                wd = d;
+                worst = foe->pos;
+            }
+        }
         Vec3f dir = (c.pos - worst);
         dir.y = 0;
         dir = dir.normalized();
@@ -851,6 +859,7 @@ bool Agents::task_work(Character& c) {
                             q.pop_front();
                             MatId m = w.mat(p);
                             if (m != reg.m().log && m != reg.m().leaves) continue;
+                            if (ctx_.buildings->at(p)) continue;  // never fell a building
                             cut.push_back(p);
                             if (m == reg.m().log) ++logs;
                             else ++leaves;

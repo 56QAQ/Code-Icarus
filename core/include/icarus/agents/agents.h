@@ -106,6 +106,12 @@ private:
     bool task_cast(Character& c);
     // Trapped (e.g. fell into a ravine): dig a staircase toward reachable ground.
     bool trapped(const Character& c) const;
+    // War (agents_war.cpp).
+    // Nearest living enemy (at war); fighters_only = soldiers and magical girls,
+    // soldiers_only = drafted residents only.
+    Character* nearest_enemy(const Character& c, float radius, bool fighters_only, bool soldiers_only = false);
+    void strike(Character& attacker, Character& target, float power, const std::string& how, EventId cause);
+    bool task_fight(Character& c);
     bool task_escape(Character& c);
     // movement
     enum class Move { Moving, Arrived, Failed };

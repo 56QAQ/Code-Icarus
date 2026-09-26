@@ -473,6 +473,12 @@ void Physics::step_support() {
                 const Cell* cell = w_.cell(cell_of(c));
                 if (cell && cell->pristine) { supported = true; break; }
                 if ((int)comp.size() > support_max_nodes) { supported = true; break; }
+                // Resting on a heap (sand, rubble, ash) bears weight too: granular matter
+                // settles on its own, so whatever lies on it is supported.
+                {
+                    const Material& below = reg.mat(vmat(w_.get(c + Vec3i{0, -1, 0})));
+                    if (below.solid && below.granular) { supported = true; break; }
+                }
                 for (int d = 0; d < 6; ++d) {
                     Vec3i n = c + kDir6[d];
                     if (!w_.in_bounds(n) || seen.count(n)) continue;

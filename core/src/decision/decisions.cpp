@@ -300,6 +300,8 @@ void Decisions::consider(Polity& p) {
             ruler_busy = true;
         }
     }
+    // Neighbours: diplomacy, and the conduct of wars we started.
+    if (!ruler_busy) consider_foreign(p, *ruler);
     // Routine governance every two days when calm.
     if (!ruler_busy && now_ - ruler->girl->last_decision > kTicksPerDay * 2 && now_ > kTicksPerDay / 2) {
         Decision d;

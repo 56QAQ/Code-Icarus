@@ -45,6 +45,16 @@ public:
     // Adds research points to the current target; discovers it when complete.
     void add_research(u16 polity, float points, EntityId by);
     void discover(Polity& p, const std::string& key, EntityId by, EventId cause);
+    // War and peace.
+    EventId declare_war(u16 attacker, u16 defender, const std::string& aim, EntityId by, EventId cause);
+    EventId make_peace(u16 a, u16 b, const std::string& how, EventId cause);
+    bool at_war(u16 a, u16 b) const;
+    // Drafts up to n residents (strongest, most combative first); returns how many serve.
+    int draft(u16 polity, int n, EventId cause);
+    void discharge(u16 polity);
+    int soldiers(u16 polity) const;
+    // The winner absorbs the loser: people, fields, buildings and stores change hands.
+    void annex(u16 winner, u16 loser, EventId cause, const std::string& how = "");
     void refresh_passives(Polity& p);
     // Convenience for systems that only know a polity id.
     float passive(u16 polity, const std::string& effect) const {
@@ -64,6 +74,7 @@ private:
     void update_crises(Polity& p);
     void update_support(Polity& p);
     void update_projects();
+    void update_wars(Polity& p);
 
     SimContext& ctx_;
     Rng rng_;

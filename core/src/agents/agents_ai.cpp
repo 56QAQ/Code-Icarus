@@ -167,6 +167,26 @@ void Agents::think(Character& c) {
         if (steal > 0.05f) add("偷取食物", steal * 2.0f, strfmt("饥饿难耐，公共粮仓却不开放（服从 %s）", pct(c.pers.conformity)));
     }
 
+    // War: soldiers serve; civilians keep away from enemy fighters.
+    if (p && !p->wars.empty()) {
+        if (c.drafted) {
+            float duty = 1.25f + (p->op.active ? 0.35f : 0.0f);
+            add("从军", duty, p->op.active ? "军令在身：" + p->op.aim : "战时戒备");
+        } else {
+            // Girls with combat magic and mana stand their ground (see 施法); others flee.
+            bool can_fight = false;
+            if (c.is_girl()) {
+                SpellPick sp;
+                std::string w;
+                can_fight = pick_spell(c, sp, w) > 0 && sp.effect >= 3;
+            }
+            if (Character* foe = can_fight ? nullptr : nearest_enemy(c, 14.0f, true)) {
+                float threat = 1.0f - std::sqrt(foe->pos.dist_sq(c.pos)) / 14.0f;
+                add("逃离危险", 0.8f + 1.8f * threat * (0.6f + c.pers.caution), "敌兵" + foe->name + "就在附近");
+            }
+        }
+    }
+
     if (trapped(c)) {
         // Needs cannot be met from here; getting out comes first unless dying of thirst
         // right next to water.
@@ -198,6 +218,7 @@ void Agents::think(Character& c) {
             case TaskType::Wander: return "闲逛";
             case TaskType::Cast: return "施法";
             case TaskType::Escape: return "设法脱困";
+            case TaskType::Fight: return "从军";
             default: return "";
         }
     };
@@ -224,6 +245,7 @@ void Agents::think(Character& c) {
     else if (best.label == "抗议") start_task(c, TaskType::Protest, best.score, best.why);
     else if (best.label == "偷取食物") start_task(c, TaskType::Steal, best.score, best.why);
     else if (best.label == "设法脱困") start_task(c, TaskType::Escape, best.score, best.why);
+    else if (best.label == "从军") start_task(c, TaskType::Fight, best.score, best.why);
     else if (best.label == "施法") {
         start_task(c, TaskType::Cast, best.score, best.why);
         c.task.count = spell.effect;

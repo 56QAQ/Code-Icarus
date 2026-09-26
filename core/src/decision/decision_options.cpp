@@ -6,6 +6,7 @@
 #include "icarus/agents/agents.h"
 #include "icarus/agents/jobs.h"
 #include "icarus/decision/decisions.h"
+#include "decision_util.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/economy/farming.h"
 #include "icarus/sim/clock.h"
@@ -15,29 +16,11 @@
 
 namespace icarus {
 
+using decision_util::F;
+using decision_util::make;
+using decision_util::act;
+
 namespace {
-
-struct F {
-    int f;
-    float v;
-};
-
-DecisionOption make(const std::string& key, const std::string& title, const std::string& desc,
-                    std::initializer_list<F> feats, Json action) {
-    DecisionOption o;
-    o.key = key;
-    o.title = title;
-    o.desc = desc;
-    for (const F& x : feats) o.f[x.f] = x.v;
-    o.action = std::move(action);
-    return o;
-}
-
-Json act(const std::string& what) {
-    Json j = Json::object();
-    j.set("do", what);
-    return j;
-}
 
 const Json* drive_of(const Registry& reg, const std::string& key) {
     for (const Json& d : reg.doc("drives")["drives"].items())
@@ -462,6 +445,9 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
             add_wait(0.0f);
             break;
         }
+        case CrisisKind::War:
+            build_defense_options(d, p, c);
+            break;
         default:
             add_wait(0.0f);
     }
@@ -857,6 +843,7 @@ void Decisions::execute(Decision& d) {
     Character* g = ctx_.agents->get(d.girl);
     if (!p || !g) return;
     const EventId cause = d.decision_event;
+    if (execute_war(d, o, *p, *g)) return;
     auto residents = [&]() {
         std::vector<Character*> out;
         for (auto& rp : ctx_.agents->all())

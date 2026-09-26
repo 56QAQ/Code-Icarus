@@ -90,6 +90,29 @@ float Agents::pick_spell(Character& c, SpellPick& out, std::string& why) {
             }
         }
     }
+    // War: combat magic against the enemy's fighters.
+    if (Character* foe = nearest_enemy(c, 16.0f, true)) {
+        struct Combat {
+            const char* effect;
+            int code;
+            float base;
+        };
+        const Combat kinds[] = {{"firebomb", 6, 1.9f}, {"strike", 3, 1.8f}, {"drain_strike", 5, 1.75f},
+                                {"ranged", 4, 1.7f},   {"terrify", 7, 1.5f}, {"drain_mana", 9, 1.4f}};
+        for (const Combat& k : kinds) {
+            const Json* sp = active_spell(*ctx_.reg, g, k.effect);
+            if (!sp) continue;
+            float cost = sp->flt("mana", 0.3f);
+            if (g.mana < cost) continue;
+            if (k.code == 9 && !foe->is_girl()) continue;
+            float s = k.base + 0.3f * c.pers.aggression;
+            if (s > best) {
+                best = s;
+                out = {k.code, foe->foot, foe->id, cost, sp->str("name")};
+                why = strfmt("敌人%s近在眼前，施展「%s」", foe->name.c_str(), sp->str("name").c_str());
+            }
+        }
+    }
     return best;
 }
 
@@ -100,14 +123,15 @@ bool Agents::task_cast(Character& c) {
         return false;
     }
     Character* who = t.other ? get(t.other) : nullptr;
-    if (t.count == 1 && (!who || !who->alive)) {
+    if ((t.count == 1 || t.count >= 3) && (!who || !who->alive)) {
         end_task(c, false);
         return false;
     }
     Vec3i goal = who ? who->foot : t.target;
+    const i64 reach = t.count == 4 || t.count == 6 || t.count == 7 ? 11 : (t.count >= 3 ? 2 : 4);
     if (t.step == 0) {
         say(c, "赶去施法：" + t.label);
-        if (c.foot.dist2(goal) > 4 * 4) {
+        if (c.foot.dist2(goal) > reach * reach) {
             Move m = move_to(c, goal, true);
             if (m == Move::Failed) {
                 blacklist(c, goal, kTicksPerHour);
@@ -129,7 +153,8 @@ bool Agents::task_cast(Character& c) {
         c.yaw = std::atan2((float)goal.x + 0.5f - c.pos.x, (float)goal.z + 0.5f - c.pos.z);
         if (now_ < t.until) return true;
         GirlData& g = *c.girl;
-        const Json* sp = active_spell(*ctx_.reg, g, t.count == 1 ? "heal" : "quench");
+        static const char* kEffect[] = {"", "heal", "quench", "strike", "ranged", "drain_strike", "firebomb", "terrify", "rally", "drain_mana"};
+        const Json* sp = active_spell(*ctx_.reg, g, kEffect[std::clamp(t.count, 0, 9)]);
         float cost = sp ? sp->flt("mana", 0.4f) : 0.4f;
         if (g.mana < cost) {
             end_task(c, false);
@@ -142,7 +167,60 @@ bool Agents::task_cast(Character& c) {
         e.actor = c.id;
         e.polity = c.polity;
         e.pos = goal;
-        if (t.count == 1 && who) {
+        if (t.count >= 3 && who) {
+            // Combat magic.
+            const float amt = sp ? sp->flt("amount", 0.3f) : 0.3f;
+            const Polity* pp = ctx_.society->polity(c.polity);
+            const EventId cause = pp && !pp->wars.empty() ? (pp->op.event ? pp->op.event : pp->wars.front().event) : 0;
+            e.severity = 3;
+            e.target = who->id;
+            switch (t.count) {
+                case 3:
+                case 4:
+                    strike(c, *who, amt, "被魔法「" + t.label + "」击中", cause);
+                    e.text = strfmt("%s以「%s」击中了%s", c.name.c_str(), t.label.c_str(), who->name.c_str());
+                    break;
+                case 5:
+                    strike(c, *who, amt, "被「" + t.label + "」撕咬", cause);
+                    c.body.vitality = std::min(1.0f, c.body.vitality + 0.2f);
+                    c.needs.food = std::min(1.0f, c.needs.food + 0.2f);
+                    e.text = strfmt("%s以「%s」撕咬%s，吸取了体力", c.name.c_str(), t.label.c_str(), who->name.c_str());
+                    break;
+                case 6: {
+                    // Real fire and blast: terrain, buildings and bodies alike.
+                    Vec3f at = who->pos + Vec3f(0.0f, 1.0f, 0.0f);
+                    e.text = strfmt("%s朝%s掷出「%s」", c.name.c_str(), who->name.c_str(), t.label.c_str());
+                    EventId ev = ctx_.chron->emit(e);
+                    ctx_.physics->explode(at, 2.5f, ev ? ev : cause, false);
+                    e.text.clear();
+                    break;
+                }
+                case 7: {
+                    int n = 0;
+                    for (auto& op : chars_)
+                        if (op && op->alive && op->polity != c.polity && op->foot.dist2(who->foot) < 10 * 10) {
+                            op->fear = std::min(1.0f, op->fear + 0.6f);
+                            op->remember(now_, MemoryKind::Cursed, c.id, -0.2f, cause);
+                            if (op->task.type == TaskType::Fight) {
+                                op->task = Task{};
+                                op->next_think = now_;
+                            }
+                            ++n;
+                        }
+                    e.text = strfmt("%s施展「%s」，%d 名敌人陷入恐惧", c.name.c_str(), t.label.c_str(), n);
+                    break;
+                }
+                case 9:
+                    if (who->girl) {
+                        float took = std::min(who->girl->mana, 0.4f);
+                        who->girl->mana -= took;
+                        g.mana = std::min(1.0f, g.mana + took);
+                    }
+                    e.text = strfmt("%s以「%s」夺走了%s的魔力", c.name.c_str(), t.label.c_str(), who->name.c_str());
+                    break;
+                default: break;
+            }
+        } else if (t.count == 1 && who) {
             // Mending takes from the patient's own strength (food); severed limbs regrow
             // only with 再生之种.
             bool limbs = has_passive(*ctx_.reg, g, "regrow_limbs");
@@ -158,7 +236,7 @@ bool Agents::task_cast(Character& c) {
             e.severity = 2;
             e.target = who->id;
             e.text = strfmt("%s以「%s」治愈了%s", c.name.c_str(), t.label.c_str(), who->name.c_str());
-        } else {
+        } else if (t.count == 2) {
             int n = 0;
             World& w = *ctx_.world;
             for (int dy = -3; dy <= 4; ++dy)
@@ -177,7 +255,7 @@ bool Agents::task_cast(Character& c) {
                 if (op && op->alive && op->polity == c.polity && op->foot.dist2(goal) < 40 * 40)
                     op->support_ref(c.id) = clampv(op->support_for(c.id) + 0.05f, -1.0f, 1.0f);
         }
-        ctx_.chron->emit(std::move(e));
+        if (!e.text.empty()) ctx_.chron->emit(std::move(e));
         end_task(c, true);
     }
     return true;

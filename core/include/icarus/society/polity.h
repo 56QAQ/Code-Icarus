@@ -88,6 +88,28 @@ struct Project {
     float progress = 0;
 };
 
+struct War {
+    u16 enemy = 0;
+    bool attacker = false;
+    std::string aim;         // raid / conquest (attacker), defend
+    Tick since = 0;
+    EventId event = 0;       // declaration
+    int kills = 0, losses = 0;
+};
+
+// The army's current undertaking (at most one per polity).
+struct Operation {
+    bool active = false;
+    u16 enemy = 0;
+    std::string aim;         // raid / conquest / defend
+    Vec3i rally, objective;
+    u8 phase = 0;            // 0 muster, 1 march, 2 at the objective, 3 return
+    Tick since = 0;
+    int party = 0, lost = 0;
+    EventId event = 0;
+    bool engaged = false;    // a battle event has been recorded
+};
+
 struct Polity {
     u16 id = 0;
     bool alive = false;
@@ -102,6 +124,8 @@ struct Polity {
     std::vector<Reign> reigns;
     std::vector<std::pair<u16, float>> attitude;
     std::vector<u16> at_war;
+    std::vector<War> wars;
+    Operation op;
     std::vector<std::string> techs;
     std::vector<std::pair<std::string, float>> research;
     std::vector<Crisis> crises;
@@ -121,6 +145,27 @@ struct Polity {
         for (auto& c : crises)
             if (c.kind == k) return &c;
         return nullptr;
+    }
+    War* war_with(u16 other) {
+        for (auto& w : wars)
+            if (w.enemy == other) return &w;
+        return nullptr;
+    }
+    const War* war_with(u16 other) const {
+        for (auto& w : wars)
+            if (w.enemy == other) return &w;
+        return nullptr;
+    }
+    float attitude_to(u16 other) const {
+        for (auto& a : attitude)
+            if (a.first == other) return a.second;
+        return 0.0f;
+    }
+    float& attitude_ref(u16 other) {
+        for (auto& a : attitude)
+            if (a.first == other) return a.second;
+        attitude.push_back({other, 0.0f});
+        return attitude.back().second;
     }
     bool has_tech(const std::string& t) const {
         for (auto& x : techs)

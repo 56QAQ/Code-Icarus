@@ -291,6 +291,15 @@ void Agents::damage(Character& c, float fraction, int part, const std::string& w
     if (!c.alive || fraction <= 0) return;
     // Armour absorbs part of the harm.
     if (c.armor != kNoItem) fraction *= 1.0f - ctx_.reg->item(c.armor).armor;
+    // Magical girls are far tougher than artificial humans (不屈 hardens them further).
+    if (c.is_girl()) {
+        fraction *= 0.3f;
+        for (const Json& d : ctx_.reg->doc("drives")["drives"].items())
+            if (d.str("key") == c.girl->drive)
+                for (const Json& sp : d["spells"].items())
+                    if (sp.str("effect") == "toughness" && c.girl->level >= sp.integer("level", 1))
+                        fraction *= 1.0f - sp.flt("amount", 0.0f);
+    }
     DamageReport r = c.body.damage_spread(fraction, rng_, part);
     if (r.removed == 0) return;
     float frac = (float)r.removed / (float)std::max(1, c.body.total_voxels());

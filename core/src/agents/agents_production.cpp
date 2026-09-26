@@ -188,10 +188,13 @@ void Agents::production_jobs() {
                 if (need_wood && d > 12 * 12) {
                     for (int y = col.top + 1; y <= col.top + 2; ++y) {
                         Vec3i p{x, y, z};
-                        if (vmat(w.peek(p)) == M.log && vmat(w.peek(p + Vec3i{0, -1, 0})) != M.log) {
-                            spots.push_back({d, p, 0});
-                            break;
-                        }
+                        if (vmat(w.peek(p)) != M.log || vmat(w.peek(p + Vec3i{0, -1, 0})) == M.log) continue;
+                        // A tree, not a wall: no building owns it, and leaves crown the trunk.
+                        if (ctx_.buildings->at(p)) break;
+                        bool crown = false;
+                        for (int k = 1; k <= 10 && !crown; ++k) crown = vmat(w.peek(p + Vec3i{0, k, 0})) == M.leaves;
+                        if (crown) spots.push_back({d, p, 0});
+                        break;
                     }
                 }
                 if (!need_stone && ores.empty()) continue;
@@ -280,9 +283,11 @@ void Agents::production_jobs() {
                 int x0 = c0.x + (int)std::lround(std::cos(ang) * (float)r), z0 = c0.z + (int)std::lround(std::sin(ang) * (float)r);
                 ColumnInfo col = w.gen().column(x0, z0);
                 if (!col.land) continue;
+                // An open-cast cut, 8 long and 3 wide, stepping down one cube every two:
+                // always walkable, nobody gets stuck at the bottom.
                 bool ok = true;
-                for (int dz = -2; dz <= 5 && ok; ++dz)
-                    for (int dx = -2; dx <= 5 && ok; ++dx) {
+                for (int dz = -2; dz <= 4 && ok; ++dz)
+                    for (int dx = -2; dx <= 9 && ok; ++dx) {
                         ColumnInfo cc = w.gen().column(x0 + dx, z0 + dz);
                         if (!cc.land || std::abs((int)cc.top - (int)col.top) > 1) ok = false;
                         for (int y = col.top - 1; y <= col.top + 3 && ok; ++y)
@@ -290,9 +295,9 @@ void Agents::production_jobs() {
                     }
                 if (!ok) continue;
                 Json cubes = Json::array();
-                for (int y = col.top + 1; y >= col.top - 4; --y)
-                    for (int dz = 0; dz < 4; ++dz)
-                        for (int dx = 0; dx < 4; ++dx) {
+                for (int dx = 0; dx < 8; ++dx)
+                    for (int dz = 0; dz < 3; ++dz)
+                        for (int y = col.top + 1; y >= col.top - std::min(4, dx / 2); --y) {
                             Vec3i q{x0 + dx, y, z0 + dz};
                             if (!reg.mat(vmat(w.peek(q))).solid) continue;
                             Json v = Json::array();
