@@ -25,6 +25,8 @@ void Agents::reset(u64 seed) {
     region_built_ = 0;
     ctx_.nav->major_dirty = ctx_.nav->minor_dirty = true;
     day = {};
+    fail_ring_.fill(0);
+    fail_ring_pos_ = 0;
 }
 
 EntityId Agents::spawn(CharKind kind, const std::string& name, bool female, const Vec3i& foot, u16 polity) {
@@ -92,6 +94,10 @@ void Agents::place_at(Character& c, const Vec3i& foot) {
 
 void Agents::step(Tick now) {
     now_ = now;
+    if (now % kTicksPerHour == 0) {
+        fail_ring_pos_ = (fail_ring_pos_ + 1) % (int)fail_ring_.size();
+        fail_ring_[(size_t)fail_ring_pos_] = 0;
+    }
     if (now % 600 == 0) refresh_water_spots();
     if (now % 50 == 0) {
         ctx_.jobs->expire(now);
@@ -401,6 +407,7 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
         if (budget == 0 || !nav.find_path(c.foot, goal, adjacent_ok, c.path, budget)) {
             blacklist(c, goal, kTicksPerHour * 3);
             day.path_failures++;
+            fail_ring_[(size_t)fail_ring_pos_]++;
             if (debug_path_failures.size() < 200) debug_path_failures.push_back({c.id, c.foot, goal, now_});
             return Move::Failed;
         }
@@ -713,6 +720,12 @@ void Agents::save(BinWriter& w) const {
         w.u64v(c->treated_until);
         w.boolean(c->treated_well);
     }
+    // Daily counters and the rolling failure window (they feed crises and stats).
+    for (int v : {day.harvested, day.ate_public, day.refused_food, day.thefts, day.path_failures, day.drinks,
+                  day.hungry_no_food, day.thirsty_no_water})
+        w.vari(v);
+    for (int v : fail_ring_) w.vari(v);
+    w.vari(fail_ring_pos_);
     w.end_section(sec);
 }
 
@@ -904,6 +917,16 @@ void Agents::load(BinReader& outer) {
                 c->treated_well = well;
             }
         }
+    }
+    day = {};
+    fail_ring_.fill(0);
+    fail_ring_pos_ = 0;
+    if (!r.at_end()) {
+        int* counters[] = {&day.harvested, &day.ate_public, &day.refused_food, &day.thefts, &day.path_failures,
+                           &day.drinks, &day.hungry_no_food, &day.thirsty_no_water};
+        for (int* v : counters) *v = (int)r.vari();
+        for (int& v : fail_ring_) v = (int)r.vari();
+        fail_ring_pos_ = (int)r.vari();
     }
 }
 

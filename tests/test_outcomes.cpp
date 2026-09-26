@@ -238,3 +238,31 @@ TEST("ecology: saplings take root near standing trees, grow into trees, and surv
     loaded.run(kTicksPerDay);
     CHECK_EQ(loaded.state_hash(), sim.state_hash());
 }
+
+TEST("logistics: failed routes are judged over a rolling day, and survive a save") {
+    Simulation sim(test_registry());
+    sim.new_game(village(3));
+    sim.run(kTicksPerHour * 6);
+    const IslandFeatures& f = sim.world().gen().features();
+    AdminCommand c;
+    c.type = "dig";
+    c.params = Json::object();
+    Json p = Json::array();
+    p.push((f.bridge_a.x + f.bridge_b.x) / 2);
+    p.push((f.bridge_a.y + f.bridge_b.y) / 2);
+    p.push((f.bridge_a.z + f.bridge_b.z) / 2);
+    c.params.set("pos", p);
+    c.params.set("radius", 4.5);
+    sim.queue_admin(c);
+    sim.run(kTicksPerHour * 8);
+    const int window = sim.agents().path_failures_24h();
+    std::vector<u8> bytes = sim.save();
+    Simulation loaded(test_registry());
+    loaded.load(bytes);
+    CHECK_EQ(loaded.agents().path_failures_24h(), window);
+    CHECK_EQ(loaded.agents().day.path_failures, sim.agents().day.path_failures);
+    CHECK_EQ(loaded.agents().day.harvested, sim.agents().day.harvested);
+    sim.run(kTicksPerHour * 6);
+    loaded.run(kTicksPerHour * 6);
+    CHECK_EQ(loaded.state_hash(), sim.state_hash());
+}

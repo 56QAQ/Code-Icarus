@@ -486,7 +486,7 @@ void Society::update_crises(Polity& p) {
             broken_bridge = &b;  // broken, or still under repair
     if (broken_bridge) {
         declare(CrisisKind::Logistics, 0.8f, broken_bridge->last_event, "桥梁中断，两岸的物流与通勤受阻");
-    } else if (ctx_.agents->day.path_failures > std::max(10, s.population * 3)) {
+    } else if (ctx_.agents->path_failures_24h() > std::max(10, s.population * 3)) {
         declare(CrisisKind::Logistics, 0.5f,
                 recent_cause({EventType::StructureDestroyed, EventType::Collapse, EventType::MeteorImpact}, day),
                 "道路受阻，许多居民无法抵达目的地");

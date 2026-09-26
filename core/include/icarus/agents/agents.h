@@ -3,6 +3,7 @@
 // worth, never what they are forced to do.
 #pragma once
 
+#include <array>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -77,6 +78,12 @@ public:
         int harvested = 0, ate_public = 0, refused_food = 0, thefts = 0, path_failures = 0, drinks = 0,
             hungry_no_food = 0, thirsty_no_water = 0;
     } day;
+    // Failed routes over the last 24 hours (a rolling window, unlike `day`).
+    int path_failures_24h() const {
+        int n = 0;
+        for (int v : fail_ring_) n += v;
+        return n;
+    }
 
 private:
     // core
@@ -153,6 +160,8 @@ private:
     std::vector<std::unique_ptr<Character>> chars_ = std::vector<std::unique_ptr<Character>>(1);
     Tick now_ = 0;
     std::vector<std::pair<Vec3f, float>> dangers_;  // recent hazards (pos, radius)
+    std::array<int, 24> fail_ring_{};                // path failures per hour, last 24 h
+    int fail_ring_pos_ = 0;
     std::vector<Vec3i> water_spots_;                // standable places next to drinkable water
     std::vector<u16> water_regions_;                // walkable region of each spot (0 = unknown)
     // Walkable regions flooded from settlement anchors. Rebuilt when event-driven terrain
