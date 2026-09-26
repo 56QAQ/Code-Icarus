@@ -68,6 +68,90 @@ bool Nav::find_standable_near(const Vec3i& p, Vec3i& out, int radius) {
     return false;
 }
 
+void Nav::on_changes(const std::vector<VoxelChange>& changes) {
+    const Registry& reg = w_.reg();
+    for (const VoxelChange& c : changes) {
+        MatId a = vmat(c.before), b = vmat(c.after);
+        if (a == b) continue;
+        const Material& ma = reg.mat(a);
+        const Material& mb = reg.mat(b);
+        if (ma.solid != mb.solid || ma.passable != mb.passable) {
+            if (c.cause) {
+                major_dirty = true;
+                return;
+            }
+            minor_dirty = true;
+        }
+    }
+}
+
+int Nav::neighbors(const Vec3i& p, Vec3i* out, float* cost) {
+    int n = 0;
+    for (int d = 0; d < 8; ++d) {
+        int dx = kDir8[d][0], dz = kDir8[d][1];
+        bool diag = dx != 0 && dz != 0;
+        // Try: same level, step up 1-2, drops down to 3.
+        Vec3i cand;
+        bool have = false;
+        for (int dy : {0, 1, -1, 2, -2, -3}) {
+            Vec3i q{p.x + dx, p.y + dy, p.z + dz};
+            if (dy >= 1 && !passable({p.x, p.y + 3, p.z})) continue;  // head room for the hop
+            if (dy == 2 && (diag || !passable({p.x, p.y + 4, p.z}))) continue;  // climbing needs more room
+            if (dy < 0) {
+                // Need a clear column at the target xz from our level down.
+                bool clear = true;
+                for (int k = 0; k > dy && clear; --k)
+                    clear = passable({q.x, p.y + k, q.z}) && passable({q.x, p.y + k + 1, q.z}) && passable({q.x, p.y + k + 2, q.z});
+                if (!clear) continue;
+            }
+            if (standable(q)) {
+                cand = q;
+                have = true;
+                break;
+            }
+            if (dy == 0 && !passable(q)) continue;
+        }
+        if (!have) continue;
+        if (diag) {
+            // No corner cutting.
+            int top = std::max(p.y, cand.y);
+            if (!passable({p.x + dx, top, p.z}) || !passable({p.x, top, p.z + dz}) || !passable({p.x + dx, top + 1, p.z}) ||
+                !passable({p.x, top + 1, p.z + dz}))
+                continue;
+        }
+        float c = step_cost(cand) * (diag ? 1.41421f : 1.0f);
+        if (cand.y > p.y) c += cand.y - p.y >= 2 ? 2.0f : 0.6f;
+        if (cand.y < p.y) c += 0.2f * (float)(p.y - cand.y);
+        out[n] = cand;
+        cost[n] = c;
+        ++n;
+    }
+    return n;
+}
+
+int Nav::flood(const Vec3i& seed, int radius, int max_nodes, std::unordered_map<Vec3i, u16, Vec3iHash>& label, u16 id) {
+    if (!standable(seed) || label.count(seed)) return 0;
+    std::vector<Vec3i> queue;
+    queue.push_back(seed);
+    label[seed] = id;
+    const i64 r2 = (i64)radius * radius;
+    size_t head = 0;
+    Vec3i nb[8];
+    float nc[8];
+    while (head < queue.size() && (int)queue.size() < max_nodes) {
+        Vec3i p = queue[head++];
+        int n = neighbors(p, nb, nc);
+        for (int i = 0; i < n; ++i) {
+            const Vec3i& q = nb[i];
+            i64 dx = q.x - seed.x, dz = q.z - seed.z;
+            if (dx * dx + dz * dz > r2) continue;
+            auto [it, fresh] = label.emplace(q, id);
+            if (fresh) queue.push_back(q);
+        }
+    }
+    return (int)queue.size();
+}
+
 Nav::Node* Nav::slot(u64 key, bool create) {
     size_t h = (size_t)(splitmix64(key) & (kTableSize - 1));
     for (size_t i = 0; i < 64; ++i) {
@@ -131,39 +215,12 @@ bool Nav::find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Pat
             break;
         }
         if (++expansions > max_expansions) break;
-        for (int d = 0; d < 8; ++d) {
-            int dx = kDir8[d][0], dz = kDir8[d][1];
-            bool diag = dx != 0 && dz != 0;
-            // Try: same level, step up 1, drops down to 3.
-            Vec3i cand;
-            bool have = false;
-            for (int dy : {0, 1, -1, 2, -2, -3}) {
-                Vec3i q{p.x + dx, p.y + dy, p.z + dz};
-                if (dy >= 1 && !passable({p.x, p.y + 3, p.z})) continue;  // head room for the hop
-                if (dy == 2 && (diag || !passable({p.x, p.y + 4, p.z}))) continue;  // climbing needs more room
-                if (dy < 0) {
-                    // Need a clear column at the target xz from our level down.
-                    bool clear = true;
-                    for (int k = 0; k > dy && clear; --k) clear = passable({q.x, p.y + k, q.z}) && passable({q.x, p.y + k + 1, q.z}) && passable({q.x, p.y + k + 2, q.z});
-                    if (!clear) continue;
-                }
-                if (standable(q)) {
-                    cand = q;
-                    have = true;
-                    break;
-                }
-                if (dy == 0 && !passable(q)) continue;
-            }
-            if (!have) continue;
-            if (diag) {
-                // No corner cutting.
-                if (!passable({p.x + dx, std::max(p.y, cand.y), p.z}) || !passable({p.x, std::max(p.y, cand.y), p.z + dz}) ||
-                    !passable({p.x + dx, std::max(p.y, cand.y) + 1, p.z}) || !passable({p.x, std::max(p.y, cand.y) + 1, p.z + dz}))
-                    continue;
-            }
-            float cost = step_cost(cand) * (diag ? 1.41421f : 1.0f);
-            if (cand.y > p.y) cost += cand.y - p.y >= 2 ? 2.0f : 0.6f;
-            if (cand.y < p.y) cost += 0.2f * (float)(p.y - cand.y);
+        Vec3i nb[8];
+        float nc[8];
+        int nn_count = neighbors(p, nb, nc);
+        for (int i = 0; i < nn_count; ++i) {
+            const Vec3i& cand = nb[i];
+            float cost = nc[i];
             float ng = cur.g + cost;
             u64 ck = pack(cand);
             Node* nn = slot(ck, true);

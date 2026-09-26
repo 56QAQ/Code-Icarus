@@ -111,7 +111,7 @@ void Agents::generate_jobs() {
         // Materials still to deliver.
         auto need = ctx_.buildings->remaining_cost(*b);
         for (auto& [item, count] : need) {
-            i32 missing = count - in_transit[{b->store, item}];
+            i32 missing = count - in_transit[{b->site, item}];
             float unit = std::max(0.01f, reg.item(item).weight);
             i32 load = std::max(1, (i32)std::floor(tune.carry_capacity / unit));
             while (missing > 0) {
@@ -131,14 +131,14 @@ void Agents::generate_jobs() {
                 i32 n = std::min({missing, load, econ.available(src, item)});
                 Job& j = add(JobType::HaulToSite, b->polity, econ.store(src)->pos, prio);
                 j.from = src;
-                j.to = b->store;
+                j.to = b->site;
                 j.item = item;
                 j.count = n;
                 j.building = b->id;
                 j.project = b->project;
                 missing -= n;
-                in_transit[{b->store, item}] += n;
-                if (in_transit[{b->store, item}] > 400) break;
+                in_transit[{b->site, item}] += n;
+                if (in_transit[{b->site, item}] > 400) break;
             }
         }
         // Buildable cells (a few at a time, spread over the plan).
@@ -153,7 +153,7 @@ void Agents::generate_jobs() {
             MatId want = vmat(b->plan_vox[(size_t)idx]);
             if (want) {
                 ItemId it = item_for_material(reg, want);
-                if (it != kNoItem && econ.available(b->store, it) <= 0 && !ctx_.world->material(p).solid) continue;
+                if (it != kNoItem && econ.available(b->site, it) <= 0 && !ctx_.world->material(p).solid) continue;
             }
             Job& j = add(JobType::Build, b->polity, p, prio);
             j.building = b->id;

@@ -68,7 +68,8 @@ Simulation::Simulation(const Registry& reg)
       farming_(world_, chronicle_),
       nav_(world_),
       agents_(ctx_),
-      society_(ctx_) {
+      society_(ctx_),
+      decisions_(ctx_) {
     world_.on_wake = [this](Cell& c, Tick last, Tick now) { on_cell_wake(c, last, now); };
     ctx_.reg = reg_;
     ctx_.world = &world_;
@@ -81,6 +82,7 @@ Simulation::Simulation(const Registry& reg)
     ctx_.nav = &nav_;
     ctx_.agents = &agents_;
     ctx_.society = &society_;
+    ctx_.decisions = &decisions_;
     buildings_.load_defs(reg);
     buildings_.set_physics(&physics_);
 }
@@ -103,6 +105,7 @@ void Simulation::new_game(const GameConfig& cfg) {
     u64 pseed = cfg.personality_seed ? cfg.personality_seed : hash_combine(cfg.world.seed, 0xB0);
     agents_.reset(hash_combine(cfg.world.seed, 0xA9));
     society_.reset(hash_combine(cfg.world.seed, 0x50));
+    decisions_.reset(hash_combine(cfg.world.seed, 0xDE));
     scenario_rng_.seed(pseed, 0x5CE7);
     ctx_.now = tick_;
     econ_.set_now(tick_);
@@ -132,6 +135,7 @@ void Simulation::dispatch_changes() {
     if (changes.empty()) return;
     physics_.on_changes(changes);
     buildings_.on_changes(changes);
+    nav_.on_changes(changes);
 }
 
 void Simulation::step() {
@@ -159,6 +163,9 @@ void Simulation::step() {
     society_.step(tick_);
     dispatch_changes();
     auto t4 = std::chrono::steady_clock::now();
+    decisions_.step(tick_);
+    dispatch_changes();
+    auto t4b = std::chrono::steady_clock::now();
 
     if (tick_ % 100 == 0) world_.update_lifecycle(tick_, cfg_.lifecycle_idle_ticks);
 
@@ -166,6 +173,7 @@ void Simulation::step() {
     profile_.physics_us = std::chrono::duration<double, std::micro>(t2 - t1).count();
     profile_.agents_us = std::chrono::duration<double, std::micro>(t3 - t2).count();
     profile_.society_us = std::chrono::duration<double, std::micro>(t4 - t3).count();
+    profile_.decisions_us = std::chrono::duration<double, std::micro>(t4b - t4).count();
     profile_.total_us = std::chrono::duration<double, std::micro>(t5 - t0).count();
     ++tick_;
 }
@@ -267,6 +275,7 @@ std::vector<u8> Simulation::save() const {
     jobs_.save(w);
     agents_.save(w);
     society_.save(w);
+    decisions_.save(w);
     w.u64v(scenario_rng_.state());
     w.u64v(scenario_rng_.inc());
     size_t s = w.begin_section("ADMQ");
@@ -301,6 +310,7 @@ void Simulation::load(const std::vector<u8>& data) {
     jobs_.load(r);
     agents_.load(r);
     society_.load(r);
+    decisions_.load(r);
     {
         u64 st = r.u64v(), inc = r.u64v();
         scenario_rng_.set_raw(st, inc);
@@ -329,6 +339,7 @@ u64 Simulation::state_hash() const {
     h = hash_combine(h, jobs_.hash());
     h = hash_combine(h, agents_.hash());
     h = hash_combine(h, society_.hash());
+    h = hash_combine(h, decisions_.hash());
     return h;
 }
 

@@ -285,7 +285,8 @@ void Society::update_crises(Polity& p) {
     // Logistics: a broken bridge or many failed routes.
     const Building* broken_bridge = nullptr;
     for (const Building& b : ctx_.buildings->all())
-        if (b.alive && b.is_bridge && b.complete && !b.functional && b.polity == p.id) broken_bridge = &b;
+        if (b.alive && b.is_bridge && (b.complete || b.completed_tick > 0) && !b.functional && b.polity == p.id)
+            broken_bridge = &b;  // broken, or still under repair
     if (broken_bridge) {
         declare(CrisisKind::Logistics, 0.8f, broken_bridge->last_event, "桥梁中断，两岸的物流与通勤受阻");
     } else if (ctx_.agents->day.path_failures > std::max(10, s.population * 3)) {
@@ -305,7 +306,8 @@ void Society::update_crises(Polity& p) {
                                      day * 3);
         if (lg && lg->active) cause = lg->event;
         declare(CrisisKind::Food, sev, cause,
-                strfmt("粮食短缺：公共存粮仅够 %.1f 天，%.0f%% 的居民吃不饱", s.food_days, (1.0f - s.food_access) * 100.0f));
+                s.food_access < 0.95f ? strfmt("粮食短缺：公共存粮仅够 %.1f 天，%.0f%% 的居民吃不饱", s.food_days, (1.0f - s.food_access) * 100.0f)
+                                      : strfmt("粮食短缺：公共存粮仅够 %.1f 天", s.food_days));
     } else if (s.food_days > 1.5f && s.food_access > 0.85f) {
         resolve(CrisisKind::Food, "粮食短缺缓解");
     }
@@ -454,6 +456,7 @@ void Society::save(BinWriter& w) const {
         w.varu(p.history.size());
         for (auto& h : p.history) save_stats(w, h);
         w.vari(p.deaths_total);
+        w.u64v(p.forage_until);
     }
     w.varu(projects_.size());
     for (size_t i = 1; i < projects_.size(); ++i) {
@@ -552,6 +555,7 @@ void Society::load(BinReader& outer) {
         u64 nh = r.varu();
         for (u64 k = 0; k < nh; ++k) p.history.push_back(load_stats(r));
         p.deaths_total = (int)r.vari();
+        p.forage_until = r.u64v();
     }
     u64 np = r.varu();
     projects_.assign((size_t)np, Project{});

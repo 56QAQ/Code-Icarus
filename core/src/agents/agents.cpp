@@ -18,6 +18,12 @@ void Agents::reset(u64 seed) {
     chars_.clear();
     chars_.resize(1);
     dangers_.clear();
+    water_spots_.clear();
+    water_regions_.clear();
+    region_map_.clear();
+    region_anchors_.clear();
+    region_built_ = 0;
+    ctx_.nav->major_dirty = ctx_.nav->minor_dirty = true;
     day = {};
 }
 
@@ -86,6 +92,7 @@ void Agents::place_at(Character& c, const Vec3i& foot) {
 
 void Agents::step(Tick now) {
     now_ = now;
+    if (now % 600 == 0) refresh_water_spots();
     if (now % 50 == 0) {
         ctx_.jobs->expire(now);
         ctx_.econ->expire_reservations(now);
@@ -505,6 +512,7 @@ void Agents::save(BinWriter& w) const {
         w.varu(c.path.next);
         w.vec3i(c.path_goal);
         w.vec3i(c.water_spot);
+        w.varu(c.region);
         w.u64v(c.next_think);
         w.u64v(c.last_ate);
         w.u64v(c.last_drank);
@@ -539,6 +547,12 @@ void Agents::save(BinWriter& w) const {
             w.varu(g.decisions.size());
             for (u32 d : g.decisions) w.u32v(d);
             w.str(g.stance);
+            w.varu(g.experience.size());
+            for (auto& e : g.experience) {
+                w.str(e.first);
+                w.f32(e.second);
+            }
+            w.u32v(g.grudge);
         }
     }
     w.varu(dangers_.size());
@@ -547,7 +561,28 @@ void Agents::save(BinWriter& w) const {
         w.f32(r);
     }
     w.varu(water_spots_.size());
-    for (const Vec3i& p : water_spots_) w.vec3i(p);
+    for (size_t i = 0; i < water_spots_.size(); ++i) {
+        w.vec3i(water_spots_[i]);
+        w.varu(water_regions_[i]);
+    }
+    // Region cache (sorted for a canonical encoding).
+    w.u8v((u8)((ctx_.nav->major_dirty ? 1 : 0) | (ctx_.nav->minor_dirty ? 2 : 0)));
+    w.u64v(region_built_);
+    w.varu(region_anchors_.size());
+    for (const Vec3i& a : region_anchors_) w.vec3i(a);
+    {
+        std::vector<std::pair<Vec3i, u16>> cells(region_map_.begin(), region_map_.end());
+        std::sort(cells.begin(), cells.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        w.varu(cells.size());
+        Vec3i prev{0, 0, 0};
+        for (auto& [p, id] : cells) {
+            w.vari(p.x - prev.x);
+            w.vari(p.y - prev.y);
+            w.vari(p.z - prev.z);
+            w.varu(id);
+            prev = p;
+        }
+    }
     w.end_section(sec);
 }
 
@@ -648,6 +683,7 @@ void Agents::load(BinReader& outer) {
         c.path.next = (size_t)r.varu();
         c.path_goal = r.vec3i();
         c.water_spot = r.vec3i();
+        c.region = (u16)r.varu();
         c.next_think = r.u64v();
         c.last_ate = r.u64v();
         c.last_drank = r.u64v();
@@ -684,6 +720,13 @@ void Agents::load(BinReader& outer) {
             u64 nd = r.varu();
             for (u64 k = 0; k < nd; ++k) g.decisions.push_back(r.u32v());
             g.stance = r.str();
+            u64 ne = r.varu();
+            for (u64 k = 0; k < ne; ++k) {
+                std::string key = r.str();
+                float v = r.f32();
+                g.experience.push_back({key, v});
+            }
+            g.grudge = r.u32v();
         }
         chars_.push_back(std::move(cp));
     }
@@ -696,7 +739,27 @@ void Agents::load(BinReader& outer) {
     }
     water_spots_.clear();
     u64 nws = r.varu();
-    for (u64 k = 0; k < nws; ++k) water_spots_.push_back(r.vec3i());
+    water_regions_.clear();
+    for (u64 k = 0; k < nws; ++k) {
+        water_spots_.push_back(r.vec3i());
+        water_regions_.push_back((u16)r.varu());
+    }
+    u8 dirty = r.u8v();
+    ctx_.nav->major_dirty = (dirty & 1) != 0;
+    ctx_.nav->minor_dirty = (dirty & 2) != 0;
+    region_built_ = r.u64v();
+    region_anchors_.clear();
+    u64 na = r.varu();
+    for (u64 k = 0; k < na; ++k) region_anchors_.push_back(r.vec3i());
+    region_map_.clear();
+    u64 nc = r.varu();
+    region_map_.reserve((size_t)nc);
+    Vec3i prev{0, 0, 0};
+    for (u64 k = 0; k < nc; ++k) {
+        Vec3i p{prev.x + (i32)r.vari(), prev.y + (i32)r.vari(), prev.z + (i32)r.vari()};
+        region_map_[p] = (u16)r.varu();
+        prev = p;
+    }
 }
 
 u64 Agents::hash() const {

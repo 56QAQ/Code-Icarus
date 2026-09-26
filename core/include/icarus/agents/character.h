@@ -109,6 +109,13 @@ struct GirlData {
     Tick last_decision = 0;
     std::vector<u32> decisions;  // decision record ids
     std::string stance = "loyal";  // loyal / critical / defiant / rebel
+    std::vector<std::pair<std::string, float>> experience;  // option key -> how it worked out
+    EntityId grudge = kNoEntity;   // someone who wronged her politically
+    float experience_of(const std::string& k) const {
+        for (auto& e : experience)
+            if (e.first == k) return e.second;
+        return 0.0f;
+    }
 };
 
 struct Character {
@@ -152,6 +159,7 @@ struct Character {
     Path path;
     Vec3i path_goal{-99999, 0, 0};
     Vec3i water_spot{-1, -1, -1};  // remembered place to drink
+    u16 region = 0;                // walkable region (refreshed with the water index; 0 = unknown)
     Tick next_think = 0;
     Tick last_ate = 0, last_drank = 0, last_slept = 0, last_social = 0, last_punished = 0;
     std::vector<Consideration> trace;  // last decision breakdown

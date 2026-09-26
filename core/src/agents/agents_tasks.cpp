@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <deque>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "icarus/agents/agents.h"
@@ -68,11 +69,13 @@ StoreId Agents::find_food_store(Character& c, bool public_only, bool allow_over_
 }
 
 void Agents::refresh_water_spots() {
-    // Scan around every settlement for water surfaces people can drink from.
+    // Scan around every settlement for water surfaces people can drink from, and label
+    // walkable regions so nobody plans a trip to water they cannot reach.
     World& w = *ctx_.world;
     Nav& nav = *ctx_.nav;
     const MatId WATER = ctx_.reg->m().water;
     water_spots_.clear();
+    water_regions_.clear();
     std::vector<Vec3i> centers;
     for (const Polity& p : ctx_.society->polities()) {
         if (!p.alive) continue;
@@ -105,6 +108,39 @@ void Agents::refresh_water_spots() {
                 }
             }
     }
+    // Regions: flood from settlement anchors (seats, farms). Characters elsewhere get
+    // region 0 (unknown) and fall back to plain path searches.
+    std::vector<Vec3i> anchors;
+    for (const Vec3i& c : centers) anchors.push_back(c);
+    for (const Farm& f : ctx_.farming->all())
+        if (f.alive) anchors.push_back(f.center + Vec3i{0, 1, 0});
+    bool stale = anchors != region_anchors_ || nav.major_dirty ||
+                 (nav.minor_dirty && now_ >= region_built_ + kTicksPerDay);
+    if (stale) {
+        region_anchors_ = anchors;
+        region_built_ = now_;
+        nav.major_dirty = nav.minor_dirty = false;
+        region_map_.clear();
+        region_map_.reserve(1 << 16);
+        u16 next = 1;
+        for (const Vec3i& a : anchors) {
+            Vec3i st = a;
+            if (!nav.standable(st) && !nav.find_standable_near(a, st, 3)) continue;
+            if (region_map_.count(st)) continue;
+            if (nav.flood(st, R + 30, 90000, region_map_, next) > 0 && next < 65535) ++next;
+        }
+    }
+    const auto& label = region_map_;
+    for (const Vec3i& s : water_spots_) {
+        auto it = label.find(s);
+        water_regions_.push_back(it == label.end() ? 0 : it->second);
+    }
+    for (size_t i = 1; i < chars_.size(); ++i) {
+        Character* c = chars_[i].get();
+        if (!c || !c->alive || c->departed) continue;
+        auto it = label.find(c->foot);
+        c->region = it == label.end() ? 0 : it->second;
+    }
 }
 
 bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
@@ -123,13 +159,14 @@ bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
             }
         return false;
     };
-    if (water_spots_.empty() || now_ % 600 == 0) refresh_water_spots();
+    if (water_spots_.empty()) refresh_water_spots();
     // The remembered spot is kept only while it is about as close as the best candidate.
     if (c.water_spot.y > 0 && !blacklisted(c, c.water_spot) && nav.standable(c.water_spot) &&
         water_next_to(c.water_spot, water)) {
         i64 mine = c.foot.dist2(c.water_spot);
         i64 best = mine;
-        for (const Vec3i& s : water_spots_) best = std::min(best, c.foot.dist2(s));
+        for (size_t i = 0; i < water_spots_.size(); ++i)
+            if (!c.region || water_regions_[i] == c.region) best = std::min(best, c.foot.dist2(water_spots_[i]));
         if (mine <= best * 2 + 64) {
             stand = c.water_spot;
             return true;
@@ -137,9 +174,14 @@ bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
     }
     // Nearest candidates by straight line, verified by an actual path.
     std::vector<std::pair<i64, Vec3i>> cands;
-    for (const Vec3i& s : water_spots_) {
-        if (blacklisted(c, s)) continue;
-        cands.push_back({c.foot.dist2(s), s});
+    for (int pass = 0; pass < 2 && cands.empty(); ++pass) {
+        if (pass == 1 && !c.region) break;
+        for (size_t i = 0; i < water_spots_.size(); ++i) {
+            const Vec3i& s = water_spots_[i];
+            if (pass == 0 && c.region && water_regions_[i] != c.region) continue;
+            if (blacklisted(c, s)) continue;
+            cands.push_back({c.foot.dist2(s), s});
+        }
     }
     std::sort(cands.begin(), cands.end(), [](const auto& a, const auto& b) {
         return a.first != b.first ? a.first < b.first : a.second < b.second;
@@ -148,9 +190,9 @@ bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
     int tries = 0;
     for (auto& [d, s] : cands) {
         if (tries >= 4) break;
-        if (!water_next_to(s, water)) continue;
+        if (!nav.standable(s) || !water_next_to(s, water)) continue;
         ++tries;
-        if (nav.find_path(c.foot, s, false, tmp, 16000)) {
+        if (nav.find_path(c.foot, s, false, tmp, 8000)) {
             stand = s;
             c.water_spot = s;
             return true;
@@ -440,6 +482,14 @@ bool Agents::task_social(Character& c) {
 
 bool Agents::task_wander(Character& c) {
     Task& t = c.task;
+    if (t.step == 0 && carried_weight(c) > 0 && nearest_storage(c.polity, c.foot, kNoItem)) {
+        // Idle hands first return whatever they still carry.
+        t.type = TaskType::Work;
+        t.job = 0;
+        t.step = 10;
+        t.label = "归还随身物资";
+        return true;
+    }
     if (t.step == 0) {
         Vec3i anchor = c.foot;
         const Building* h = ctx_.buildings->get(c.home);
@@ -847,7 +897,8 @@ bool Agents::task_work(Character& c) {
                         return true;
                     }
                 }
-                if (carrying) {
+                if (carrying || carried_weight(c) > 0) {
+                    // Leftovers (seed grain, harvest) go back to storage.
                     t.step = 10;
                     return true;
                 }
@@ -930,8 +981,8 @@ bool Agents::task_work(Character& c) {
                 }
                 if (vmat(want) != 0) {
                     ItemId it = item_for_material(reg, vmat(want));
-                    if (it != kNoItem && ctx_.econ->available(b->store, it, c.id) <= 0) return fail("工地缺少材料");
-                    if (it != kNoItem) ctx_.econ->reserve(b->store, it, 1, c.id, now_ + kTicksPerHour);
+                    if (it != kNoItem && ctx_.econ->available(b->site, it, c.id) <= 0) return fail("工地缺少材料");
+                    if (it != kNoItem) ctx_.econ->reserve(b->site, it, 1, c.id, now_ + kTicksPerHour);
                 }
                 t.step = 1;
             }
@@ -952,7 +1003,7 @@ bool Agents::task_work(Character& c) {
                 if (now_ < t.until) return true;
                 MatId cur = w.mat(j->pos);
                 const Material& cm = reg.mat(cur);
-                ctx_.econ->release(b->store, c.id);
+                ctx_.econ->release(b->site, c.id);
                 if (cm.solid && cur != vmat(want)) {
                     // Clear the spot first; spoil goes to the site pile.
                     w.set(j->pos, make_voxel(0), j->cause);

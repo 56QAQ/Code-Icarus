@@ -49,7 +49,8 @@ struct Building {
     i32 solid_total = 0;
     i32 solid_intact = 0;
     float integrity = 0;
-    StoreId store = kNoStore;      // storage or construction materials
+    StoreId store = kNoStore;      // storage (stockpile / workshop)
+    StoreId site = kNoStore;       // construction materials while being built or repaired
     std::vector<EntityId> residents;
     Vec3i entrance;                // standable spot outside the door
     Vec3i inside;                  // standable spot inside (storage access, beds)
@@ -95,6 +96,10 @@ public:
     bool site_done(const Building& b);
     void finish(Building& b, EventId cause);
     void demolish(u32 id);
+    // Turns a damaged building back into a construction site (repair project).
+    bool reopen(u32 id, u32 project);
+    // Finds a flat, free spot for a building near a point (origin y = ground + 1).
+    bool find_site(const std::string& def_key, const Vec3i& near, int radius, Vec3i& origin, u8& rot);
 
     void on_changes(const std::vector<VoxelChange>& changes);
     void recompute(Building& b, EventId cause);

@@ -15,6 +15,7 @@
 #include "icarus/sim/chronicle.h"
 #include "icarus/sim/context.h"
 #include "icarus/society/society.h"
+#include "icarus/decision/decisions.h"
 #include "icarus/sim/clock.h"
 #include "icarus/sim/physics.h"
 #include "icarus/util/json.h"
@@ -71,6 +72,8 @@ public:
     const Society& society() const { return society_; }
     const Economy& economy() const { return econ_; }
     const Buildings& buildings() const { return buildings_; }
+    Decisions& decisions() { return decisions_; }
+    const Decisions& decisions() const { return decisions_; }
     SimContext& ctx() { return ctx_; }
 
     void queue_admin(AdminCommand cmd) { admin_queue_.push_back(std::move(cmd)); }
@@ -84,7 +87,7 @@ public:
 
     // Per-tick profiling (microseconds, last tick).
     struct Profile {
-        double physics_us = 0, agents_us = 0, society_us = 0, total_us = 0;
+        double physics_us = 0, agents_us = 0, society_us = 0, decisions_us = 0, total_us = 0;
     };
     const Profile& profile() const { return profile_; }
 
@@ -105,6 +108,7 @@ private:
     SimContext ctx_;
     Agents agents_;
     Society society_;
+    Decisions decisions_;
     Rng scenario_rng_;
     std::vector<AdminCommand> admin_queue_;
     Tick tick_ = 0;

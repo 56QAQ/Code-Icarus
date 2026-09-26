@@ -178,8 +178,8 @@ u32 Buildings::start_site(const std::string& key, const Vec3i& origin, u8 rot, u
         b.entrance = to_world(*d, origin, rot, {d->w / 2, 0, d->d});
         b.inside = to_world(*d, origin, rot, {d->w / 2, 0, d->d / 2});
     }
-    b.store = econ_.create_store(StoreKind::Site, b.entrance, polity);
-    econ_.store(b.store)->building = b.id;
+    b.site = econ_.create_store(StoreKind::Site, b.entrance, polity);
+    econ_.store(b.site)->building = b.id;
     list_.push_back(b);
     index_building(list_.back());
     recompute(list_.back(), 0);
@@ -263,8 +263,8 @@ u32 Buildings::place_bridge(const Vec3i& a, const Vec3i& bpos, u16 polity, bool 
     b.solid_total = (i32)b.plan_pos.size();
     b.entrance = a;
     b.inside = bpos;
-    b.store = econ_.create_store(StoreKind::Site, a, polity);
-    econ_.store(b.store)->building = b.id;
+    b.site = econ_.create_store(StoreKind::Site, a, polity);
+    econ_.store(b.site)->building = b.id;
     list_.push_back(b);
     Building& ref = list_.back();
     index_building(ref);
@@ -321,7 +321,7 @@ bool Buildings::place_cell(Building& b, int idx, EventId cause) {
     }
     ItemId it = item_for_material(*reg_, vmat(want));
     if (it != kNoItem) {
-        if (econ_.remove(b.store, it, 1, "construction") < 1) return false;
+        if (econ_.remove(b.site, it, 1, "construction") < 1) return false;
     }
     w_.set(p, want, cause);
     return true;
@@ -336,7 +336,7 @@ std::map<ItemId, int> Buildings::remaining_cost(const Building& b) const {
         ItemId it = item_for_material(*reg_, want);
         if (it != kNoItem) need[it]++;
     }
-    const Store* s = econ_.store(b.store);
+    const Store* s = econ_.store(b.site);
     if (s)
         for (auto& st : s->items) {
             auto itn = need.find(st.item);
@@ -364,11 +364,11 @@ void Buildings::finish(Building& b, EventId cause) {
     b.completed_tick = w_.now();
     const BuildingDef* d = def(b.def);
     // Leftover site materials stay as a ground pile for haulers.
-    if (b.store) {
-        econ_.destroy_store(b.store);
-        b.store = kNoStore;
+    if (b.site) {
+        econ_.destroy_store(b.site);
+        b.site = kNoStore;
     }
-    if (d && d->storage > 0) {
+    if (d && d->storage > 0 && !econ_.store(b.store)) {
         b.store = econ_.create_store(d->workstation.empty() ? StoreKind::Stockpile : StoreKind::Workshop, b.inside,
                                      b.polity, kNoEntity, d->storage);
         Store* s = econ_.store(b.store);
@@ -388,6 +388,59 @@ void Buildings::finish(Building& b, EventId cause) {
     b.last_event = chron_.emit(std::move(e));
 }
 
+bool Buildings::reopen(u32 id, u32 project) {
+    Building* b = get(id);
+    if (!b || !b->complete) return false;
+    b->complete = false;
+    b->project = project;
+    if (!econ_.store(b->site)) {
+        b->site = econ_.create_store(StoreKind::Site, b->entrance, b->polity);
+        econ_.store(b->site)->building = b->id;
+    }
+    return true;
+}
+
+bool Buildings::find_site(const std::string& key, const Vec3i& near, int radius, Vec3i& origin, u8& rot) {
+    const BuildingDef* d = def(key);
+    if (!d) return false;
+    const Registry& reg = *reg_;
+    // Spiral search for a footprint whose ground is flat (+-1), dry, unbuilt and clear of trees.
+    for (int r = 4; r <= radius; r += 2) {
+        for (int i = 0; i < 16; ++i) {
+            float a = (float)i / 16.0f * 6.2831853f + (float)r * 0.37f;
+            int cx = near.x + (int)std::lround(std::cos(a) * (float)r);
+            int cz = near.z + (int)std::lround(std::sin(a) * (float)r);
+            int x0 = cx - d->w / 2, z0 = cz - d->d / 2;
+            int gy = w_.surface_y(cx, cz);
+            bool ok = gy > 0;
+            for (int z = z0 - 1; z <= z0 + d->d && ok; ++z)
+                for (int x = x0 - 1; x <= x0 + d->w && ok; ++x) {
+                    int y = w_.surface_y(x, z);
+                    if (std::abs(y - gy) > 1) ok = false;
+                    MatId top = w_.mat({x, y, z});
+                    const Material& tm = reg.mat(top);
+                    if (tm.fluid || top == reg.m().farmland || top == reg.m().log || top == reg.m().leaves ||
+                        top == reg.m().planks)
+                        ok = false;
+                    for (int k = 0; k <= 4 && ok; ++k)
+                        if (at({x, y + k, z})) ok = false;
+                }
+            if (!ok) continue;
+            origin = {x0, gy + 1, z0};
+            // Face the requested point.
+            float dx = (float)(near.x - cx), dz = (float)(near.z - cz);
+            if (std::fabs(dx) > std::fabs(dz)) rot = dx > 0 ? 3 : 1;
+            else rot = dz > 0 ? 0 : 2;
+            if (rot & 1) {
+                origin.x = cx - d->d / 2;
+                origin.z = cz - d->w / 2;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 void Buildings::demolish(u32 id) {
     Building* b = get(id);
     if (!b) return;
@@ -396,6 +449,7 @@ void Buildings::demolish(u32 id) {
         if (it != index_.end() && it->second == id) index_.erase(it);
     }
     if (b->store) econ_.destroy_store(b->store);
+    if (b->site) econ_.destroy_store(b->site);
     b->alive = false;
 }
 
@@ -582,6 +636,7 @@ void Buildings::save(BinWriter& w) const {
         w.vari(b.solid_intact);
         w.f32(b.integrity);
         w.u32v(b.store);
+        w.u32v(b.site);
         w.varu(b.residents.size());
         for (EntityId r : b.residents) w.u32v(r);
         w.vec3i(b.entrance);
@@ -623,6 +678,7 @@ void Buildings::load(BinReader& outer) {
         b.solid_intact = (i32)r.vari();
         b.integrity = r.f32();
         b.store = r.u32v();
+        b.site = r.u32v();
         u64 nr = r.varu();
         for (u64 k = 0; k < nr; ++k) b.residents.push_back(r.u32v());
         b.entrance = r.vec3i();

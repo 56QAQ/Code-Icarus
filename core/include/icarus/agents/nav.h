@@ -3,6 +3,7 @@
 // A* with 8-way horizontal moves, 1-cube step up, up to 3-cube drops.
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include "icarus/world/world.h"
@@ -36,6 +37,18 @@ public:
     // A* from start to goal. If adjacent_ok, any standable cube within distance 1 (xz)
     // and |dy|<=2 of goal counts as arrival (for working on a cube).
     bool find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Path& out, int max_expansions = 24000);
+
+    // Walkable neighbours of a standable position with their move costs (max 8).
+    int neighbors(const Vec3i& p, Vec3i* out, float* cost);
+    // Breadth-first flood over walkable moves from seed, within an xz radius; labels every
+    // reached position with id (positions already labelled are not revisited).
+    int flood(const Vec3i& seed, int radius, int max_nodes, std::unordered_map<Vec3i, u16, Vec3iHash>& label, u16 id);
+
+    // Called with the world change journal: flags changes that alter walkability
+    // (solid/passable) so cached reachability can be reused while nothing changed.
+    // Major = caused by an event (construction, collapse, admin); minor = settling matter.
+    void on_changes(const std::vector<VoxelChange>& changes);
+    bool major_dirty = true, minor_dirty = true;
 
     NavStats stats;
 

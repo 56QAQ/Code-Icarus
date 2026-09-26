@@ -49,6 +49,12 @@ public:
     int harvest(Plot& p, EventId cause);  // returns grain yield
 
     void step(Tick now, Rng& rng);
+    // Adds up to n new plots next to existing ones where irrigation reaches. Returns count.
+    int expand(u32 farm_id, int n);
+    // Moves the share of plots nearest to `toward` into a new farm owned by polity.
+    u32 split(u32 farm_id, u16 polity, const Vec3i& toward, float share, const std::string& name);
+    // Lays out up to n new plots on fertile, irrigable ground near a point. 0 if none.
+    u32 found(u16 polity, const std::string& name, const Vec3i& near, int radius, int n);
     FarmStats stats(u32 farm_id);
     FarmStats stats_polity(u16 polity);
 

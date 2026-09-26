@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "icarus/agents/character.h"
@@ -114,6 +115,12 @@ private:
     Tick now_ = 0;
     std::vector<std::pair<Vec3f, float>> dangers_;  // recent hazards (pos, radius)
     std::vector<Vec3i> water_spots_;                // standable places next to drinkable water
+    std::vector<u16> water_regions_;                // walkable region of each spot (0 = unknown)
+    // Walkable regions flooded from settlement anchors. Rebuilt when event-driven terrain
+    // changes happen (or daily after minor settling); saved so reloads stay deterministic.
+    std::unordered_map<Vec3i, u16, Vec3iHash> region_map_;
+    std::vector<Vec3i> region_anchors_;
+    Tick region_built_ = 0;
     void refresh_water_spots();
 };
 

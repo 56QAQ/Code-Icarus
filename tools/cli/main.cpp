@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "icarus/data/registry.h"
 #include "icarus/util/binio.h"
@@ -25,6 +26,9 @@ struct Args {
     std::string scenario = "village";
     std::string save;
     bool verbose = false;
+    int every = 1;                 // print stats every N hours
+    bool events = false;           // stream notable events
+    std::vector<std::string> admin; // "HOURS:type:json" or shortcuts "HOURS:break_bridge"
 };
 
 Args parse_args(int argc, char** argv) {
@@ -41,6 +45,9 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--scenario") a.scenario = next();
         else if (k == "--save") a.save = next();
         else if (k == "-v" || k == "--verbose") a.verbose = true;
+        else if (k == "--every") a.every = std::max(1, std::stoi(next()));
+        else if (k == "--events") a.events = true;
+        else if (k == "--admin") a.admin.push_back(next());
     }
     return a;
 }
@@ -102,6 +109,60 @@ int cmd_map(const Args& a) {
     return 0;
 }
 
+// Scheduled administrator interventions. Shortcuts target the island's features.
+struct Scheduled {
+    Tick at = 0;
+    AdminCommand cmd;
+};
+
+std::vector<Scheduled> parse_admin(const Args& a, Simulation& sim) {
+    std::vector<Scheduled> out;
+    const IslandFeatures& f = sim.world().gen().features();
+    auto vec = [](const Vec3i& p) {
+        Json j = Json::array();
+        j.push(p.x);
+        j.push(p.y);
+        j.push(p.z);
+        return j;
+    };
+    for (const std::string& spec : a.admin) {
+        size_t c1 = spec.find(':');
+        if (c1 == std::string::npos) continue;
+        Scheduled s;
+        s.at = sim.now() + (Tick)(std::stod(spec.substr(0, c1)) * (double)kTicksPerHour);
+        std::string rest = spec.substr(c1 + 1);
+        size_t c2 = rest.find(':');
+        std::string type = rest.substr(0, c2);
+        if (type == "break_bridge") {
+            // Blow out the middle of the bridge deck.
+            Vec3i mid{(f.bridge_a.x + f.bridge_b.x) / 2, (f.bridge_a.y + f.bridge_b.y) / 2, (f.bridge_a.z + f.bridge_b.z) / 2};
+            s.cmd.type = "dig";
+            s.cmd.params = Json::object();
+            s.cmd.params.set("pos", vec(mid));
+            s.cmd.params.set("radius", 4.5);
+        } else if (type == "kill_spring") {
+            // Bury the spring under stone: the lake stops being fed.
+            s.cmd.type = "place";
+            s.cmd.params = Json::object();
+            s.cmd.params.set("pos", vec(f.spring));
+            s.cmd.params.set("radius", 2.5);
+            s.cmd.params.set("material", "stone");
+        } else if (type == "drain_lake") {
+            s.cmd.type = "dig";
+            s.cmd.params = Json::object();
+            Vec3i p = f.lake;
+            p.y -= 3;
+            s.cmd.params.set("pos", vec(p));
+            s.cmd.params.set("radius", 6.0);
+        } else {
+            s.cmd.type = type;
+            s.cmd.params = c2 == std::string::npos ? Json::object() : Json::parse(rest.substr(c2 + 1));
+        }
+        out.push_back(s);
+    }
+    return out;
+}
+
 int cmd_run(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
@@ -110,30 +171,53 @@ int cmd_run(const Args& a) {
     cfg.world.seed = a.seed;
     cfg.scenario = a.scenario;
     sim.new_game(cfg);
+    std::vector<Scheduled> sched = parse_admin(a, sim);
+    size_t shown = sim.chronicle().events().size();
     Tick total = (Tick)(a.days * (double)kTicksPerDay);
-    double max_us = 0, sum_us = 0;
+    double max_us = 0, sum_us = 0, sum_phys = 0, sum_ag = 0, sum_soc = 0, sum_dec = 0;
     for (Tick t = 0; t < total; ++t) {
+        for (const Scheduled& s : sched)
+            if (s.at == sim.now()) sim.queue_admin(s.cmd);
         sim.step();
+        if (a.events) {
+            const auto& ev = sim.chronicle().events();
+            for (; shown < ev.size(); ++shown) {
+                const Event& e = ev[shown];
+                if (e.severity < 3 && e.type != EventType::DecisionMade) continue;
+                std::printf("    >> [%s] %s\n", format_time_zh(e.tick).c_str(), e.text.c_str());
+                if (e.type == EventType::DecisionMade && e.data.has("rationale")) {
+                    for (const Json& pj : e.data["proposals"].items())
+                        std::printf("       %s建议「%s」%s\n", pj.str("name").c_str(), pj.str("option").c_str(),
+                                    pj.boolean("adopted") ? "（采纳）" : "");
+                    std::printf("       理由(%s)：%s\n", e.data.str("source").c_str(), e.data.str("rationale").c_str());
+                }
+            }
+        }
         const auto& pr = sim.profile();
         max_us = std::max(max_us, pr.total_us);
         sum_us += pr.total_us;
-        if (sim.now() % kTicksPerHour == 0) {
+        sum_phys += pr.physics_us;
+        sum_ag += pr.agents_us;
+        sum_soc += pr.society_us;
+        sum_dec += pr.decisions_us;
+        if (sim.now() % (kTicksPerHour * (Tick)a.every) == 0) {
+            const double per = (double)(kTicksPerHour * (Tick)a.every);
             const PhysicsStats& ps = sim.physics().stats();
             std::printf("%s | water %zu fire %zu | ", format_time_zh(sim.now()).c_str(), ps.water_active, ps.fire_active);
             for (const Polity& p : sim.society().polities()) {
                 if (!p.alive) continue;
                 const PolityStats& st = p.stats;
-                std::printf("%s pop %d food %.0f (%.1fd) fed %.0f%% water %.0f%% mood %.2f sup %.2f prot %d | ",
+                FarmStats fs = sim.farming().stats_polity(p.id);
+                std::printf("%s pop %d food %.0f (%.1fd) fed %.0f%% water %.0f%% mood %.2f sup %.2f prot %d farm %d/%d irr %d | ",
                             sim.society().title(p.id).c_str(), st.population, st.food_stock, st.food_days,
-                            st.food_access * 100, st.water_access * 100, st.mood, st.ruler_support, st.protesters);
+                            st.food_access * 100, st.water_access * 100, st.mood, st.ruler_support, st.protesters,
+                            fs.growing + fs.mature, fs.plots, fs.irrigated);
             }
-            FarmStats fs = sim.farming().stats_polity(1);
-            std::printf("farm %d/%d grow %d ripe %d irr %d | ", fs.growing, fs.plots, fs.growing, fs.mature, fs.irrigated);
             const auto& d = sim.agents().day;
-            std::printf("jobs %zu harv %d drinks %d pathfail %d nofood %d nowater %d | avg %.0fus max %.0fus\n",
+            std::printf("jobs %zu harv %d drinks %d pathfail %d nofood %d nowater %d | avg %.0fus (phys %.0f ag %.0f soc %.0f dec %.0f) max %.0fus\n",
                         sim.jobs().open_count(), d.harvested, d.drinks, d.path_failures, d.hungry_no_food,
-                        d.thirsty_no_water, sum_us / (double)kTicksPerHour, max_us);
-            sum_us = 0;
+                        d.thirsty_no_water, sum_us / per, sum_phys / per, sum_ag / per, sum_soc / per, sum_dec / per, max_us);
+            sum_us = sum_phys = sum_ag = sum_soc = sum_dec = 0;
             max_us = 0;
         }
     }

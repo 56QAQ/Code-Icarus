@@ -107,6 +107,7 @@ struct Polity {
     PolityStats stats;
     std::vector<PolityStats> history;
     int deaths_total = 0;
+    Tick forage_until = 0;   // organised foraging campaign
 
     Crisis* crisis(CrisisKind k) {
         for (auto& c : crises)
