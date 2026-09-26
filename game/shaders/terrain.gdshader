@@ -25,7 +25,7 @@ void fragment() {
 	SPECULAR = mix(0.3, 0.65, s.gloss);
 	METALLIC = s.gloss * 0.35;
 	float pulse = 0.85 + 0.15 * sin(TIME * 1.7 + wpos.x * 0.7 + wpos.z * 0.5);
-	EMISSION = s.albedo * s.glow * 2.2 * pulse;
+	EMISSION = s.albedo * s.glow * 2.2 * pulse + s.light;
 	float em = COLOR.a;
 	if (em > 0.01) {
 		float flick = 0.7 + 0.3 * sin(TIME * 11.0 + wpos.x * 3.1 + wpos.z * 2.3 + wpos.y);

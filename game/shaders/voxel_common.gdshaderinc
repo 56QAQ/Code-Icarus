@@ -5,11 +5,13 @@
 uniform sampler2DArray atlas : source_color, filter_nearest_mipmap_anisotropic, repeat_enable;
 uniform sampler2D layer_map : filter_nearest, repeat_disable;
 uniform int crack_base = 0;
+uniform float night = 0.0;  // windows light up after dusk
 
 const int FLAG_TINTED = 1;
 const int FLAG_NATURAL = 2;
 const int FLAG_GLOW = 4;
 const int FLAG_SHINY = 8;
+const int FLAG_WINDOW = 16;
 
 vec3 srgb_to_linear(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
@@ -58,6 +60,7 @@ struct VoxelSurface {
 	float gloss;
 	float glow;
 	float edge;
+	vec3 light;  // light of its own (windows at night)
 };
 
 VoxelSurface voxel_surface(vec2 uv_in, vec4 color, vec3 lpos, vec3 lnrm, vec3 wpos, vec2 gx, vec2 gy) {
@@ -65,6 +68,7 @@ VoxelSurface voxel_surface(vec2 uv_in, vec4 color, vec3 lpos, vec3 lnrm, vec3 wp
 	s.gloss = 0.0;
 	s.glow = 0.0;
 	s.edge = 1.0;
+	s.light = vec3(0.0);
 	int mat = int(round(uv_in.x));
 	if (mat < 0) {
 		s.albedo = srgb_to_linear(color.rgb);
@@ -91,6 +95,11 @@ VoxelSurface voxel_surface(vec2 uv_in, vec4 color, vec3 lpos, vec3 lnrm, vec3 wp
 	}
 	if ((flags & FLAG_SHINY) != 0) {
 		s.gloss = 1.0 - t.a;
+	}
+	if ((flags & FLAG_WINDOW) != 0 && night > 0.01) {
+		// Most houses have a lamp lit in the evening; panes glow, frames stay dark.
+		float lamp = step(0.3, hash12(floor(wpos.xz * 0.25) + floor(wpos.y * 0.25)));
+		s.light = vec3(1.0, 0.68, 0.34) * (1.0 - t.a) * night * lamp * 2.2;
 	}
 	if ((flags & FLAG_GLOW) != 0) {
 		s.glow = smoothstep(0.45, 0.85, dot(t.rgb, vec3(0.3, 0.59, 0.11)));

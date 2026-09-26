@@ -43,6 +43,15 @@ struct AdminCommand {
     Json params;
 };
 
+// A change worth animating: a cube broken out of the world or something landing in
+// place. Presentation only (never saved or hashed); the renderer takes them.
+struct VisualFx {
+    enum Kind : u8 { Break = 0, Land = 1 };
+    u8 kind = Break;
+    Vec3i pos;
+    MatId mat = 0;
+};
+
 class Simulation {
 public:
     explicit Simulation(const Registry& reg);
@@ -99,10 +108,19 @@ public:
     };
     const Profile& profile() const { return profile_; }
 
+    // Visual effects since the last call (bounded; the oldest are dropped).
+    std::vector<VisualFx> take_fx() {
+        std::vector<VisualFx> out;
+        out.swap(fx_);
+        return out;
+    }
+
 private:
     void on_cell_wake(Cell& c, Tick last, Tick now);
     void dispatch_changes();
+    void note_fx(const std::vector<VoxelChange>& changes);
 
+    std::vector<VisualFx> fx_;
     const Registry* reg_;
     GameConfig cfg_;
     World world_;

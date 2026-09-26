@@ -123,6 +123,7 @@ void Simulation::new_game(const GameConfig& cfg) {
     chronicle_.emit(std::move(e));
     if (cfg.scenario == "village") build_village_scenario(ctx_, cfg_, scenario_rng_);
     dispatch_changes();
+    fx_.clear();  // building the starting village is not an event to animate
 }
 
 void Simulation::on_cell_wake(Cell& c, Tick last, Tick now) {
@@ -137,9 +138,27 @@ void Simulation::dispatch_changes() {
     std::vector<VoxelChange> changes;
     changes.swap(world_.changes());
     if (changes.empty()) return;
+    note_fx(changes);
     physics_.on_changes(changes);
     buildings_.on_changes(changes);
     nav_.on_changes(changes);
+}
+
+void Simulation::note_fx(const std::vector<VoxelChange>& changes) {
+    // Granular matter sliding cube by cube and water flowing are shown by the world
+    // itself; breaking and landing solids get a burst of chips or dust.
+    constexpr size_t kMaxFx = 4096;
+    for (const VoxelChange& c : changes) {
+        if (fx_.size() >= kMaxFx) break;
+        const MatId b = vmat(c.before), a = vmat(c.after);
+        if (b == a) continue;
+        const Material& mb = reg_->mat(b);
+        const Material& ma = reg_->mat(a);
+        // What burns away falls as ash, not as chips of what it was.
+        if (mb.solid && !mb.fluid && !mb.granular && !ma.solid)
+            fx_.push_back({VisualFx::Break, c.p, vburning(c.before) ? reg_->m().ash : b});
+        else if (!mb.solid && ma.solid && !ma.granular && !ma.fluid) fx_.push_back({VisualFx::Land, c.p, a});
+    }
 }
 
 void Simulation::step() {
@@ -442,6 +461,7 @@ std::vector<u8> Simulation::save() const {
 }
 
 void Simulation::load(const std::vector<u8>& data) {
+    fx_.clear();
     BinReader r(data);
     char magic[8];
     for (char& c : magic) c = (char)r.u8v();

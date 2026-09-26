@@ -42,6 +42,8 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("take_dirty_cells"), &IcarusSim::take_dirty_cells);
     ClassDB::bind_method(D_METHOD("render_cells"), &IcarusSim::render_cells);
     ClassDB::bind_method(D_METHOD("material_table"), &IcarusSim::material_table);
+    ClassDB::bind_method(D_METHOD("take_fx"), &IcarusSim::take_fx);
+    ClassDB::bind_method(D_METHOD("fire_spots", "max_count"), &IcarusSim::fire_spots);
     ClassDB::bind_method(D_METHOD("build_cell_mesh", "cell"), &IcarusSim::build_cell_mesh);
     ClassDB::bind_method(D_METHOD("raycast", "origin", "dir", "max_dist"), &IcarusSim::raycast);
     ClassDB::bind_method(D_METHOD("cube_info", "cube"), &IcarusSim::cube_info);
@@ -247,6 +249,31 @@ Array IcarusSim::material_table() const {
     return out;
 }
 
+PackedInt32Array IcarusSim::take_fx() {
+    PackedInt32Array out;
+    if (!sim_) return out;
+    for (const icarus::VisualFx& f : sim_->take_fx()) {
+        out.push_back(f.kind);
+        out.push_back(f.pos.x);
+        out.push_back(f.pos.y);
+        out.push_back(f.pos.z);
+        out.push_back(f.mat);
+    }
+    return out;
+}
+
+PackedVector3Array IcarusSim::fire_spots(int64_t max_count) const {
+    PackedVector3Array out;
+    if (!sim_) return out;
+    const icarus::World& w = sim_->world();
+    for (const icarus::Vec3i& p : sim_->physics().fire_positions()) {
+        if ((int64_t)out.size() >= max_count) break;
+        if (!icarus::vburning(w.peek(p))) continue;
+        out.push_back(Vector3((float)p.x + 0.5f, (float)p.y + 0.5f, (float)p.z + 0.5f));
+    }
+    return out;
+}
+
 PackedInt32Array IcarusSim::render_cells() const {
     PackedInt32Array out;
     if (!sim_) return out;
@@ -328,6 +355,7 @@ Array IcarusSim::debris_list() const {
         Dictionary d;
         d["id"] = (int64_t)b.id;
         d["pos"] = to_gd(b.pos);
+        d["vel"] = to_gd(b.vel);
         d["count"] = (int64_t)b.voxels.size();
         out.push_back(d);
     }
@@ -574,7 +602,13 @@ Array IcarusSim::characters() const {
             if (const icarus::Job* j = sim_->jobs().get(c.task.job)) d["job"] = String(job_key(j->type));
         if (c.tool != icarus::kNoItem) d["tool"] = to_gd(reg_->item(c.tool).key);
         d["protest"] = c.task.type == icarus::TaskType::Protest && c.task.step == 2;
-        if (c.is_girl()) d["drive"] = drive_name(*reg_, c.girl->drive);
+        if (c.is_girl()) {
+            d["drive"] = drive_name(*reg_, c.girl->drive);
+            auto colour = [](uint32_t v) { return Color(((v >> 16) & 0xFF) / 255.0, ((v >> 8) & 0xFF) / 255.0, (v & 0xFF) / 255.0); };
+            d["hair"] = colour(c.look.hair);
+            d["cloth"] = colour(c.look.cloth);
+            d["accent"] = colour(c.look.accent);
+        }
         d["drafted"] = c.drafted;
         if (const icarus::Polity* cp_pol = sim_->society().polity(c.polity)) d["pcolor"] = col(cp_pol->color);
         d["weapon"] = c.weapon != icarus::kNoItem ? to_gd(reg_->item(c.weapon).key) : String();

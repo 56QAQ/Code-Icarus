@@ -90,7 +90,12 @@ void make_girl(SimContext& ctx, EntityId id, const std::string& drive, Rng& rng,
         if (dd->str("category") == "combat") c->skills[kCombat] = 0.8f;
         else c->skills[kCombat] = 0.5f;
     }
-    c->look.eyes = c->look.accent;
+    // Eyes in her colour, deepened so they read as eyes on a pale face.
+    auto deepen = [](u32 a) {
+        auto ch = [](u32 v, u32 d) { return (v * 45 + d * 55) / 100; };
+        return (ch((a >> 16) & 0xFF, 0x1E) << 16) | (ch((a >> 8) & 0xFF, 0x18) << 8) | ch(a & 0xFF, 0x30);
+    };
+    c->look.eyes = deepen(c->look.accent);
     c->body.build(c->look);
     c->skills[kResearch] = std::max(c->skills[kResearch], 0.4f);
 }

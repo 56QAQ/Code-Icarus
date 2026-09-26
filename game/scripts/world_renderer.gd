@@ -63,6 +63,12 @@ func setup(s: IcarusSim, cam: Camera3D) -> void:
 	_order_dirty = true
 
 
+## 0 by day .. 1 at night: lit windows.
+func set_night(v: float) -> void:
+	mat_terrain.set_shader_parameter("night", v)
+	mat_foliage.set_shader_parameter("night", v)
+
+
 func pending_count() -> int:
 	return _pending.size()
 
@@ -157,6 +163,7 @@ func _build(c: Vector3i) -> void:
 
 func _update_debris() -> void:
 	var seen := {}
+	var now := Time.get_ticks_usec() / 1e6
 	for d in sim.debris_list():
 		var id: int = d["id"]
 		seen[id] = true
@@ -172,7 +179,24 @@ func _update_debris() -> void:
 			mi.material_override = mat_terrain
 			add_child(mi)
 			_debris[id] = mi
-		mi.position = d["pos"]
+			mi.position = d["pos"]
+			mi.set_meta("prev", mi.position)
+			mi.set_meta("cur", mi.position)
+			mi.set_meta("t", now)
+			mi.set_meta("dt", 0.05)
+		# Interpolate between simulation snapshots, like characters.
+		var target: Vector3 = d["pos"]
+		if target != mi.get_meta("cur"):
+			mi.set_meta("dt", clampf(now - float(mi.get_meta("t")), 0.016, 0.25))
+			mi.set_meta("prev", mi.position)
+			mi.set_meta("cur", target)
+			mi.set_meta("t", now)
+		var f := clampf((now - float(mi.get_meta("t"))) / float(mi.get_meta("dt")), 0.0, 1.0)
+		mi.position = (mi.get_meta("prev") as Vector3).lerp(target, f)
+		# A falling chunk wobbles as it goes (the world re-embeds it square on landing).
+		var v: Vector3 = d.get("vel", Vector3.ZERO)
+		var k := clampf(v.length() * 0.08, 0.0, 1.0)
+		mi.rotation = Vector3(sin(now * 3.1 + id) * 0.07, sin(now * 1.7 + id * 0.5) * 0.05, cos(now * 2.6 + id) * 0.07) * k
 	for id in _debris.keys():
 		if not seen.has(id):
 			_debris[id].queue_free()
@@ -193,8 +217,22 @@ func _update_debris() -> void:
 			node.look_at(node.position + v, Vector3.UP)
 	for id in _meteors.keys():
 		if not mseen.has(id):
+			_impact_flash((_meteors[id] as Node3D).position)
 			_meteors[id].queue_free()
 			_meteors.erase(id)
+
+
+## A flash of light where a meteor strikes, fading over half a second.
+func _impact_flash(p: Vector3) -> void:
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.7, 0.4)
+	light.light_energy = 16.0
+	light.omni_range = 40.0
+	light.position = p
+	add_child(light)
+	var tw := create_tween()
+	tw.tween_property(light, "light_energy", 0.0, 0.6).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(light.queue_free)
 
 
 func _make_meteor(radius: float) -> Node3D:
@@ -211,25 +249,72 @@ func _make_meteor(radius: float) -> Node3D:
 	mat.emission_energy_multiplier = 3.0
 	rock.material_override = mat
 	root.add_child(rock)
-	var trail := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = sm.radius * 0.9
-	cm.bottom_radius = 0.05
-	cm.height = radius * 6.0
-	trail.mesh = cm
-	var tmat := StandardMaterial3D.new()
-	tmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	tmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	tmat.albedo_color = Color(1.0, 0.6, 0.25, 0.55)
-	tmat.emission_enabled = true
-	tmat.emission = Color(1.0, 0.5, 0.2)
-	trail.material_override = tmat
-	trail.rotation_degrees = Vector3(90, 0, 0)
-	trail.position = Vector3(0, 0, cm.height * 0.5)
-	root.add_child(trail)
+	# Trail: fire streaming off the rock and smoke left hanging behind it.
+	for smoke in [false, true]:
+		var e := GPUParticles3D.new()
+		e.amount = 60 if smoke else 50
+		e.lifetime = 2.5 if smoke else 0.5
+		e.local_coords = false
+		e.visibility_aabb = AABB(Vector3(-40, -40, -40), Vector3(80, 80, 80))
+		var pm := ParticleProcessMaterial.new()
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+		pm.emission_sphere_radius = sm.radius * 0.8
+		pm.spread = 180.0
+		pm.initial_velocity_min = 0.2
+		pm.initial_velocity_max = 1.5
+		pm.gravity = Vector3(0, 0.6, 0) if smoke else Vector3.ZERO
+		pm.scale_min = 1.0
+		pm.scale_max = 2.0
+		var curve := Curve.new()
+		curve.max_value = 4.0
+		curve.add_point(Vector2(0, 0.8 if smoke else 1.2))
+		curve.add_point(Vector2(1, 3.5 if smoke else 0.2))
+		var ct := CurveTexture.new()
+		ct.curve = curve
+		pm.scale_curve = ct
+		var g := Gradient.new()
+		if smoke:
+			g.colors = PackedColorArray([Color(0.35, 0.3, 0.28, 0.0), Color(0.3, 0.27, 0.26, 0.55), Color(0.25, 0.24, 0.24, 0.0)])
+			g.offsets = PackedFloat32Array([0.0, 0.1, 1.0])
+		else:
+			g.colors = PackedColorArray([Color(1.0, 0.95, 0.6, 1.0), Color(1.0, 0.5, 0.15, 0.8), Color(0.6, 0.1, 0.05, 0.0)])
+			g.offsets = PackedFloat32Array([0.0, 0.4, 1.0])
+		var gt := GradientTexture1D.new()
+		gt.gradient = g
+		pm.color_ramp = gt
+		e.process_material = pm
+		var q := QuadMesh.new()
+		q.size = Vector2(sm.radius * 1.2, sm.radius * 1.2)
+		var qm := StandardMaterial3D.new()
+		qm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		qm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		qm.vertex_color_use_as_albedo = true
+		qm.albedo_texture = _soft_dot()
+		if not smoke:
+			qm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			qm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		q.material = qm
+		e.draw_pass_1 = q
+		root.add_child(e)
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.6, 0.3)
 	light.light_energy = 6.0
 	light.omni_range = radius * 8.0
 	root.add_child(light)
 	return root
+
+
+var _soft_tex: ImageTexture
+
+
+func _soft_dot() -> ImageTexture:
+	if _soft_tex == null:
+		var n := 32
+		var img := Image.create_empty(n, n, false, Image.FORMAT_RGBA8)
+		for y in n:
+			for x in n:
+				var d := Vector2(x + 0.5 - n * 0.5, y + 0.5 - n * 0.5).length() / (n * 0.5)
+				var a := clampf(1.0 - d, 0.0, 1.0)
+				img.set_pixel(x, y, Color(1, 1, 1, a * a * (3.0 - 2.0 * a)))
+		_soft_tex = ImageTexture.create_from_image(img)
+	return _soft_tex

@@ -3,14 +3,17 @@ extends Node3D
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N | --load FILE] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
 ##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
-##        [--hide-ui] [--frames N]
+##        [--hide-ui] [--frames N] [--late-admin type:{json} [--late-frames N] [--late-ticks N] [--late-run]]
 
 var renderer: WorldRenderer
+var fx: FxRenderer
 var chars: CharacterRenderer
 var rig: CameraRig
 var hud: HUD
 var sun: DirectionalLight3D
 var env: Environment
+var sky_mat: ProceduralSkyMaterial
+var cloud_mats: Array[ShaderMaterial] = []
 var brush: MeshInstance3D
 
 var _shot_path := ""
@@ -27,6 +30,8 @@ func _ready() -> void:
 	add_child(rig)
 	renderer = WorldRenderer.new()
 	add_child(renderer)
+	fx = FxRenderer.new()
+	add_child(fx)
 	chars = CharacterRenderer.new()
 	add_child(chars)
 	_build_brush()
@@ -88,7 +93,7 @@ func _ready() -> void:
 			# Screenshot helper: frame the selected character from this far away.
 			for c in Game.sim.characters():
 				if int(c["id"]) == int(_cli["select"]):
-					rig.focus(c["pos"], float(_cli["focus"]), true)
+					rig.focus(c["pos"] + Vector3(0, 1.3, 0), float(_cli["focus"]), true)
 	if _cli.has("focus-soldiers"):
 		# Screenshot helper: look at the soldiers (select the first one).
 		var sum := Vector3.ZERO
@@ -142,10 +147,10 @@ func _parse_cli() -> Dictionary:
 			if i + 1 < args.size() and not args[i + 1].begins_with("--"):
 				val = args[i + 1]
 				i += 1
-			if key == "admin":
-				if not out.has("admin"):
-					out["admin"] = []
-				out["admin"].append(val)
+			if key == "admin" or key == "late-admin":
+				if not out.has(key):
+					out[key] = []
+				out[key].append(val)
 			else:
 				out[key] = val
 		i += 1
@@ -158,6 +163,7 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
+	sky_mat = sm
 	sm.sky_top_color = Color(0.22, 0.42, 0.72)
 	sm.sky_horizon_color = Color(0.72, 0.80, 0.90)
 	sm.ground_bottom_color = Color(0.62, 0.68, 0.80)
@@ -166,12 +172,12 @@ func _build_environment() -> void:
 	sm.sky_curve = 0.12
 	sky.sky_material = sm
 	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.62, 0.7, 0.85)
 	env.ambient_light_energy = 0.9
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 1.0
-	env.tonemap_white = 6.0
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 1.08
 	env.ssao_enabled = true
 	env.ssao_radius = 1.6
 	env.ssao_intensity = 1.6
@@ -179,12 +185,16 @@ func _build_environment() -> void:
 	env.glow_intensity = 0.6
 	env.glow_bloom = 0.05
 	env.glow_hdr_threshold = 1.6
+	# Distant land fades into the colour of the sky behind it.
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.72, 0.80, 0.92)
-	env.fog_density = 0.00035
+	env.fog_density = 0.0006
+	env.fog_aerial_perspective = 0.45
+	env.fog_sun_scatter = 0.12
 	env.fog_sky_affect = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.08
+	env.adjustment_saturation = 1.16
+	env.adjustment_contrast = 1.04
 	we.environment = env
 	add_child(we)
 
@@ -196,6 +206,7 @@ func _build_environment() -> void:
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = 1.2
+	sun.light_angular_distance = 0.7  # soft-edged shadows that widen with distance
 	sun.rotation_degrees = Vector3(-52, 38, 0)
 	add_child(sun)
 
@@ -207,6 +218,7 @@ func _build_environment() -> void:
 	var cmat := ShaderMaterial.new()
 	cmat.shader = load("res://shaders/cloudsea.gdshader")
 	clouds.material_override = cmat
+	cloud_mats.append(cmat)
 	clouds.position = Vector3(512, 28, 512)
 	clouds.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(clouds)
@@ -216,6 +228,7 @@ func _build_environment() -> void:
 	cmat2.set_shader_parameter("scale", 0.0026)
 	cmat2.set_shader_parameter("speed", 0.0025)
 	clouds2.material_override = cmat2
+	cloud_mats.append(cmat2)
 	add_child(clouds2)
 
 
@@ -255,15 +268,42 @@ func _update_daylight() -> void:
 		return
 	var ci: Dictionary = Game.sim.clock_info()
 	var h: float = ci.get("hour", 12.0)
-	# Sun elevation follows the hour; keep a little light at night (moonlight).
+	# sun_h > 0 by day; lit: 0 at night .. 1 by day; dusk peaks at sunrise and sunset.
+	var sun_h := sin((h - 6.0) / 12.0 * PI)
+	var lit := smoothstep(-0.15, 0.35, sun_h)
+	var dusk := 1.0 - smoothstep(0.0, 0.42, absf(sun_h))
 	var t := (h - 6.0) / 12.0  # 0 at sunrise, 1 at sunset
 	var elev := sin(clampf(t, 0.0, 1.0) * PI)
-	var day := clampf(elev * 1.6, 0.0, 1.0)
-	sun.rotation_degrees = Vector3(-lerpf(8.0, 62.0, elev), 38.0 + (t - 0.5) * 70.0, 0)
-	sun.light_energy = lerpf(0.18, 1.25, day)
-	sun.light_color = Color(1.0, 0.96, 0.88).lerp(Color(1.0, 0.62, 0.38), 1.0 - clampf(elev * 2.5, 0.0, 1.0)) if day > 0.05 else Color(0.55, 0.65, 0.95)
-	env.ambient_light_energy = lerpf(0.35, 0.9, day)
-	env.background_energy_multiplier = lerpf(0.25, 1.0, day)
+	if sun_h > -0.05:
+		# The sun crosses the sky; low and warm at dawn and dusk.
+		sun.rotation_degrees = Vector3(-lerpf(6.0, 62.0, elev), 38.0 + (t - 0.5) * 70.0, 0)
+		sun.light_color = Color(1.0, 0.96, 0.88).lerp(Color(1.0, 0.6, 0.36), dusk)
+		sun.light_energy = lerpf(0.35, 1.25, lit)
+	else:
+		# Moonlight: high, cool and soft, so the island stays readable at night.
+		sun.rotation_degrees = Vector3(-55.0, -30.0, 0)
+		sun.light_color = Color(0.62, 0.72, 1.0)
+		sun.light_energy = 0.42
+	var amb_night := Color(0.34, 0.4, 0.64)
+	var amb_day := Color(0.62, 0.7, 0.85)
+	env.ambient_light_color = amb_night.lerp(amb_day, lit).lerp(Color(0.85, 0.66, 0.6), dusk * 0.4)
+	env.ambient_light_energy = lerpf(0.62, 0.9, lit)
+	env.background_energy_multiplier = lerpf(0.55, 1.0, lit)
+	env.adjustment_saturation = lerpf(0.72, 1.16, lit)  # colours fade by moonlight
+	# The sky through the day: deep blue at night, warm at the horizon at dawn and
+	# dusk, clear blue by day; distant haze and the sea of clouds take its colours.
+	var top := Color(0.04, 0.07, 0.17).lerp(Color(0.22, 0.42, 0.72), lit).lerp(Color(0.25, 0.28, 0.52), dusk * 0.5)
+	var horizon := Color(0.12, 0.16, 0.3).lerp(Color(0.72, 0.8, 0.9), lit).lerp(Color(0.98, 0.62, 0.42), dusk * 0.75)
+	sky_mat.sky_top_color = top
+	sky_mat.sky_horizon_color = horizon
+	sky_mat.ground_horizon_color = horizon
+	sky_mat.ground_bottom_color = top.lerp(horizon, 0.5)
+	env.fog_light_color = horizon
+	var cloud := Color(0.28, 0.32, 0.46).lerp(Color(0.93, 0.95, 1.0), lit).lerp(Color(1.0, 0.78, 0.66), dusk * 0.6)
+	for cm in cloud_mats:
+		cm.set_shader_parameter("cloud_color", cloud)
+		cm.set_shader_parameter("shadow_color", cloud * Color(0.62, 0.66, 0.8))
+	renderer.set_night(1.0 - lit)
 
 
 func _mouse_ray() -> Dictionary:
@@ -342,6 +382,7 @@ func _on_world_ready() -> void:
 	var v: Vector3i = info["features"]["village"]
 	rig.set_view(Vector3(v) + Vector3(0, 2, 0), 35.0, 48.0, 150.0)
 	renderer.setup(Game.sim, rig.camera)
+	fx.setup(Game.sim, rig.camera)
 	chars.setup(Game.sim, rig.camera)
 	chars.selected_id = -1
 	Game.select({})
@@ -394,9 +435,21 @@ func _apply_tool() -> void:
 
 
 func _screenshot_step() -> void:
-	if renderer.pending_count() > 0:
+	# Wait for the world to be meshed once; after that the countdown runs even while
+	# late effects keep changing it.
+	if _shot_wait == 0 and renderer.pending_count() > 0:
 		return
 	_shot_wait += 1
+	# Effects to catch in the act: applied a few frames before the capture.
+	if _shot_wait == maxi(1, _shot_frames - int(_cli.get("late-frames", "6"))):
+		for cmd in _cli.get("late-admin", []):
+			var parts: PackedStringArray = String(cmd).split(":", true, 1)
+			var params: Variant = JSON.parse_string(parts[1]) if parts.size() > 1 else {}
+			Game.sim.admin(parts[0], params if params is Dictionary else {})
+		if _cli.has("late-admin"):
+			Game.sim.step(int(_cli.get("late-ticks", "2")))
+		if _cli.has("late-run"):
+			Game.paused = false  # let the world move for the last frames
 	if _shot_wait < _shot_frames:
 		return
 	var img := get_viewport().get_texture().get_image()

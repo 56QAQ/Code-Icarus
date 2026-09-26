@@ -13,6 +13,7 @@ const FLAG_TINTED := 1    # multiply by the vertex colour's hue (crops ripen)
 const FLAG_NATURAL := 2   # large-scale colour drift across the landscape
 const FLAG_GLOW := 4      # bright texels glow (levistone veins, magma)
 const FLAG_SHINY := 8     # texture alpha < 1 marks glossy texels (ore, glass)
+const FLAG_WINDOW := 16   # panes glow warm at night
 const CRACK_STAGES := 4
 
 var _layers: Array[Image] = []
@@ -66,6 +67,8 @@ func _flags(key: String, m: Dictionary) -> int:
 		f |= FLAG_GLOW
 	if key in ["copper_ore", "iron_ore", "coal", "meteorite", "glass", "levistone", "spring"]:
 		f |= FLAG_SHINY
+	if key == "glass":
+		f |= FLAG_WINDOW
 	return f
 
 

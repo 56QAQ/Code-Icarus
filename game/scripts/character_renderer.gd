@@ -116,6 +116,8 @@ func _create(c: Dictionary) -> Dictionary:
 		"walk": 0.0, "phase": 0.0, "speed": 0.0, "lean": 0.0}
 	root.position = c["pos"]
 	if c.get("girl", false):
+		n["look"] = {"hair": c.get("hair", Color(0.3, 0.2, 0.15)), "cloth": c.get("cloth", Color.WHITE),
+			"accent": c.get("accent", Color(1, 0.8, 0.3))}
 		var l := Label3D.new()
 		l.text = "◆ %s" % c["name"]
 		l.font = UITheme.font_bold()
@@ -196,6 +198,8 @@ func _rebuild_body(n: Dictionary, id: int) -> void:
 		else:
 			n["aabbs"].append(AABB())
 		n["parts"].append(pivot)
+	if n.has("look"):
+		_attach_look(n)
 
 
 func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
@@ -328,6 +332,15 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	if lvl != null and is_instance_valid(lvl):
 		lvl.rotation.x = -arml.rotation.x
 	body.position.y += bob if not lying else 0.0
+	# Twin tails swing with the stride and settle when standing; the emblem floats.
+	for tp in n.get("tails", []):
+		if is_instance_valid(tp):
+			(tp as Node3D).rotation.x = lerpf((tp as Node3D).rotation.x, 0.35 * walk + sin(t * 2.2) * 0.05 + absf(sin(ph)) * 0.12 * walk, k)
+	var em: MeshInstance3D = n.get("emblem")
+	if em != null and is_instance_valid(em):
+		em.visible = alive
+		em.position = Vector3(0, (3.05 if not lying else 0.9) + sin(t * 1.6) * 0.08, 0)
+		em.rotation = Vector3(0.785, t * 1.4, 0.615)
 	# The tool for the job in hand while working.
 	var tool_sig := "%s|%s" % [job, c.get("tool", "")] if working and weapon == "" else ""
 	if tool_sig != n["tool_sig"]:
@@ -348,8 +361,68 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 		n["dead_applied"] = true
 		for p in parts:
 			for ch in p.get_children():
-				if ch is MeshInstance3D and not ch.has_meta("gear"):
+				if ch is MeshInstance3D and not ch.has_meta("gear") and not ch.has_meta("look"):
 					ch.material_override = _dead_mat
+
+
+## A magical girl's silhouette: twin tails with bows, a flared skirt with a hem in her
+## colour, and her emblem floating above her. Decoration only.
+func _attach_look(n: Dictionary) -> void:
+	var parts: Array = n["parts"]
+	if parts.size() < 6:
+		return
+	var look: Dictionary = n["look"]
+	var hair := StandardMaterial3D.new()
+	hair.albedo_color = look["hair"]
+	hair.roughness = 0.7
+	var cloth := StandardMaterial3D.new()
+	cloth.albedo_color = (look["cloth"] as Color).darkened(0.08)
+	cloth.roughness = 0.85
+	var accent := StandardMaterial3D.new()
+	accent.albedo_color = look["accent"]
+	accent.roughness = 0.5
+	var aabbs: Array = n["aabbs"]
+	var hb: AABB = aabbs[PART_HEAD]
+	var tails: Array = []
+	if hb.size.y > 0.0:
+		var head: Node3D = parts[PART_HEAD]
+		for side in [-1.0, 1.0]:
+			var pivot := Node3D.new()
+			pivot.set_meta("look", true)
+			var x: float = hb.get_center().x + float(side) * (hb.size.x * 0.5 + 0.05)
+			pivot.position = Vector3(x, hb.position.y + hb.size.y * 0.72, hb.position.z + hb.size.z * 0.3)
+			head.add_child(pivot)
+			var tail := _box(pivot, Vector3(0.15, 0.62, 0.15), Vector3(0, -0.28, -0.04), hair)
+			tail.remove_meta("gear")
+			var tip := _box(pivot, Vector3(0.11, 0.14, 0.11), Vector3(0, -0.64, -0.06), hair)
+			tip.remove_meta("gear")
+			var bow := _box(pivot, Vector3(0.2, 0.1, 0.08), Vector3(0, 0.02, 0.0), accent)
+			bow.remove_meta("gear")
+			tails.append(pivot)
+	n["tails"] = tails
+	var tb: AABB = aabbs[PART_TORSO]
+	if tb.size.y > 0.0:
+		var torso: Node3D = parts[PART_TORSO]
+		var skirt := _box(torso, Vector3(tb.size.x * 1.28, 0.24, tb.size.z * 1.5), Vector3(tb.get_center().x, tb.position.y + 0.02, tb.get_center().z), cloth)
+		skirt.remove_meta("gear")
+		skirt.set_meta("look", true)
+		var hem := _box(torso, Vector3(tb.size.x * 1.3, 0.05, tb.size.z * 1.52), Vector3(tb.get_center().x, tb.position.y - 0.1, tb.get_center().z), accent)
+		hem.remove_meta("gear")
+		hem.set_meta("look", true)
+	if not n.has("emblem"):
+		var em := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.14, 0.14, 0.14)
+		em.mesh = bm
+		var gm := StandardMaterial3D.new()
+		gm.albedo_color = look["accent"]
+		gm.emission_enabled = true
+		gm.emission = look["accent"]
+		gm.emission_energy_multiplier = 1.6
+		em.material_override = gm
+		em.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		(n["root"] as Node3D).add_child(em)
+		n["emblem"] = em
 
 
 ## Arms, lean and head for a kind of work: [left arm, right arm, lean, head pitch,

@@ -40,7 +40,8 @@ void fragment() {
 	ROUGHNESS = mix(0.85, 0.08, s.gloss);
 	SPECULAR = mix(0.3, 0.8, s.gloss);
 	BACKLIGHT = s.albedo * 0.45;
+	EMISSION = s.light;
 	if (COLOR.a > 0.01) {
-		EMISSION = s.albedo * COLOR.a * 3.0 * (0.7 + 0.3 * sin(TIME * 10.0 + wpos.x));
+		EMISSION += s.albedo * COLOR.a * 3.0 * (0.7 + 0.3 * sin(TIME * 10.0 + wpos.x));
 	}
 }

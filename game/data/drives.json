@@ -13,7 +13,7 @@
   "drives": [
     {
       "key": "hope", "name": "希望", "valence": 1, "category": "governance", "power": 0.85, "mana_regen": 1.1,
-      "punish_bias": 0.1, "cooperation": 0.9, "costume": {"cloth": "#f4f1e6", "accent": "#8fd3e8", "hair": "#f2e2b8"},
+      "punish_bias": 0.1, "cooperation": 0.9, "costume": {"cloth": "#f4f1e6", "accent": "#8fd3e8", "hair": "#e8b24a"},
       "values": {"food_security": 0.9, "welfare": 1.2, "order": 0.2, "harshness": -1.0, "cooperation": 1.0, "self_power": -0.2,
                  "growth": 0.8, "frugality": 0.0, "military": -0.3, "risk": 0.3, "fairness": 1.0, "speed": 0.2},
       "spells": [
@@ -45,7 +45,7 @@
     },
     {
       "key": "light", "name": "光明", "valence": 1, "category": "governance", "power": 0.9, "mana_regen": 1.0,
-      "punish_bias": 0.35, "cooperation": 0.65, "costume": {"cloth": "#f7e7a8", "accent": "#ffffff", "hair": "#fff2c4"},
+      "punish_bias": 0.35, "cooperation": 0.65, "costume": {"cloth": "#f7e7a8", "accent": "#ffffff", "hair": "#f4cf4f"},
       "values": {"food_security": 0.8, "welfare": 0.7, "order": 1.2, "harshness": 0.1, "cooperation": 0.6, "self_power": 0.2,
                  "growth": 0.7, "frugality": 0.3, "military": 0.3, "risk": -0.4, "fairness": 1.2, "speed": 0.3},
       "spells": [
@@ -61,7 +61,7 @@
     },
     {
       "key": "gourmet", "name": "美食", "valence": 1, "category": "development", "power": 0.8, "mana_regen": 1.1,
-      "punish_bias": 0.15, "cooperation": 0.85, "costume": {"cloth": "#f2c38a", "accent": "#e36b5a", "hair": "#f5d7a1"},
+      "punish_bias": 0.15, "cooperation": 0.85, "costume": {"cloth": "#f2c38a", "accent": "#e36b5a", "hair": "#c2683a"},
       "values": {"food_security": 1.5, "welfare": 1.1, "order": 0.2, "harshness": -0.8, "cooperation": 0.9, "self_power": 0.1,
                  "growth": 0.9, "frugality": -0.3, "military": -0.5, "risk": 0.0, "fairness": 0.7, "speed": 0.5},
       "spells": [
