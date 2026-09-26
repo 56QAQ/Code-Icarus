@@ -1,7 +1,11 @@
 #include "icarus_sim.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+
+#include <algorithm>
+#include <cmath>
 
 #include "convert.h"
 #include "icarus/util/log.h"
@@ -42,6 +46,14 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("debris_mesh", "id"), &IcarusSim::debris_mesh);
     ClassDB::bind_method(D_METHOD("meteors"), &IcarusSim::meteors);
     ClassDB::bind_method(D_METHOD("admin", "type", "params"), &IcarusSim::admin);
+    ClassDB::bind_method(D_METHOD("characters"), &IcarusSim::characters);
+    ClassDB::bind_method(D_METHOD("character_body", "id"), &IcarusSim::character_body);
+    ClassDB::bind_method(D_METHOD("character_info", "id"), &IcarusSim::character_info);
+    ClassDB::bind_method(D_METHOD("polity_info", "id"), &IcarusSim::polity_info);
+    ClassDB::bind_method(D_METHOD("polities"), &IcarusSim::polities);
+    ClassDB::bind_method(D_METHOD("piles"), &IcarusSim::piles);
+    ClassDB::bind_method(D_METHOD("building_at", "cube"), &IcarusSim::building_at);
+    ClassDB::bind_method(D_METHOD("buildings"), &IcarusSim::buildings);
     ClassDB::bind_method(D_METHOD("last_event_id"), &IcarusSim::last_event_id);
     ClassDB::bind_method(D_METHOD("events_since", "after_id", "max_count"), &IcarusSim::events_since);
     ClassDB::bind_method(D_METHOD("event", "id"), &IcarusSim::event);
@@ -400,3 +412,395 @@ bool IcarusSim::load_bytes(const PackedByteArray& data) {
 }
 
 int64_t IcarusSim::state_hash() const { return sim_ ? (int64_t)sim_->state_hash() : 0; }
+
+// ---------------------------------------------------------------------------------- characters
+
+namespace {
+String drive_name(const icarus::Registry& reg, const std::string& key) {
+    for (const icarus::Json& d : reg.doc("drives")["drives"].items())
+        if (d.str("key") == key) return to_gd(d.str("name", key));
+    return to_gd(key);
+}
+const icarus::Json* drive_doc(const icarus::Registry& reg, const std::string& key) {
+    for (const icarus::Json& d : reg.doc("drives")["drives"].items())
+        if (d.str("key") == key) return &d;
+    return nullptr;
+}
+Color col(uint32_t c) { return Color(((c >> 16) & 0xFF) / 255.0, ((c >> 8) & 0xFF) / 255.0, (c & 0xFF) / 255.0); }
+}  // namespace
+
+Array IcarusSim::characters() const {
+    Array out;
+    if (!sim_) return out;
+    const icarus::Tick now = sim_->now();
+    for (const auto& cp : sim_->agents().all()) {
+        if (!cp) continue;
+        const icarus::Character& c = *cp;
+        if (c.departed) continue;
+        if (!c.alive && now - c.died > icarus::kTicksPerDay) continue;
+        Dictionary d;
+        d["id"] = (int64_t)c.id;
+        d["name"] = to_gd(c.name);
+        d["pos"] = to_gd(c.pos);
+        d["yaw"] = c.yaw;
+        d["moving"] = c.moving;
+        d["phase"] = c.walk_phase;
+        d["sleeping"] = c.sleeping;
+        d["alive"] = c.alive;
+        d["girl"] = c.is_girl();
+        d["body_version"] = (int64_t)c.body.version;
+        d["polity"] = c.polity;
+        d["task"] = to_gd(icarus::task_name_zh(c.task.type));
+        d["status"] = to_gd(c.status_text);
+        const icarus::Store* inv = sim_->economy().store(c.inv);
+        d["carrying"] = inv && !inv->empty();
+        d["working"] = c.task.type == icarus::TaskType::Work && c.task.until > now && !c.moving;
+        d["protest"] = c.task.type == icarus::TaskType::Protest && c.task.step == 2;
+        if (c.is_girl()) d["drive"] = drive_name(*reg_, c.girl->drive);
+        out.push_back(d);
+    }
+    return out;
+}
+
+Array IcarusSim::character_body(int64_t id) const {
+    Array out;
+    if (!sim_) return out;
+    const icarus::Character* c = sim_->agents().get((icarus::EntityId)id);
+    if (!c) return out;
+    std::vector<uint32_t> pal = c->look.palette();
+    for (int p = 0; p < icarus::kPartCount; ++p) {
+        const icarus::PartShape& s = icarus::part_shape(p);
+        const icarus::BodyPart& bp = c->body.parts[p];
+        icarus::MeshData m;
+        icarus::build_voxel_model(bp.vox.data(), s.size.x, s.size.y, s.size.z, pal, icarus::kBodyScale, m);
+        // Pivot: hips/shoulders at the top of limbs, neck at the bottom of the head.
+        float px = (float)s.origin.x + (float)s.size.x * 0.5f;
+        float pz = (float)s.origin.z + (float)s.size.z * 0.5f;
+        float py = (p == icarus::kHead || p == icarus::kTorso) ? (float)s.origin.y : (float)(s.origin.y + s.size.y);
+        // Offset vertices so the pivot is the mesh origin.
+        float ox = ((float)s.origin.x - px) * icarus::kBodyScale;
+        float oy = ((float)s.origin.y - py) * icarus::kBodyScale;
+        float oz = ((float)s.origin.z - pz) * icarus::kBodyScale;
+        for (size_t i = 0; i < m.positions.size(); i += 3) {
+            m.positions[i] += ox;
+            m.positions[i + 1] += oy;
+            m.positions[i + 2] += oz;
+        }
+        Dictionary d;
+        d["mesh"] = mesh_to_arrays(m);
+        d["pivot"] = Vector3(px, py, pz) * icarus::kBodyScale;
+        d["severed"] = bp.severed;
+        out.push_back(d);
+    }
+    return out;
+}
+
+Dictionary IcarusSim::character_info(int64_t id) const {
+    Dictionary d;
+    if (!sim_) return d;
+    const icarus::Character* cp = sim_->agents().get((icarus::EntityId)id);
+    if (!cp) return d;
+    const icarus::Character& c = *cp;
+    const icarus::Tick now = sim_->now();
+    d["id"] = (int64_t)c.id;
+    d["name"] = to_gd(c.name);
+    d["female"] = c.female;
+    d["alive"] = c.alive;
+    d["death_cause"] = to_gd(c.death_cause);
+    d["girl"] = c.is_girl();
+    d["polity"] = c.polity;
+    d["polity_title"] = to_gd(sim_->society().title(c.polity));
+    d["pos"] = to_gd(c.pos);
+    d["task"] = to_gd(icarus::task_name_zh(c.task.type));
+    d["status"] = to_gd(c.status_text);
+    d["reason"] = to_gd(c.task.label);
+    Dictionary needs;
+    needs["food"] = c.needs.food;
+    needs["water"] = c.needs.water;
+    needs["rest"] = c.needs.rest;
+    needs["social"] = c.needs.social;
+    needs["safety"] = c.needs.safety;
+    needs["comfort"] = c.needs.comfort;
+    d["needs"] = needs;
+    d["mood"] = c.mood;
+    d["stress"] = c.stress;
+    d["fear"] = c.fear;
+    d["work_debt"] = c.work_debt;
+    Array pers;
+    for (int i = 0; i < icarus::Personality::kCount; ++i) {
+        Dictionary t;
+        t["name"] = to_gd(icarus::trait_name_zh(i));
+        t["value"] = c.pers.at(i);
+        pers.push_back(t);
+    }
+    d["personality"] = pers;
+    Array skills;
+    for (int s = 0; s < icarus::kSkillCount; ++s) {
+        Dictionary t;
+        t["name"] = to_gd(icarus::skill_name_zh(s));
+        t["value"] = c.skills[s];
+        skills.push_back(t);
+    }
+    d["skills"] = skills;
+    Array trace;
+    for (const auto& o : c.trace) {
+        Dictionary t;
+        t["label"] = to_gd(o.label);
+        t["score"] = o.score;
+        t["why"] = to_gd(o.why);
+        trace.push_back(t);
+    }
+    d["trace"] = trace;
+    Array support;
+    for (const auto& s : c.support) {
+        const icarus::Character* g = sim_->agents().get(s.girl);
+        if (!g) continue;
+        Dictionary t;
+        t["id"] = (int64_t)s.girl;
+        t["name"] = to_gd(g->name);
+        t["value"] = s.value;
+        if (g->girl) t["drive"] = drive_name(*reg_, g->girl->drive);
+        support.push_back(t);
+    }
+    d["support"] = support;
+    // Closest relationships.
+    std::vector<icarus::Relation> rel = c.relations;
+    std::sort(rel.begin(), rel.end(), [](const auto& a, const auto& b) { return std::fabs(a.affinity) > std::fabs(b.affinity); });
+    Array rels;
+    for (size_t i = 0; i < rel.size() && i < 6; ++i) {
+        const icarus::Character* o = sim_->agents().get(rel[i].other);
+        if (!o) continue;
+        Dictionary t;
+        t["id"] = (int64_t)o->id;
+        t["name"] = to_gd(o->name);
+        t["value"] = rel[i].affinity;
+        rels.push_back(t);
+    }
+    d["relations"] = rels;
+    Array mems;
+    for (auto it = c.memories.rbegin(); it != c.memories.rend() && mems.size() < 8; ++it) {
+        Dictionary t;
+        t["text"] = to_gd(icarus::memory_kind_zh(it->kind));
+        t["valence"] = it->valence;
+        t["time"] = to_gd(icarus::format_time_zh(it->tick));
+        t["event"] = (int64_t)it->event;
+        const icarus::Character* s = sim_->agents().get(it->subject);
+        if (s) t["subject"] = to_gd(s->name);
+        mems.push_back(t);
+    }
+    d["memories"] = mems;
+    Array parts;
+    for (int p = 0; p < icarus::kPartCount; ++p) {
+        Dictionary t;
+        t["name"] = to_gd(icarus::body_part_name_zh(p));
+        t["integrity"] = c.body.part_integrity(p);
+        t["severed"] = c.body.parts[p].severed;
+        parts.push_back(t);
+    }
+    d["body"] = parts;
+    d["vitality"] = c.body.vitality;
+    d["bleeding"] = c.body.bleeding;
+    Array inv;
+    if (const icarus::Store* s = sim_->economy().store(c.inv))
+        for (const auto& st : s->items) {
+            Dictionary t;
+            t["item"] = to_gd(reg_->item(st.item).name);
+            t["count"] = st.count;
+            inv.push_back(t);
+        }
+    d["inventory"] = inv;
+    if (const icarus::Building* h = sim_->buildings().get(c.home)) d["home"] = to_gd(h->name);
+    d["occupation"] = to_gd(c.occupation);
+    d["age_days"] = (double)(now - c.born) / (double)icarus::kTicksPerDay;
+    if (c.is_girl()) {
+        const icarus::GirlData& g = *c.girl;
+        Dictionary gd;
+        gd["drive"] = drive_name(*reg_, g.drive);
+        gd["drive_key"] = to_gd(g.drive);
+        gd["title"] = String::utf8("象征") + drive_name(*reg_, g.drive) + String::utf8("的魔法少女，") + to_gd(c.name);
+        gd["level"] = g.level;
+        gd["xp"] = g.xp;
+        gd["mana"] = g.mana;
+        gd["role"] = to_gd(g.role);
+        gd["domain"] = to_gd(g.domain);
+        gd["loyalty"] = g.loyalty;
+        gd["stance"] = to_gd(g.stance);
+        gd["temperament"] = to_gd(g.temperament);
+        if (const icarus::Json* dd = drive_doc(*reg_, g.drive)) {
+            gd["valence"] = dd->integer("valence", 1);
+            gd["category"] = to_gd(dd->str("category"));
+            Array spells;
+            for (const icarus::Json& sp : (*dd)["spells"].items()) {
+                Dictionary t;
+                t["name"] = to_gd(sp.str("name"));
+                t["type"] = to_gd(sp.str("type"));
+                t["level"] = sp.integer("level", 1);
+                t["unlocked"] = g.level >= sp.integer("level", 1);
+                t["desc"] = to_gd(sp.str("desc"));
+                spells.push_back(t);
+            }
+            gd["spells"] = spells;
+        }
+        d["girl_data"] = gd;
+    }
+    return d;
+}
+
+Array IcarusSim::polities() const {
+    Array out;
+    if (!sim_) return out;
+    for (const auto& p : sim_->society().polities())
+        if (p.alive) out.push_back(polity_info(p.id));
+    return out;
+}
+
+Dictionary IcarusSim::polity_info(int64_t id) const {
+    Dictionary d;
+    if (!sim_) return d;
+    const icarus::Polity* p = sim_->society().polity((uint16_t)id);
+    if (!p) return d;
+    d["id"] = p->id;
+    d["name"] = to_gd(p->name);
+    d["title"] = to_gd(sim_->society().title(p->id));
+    d["color"] = col(p->color);
+    d["ruler"] = (int64_t)p->ruler;
+    if (const icarus::Character* r = sim_->agents().get(p->ruler)) d["ruler_name"] = to_gd(r->name);
+    const icarus::PolityStats& s = p->stats;
+    Dictionary st;
+    st["population"] = s.population;
+    st["girls"] = s.girls;
+    st["food_stock"] = s.food_stock;
+    st["food_days"] = s.food_days;
+    st["food_access"] = s.food_access;
+    st["water_access"] = s.water_access;
+    st["mood"] = s.mood;
+    st["ruler_support"] = s.ruler_support;
+    st["stability"] = s.stability;
+    st["knowledge"] = s.knowledge;
+    st["protesters"] = s.protesters;
+    st["deaths"] = s.deaths;
+    d["stats"] = st;
+    Dictionary pol;
+    pol["ration"] = p->policies.ration;
+    pol["punishment"] = p->policies.punishment;
+    pol["work_hours"] = p->policies.work_hours;
+    pol["requisition"] = p->policies.requisition;
+    pol["distribution"] = p->policies.distribution;
+    pol["wage"] = p->policies.wage;
+    d["policies"] = pol;
+    Array crises;
+    for (const auto& c : p->crises) {
+        if (!c.active) continue;
+        Dictionary t;
+        t["kind"] = to_gd(icarus::crisis_name_zh(c.kind));
+        t["severity"] = c.severity;
+        t["event"] = (int64_t)c.event;
+        crises.push_back(t);
+    }
+    d["crises"] = crises;
+    Array girls;
+    for (const auto& cp : sim_->agents().all()) {
+        if (!cp || !cp->alive || cp->departed || !cp->is_girl() || cp->polity != p->id) continue;
+        Dictionary g;
+        g["id"] = (int64_t)cp->id;
+        g["name"] = to_gd(cp->name);
+        g["drive"] = drive_name(*reg_, cp->girl->drive);
+        g["role"] = to_gd(cp->girl->role);
+        g["level"] = cp->girl->level;
+        g["loyalty"] = cp->girl->loyalty;
+        g["stance"] = to_gd(cp->girl->stance);
+        float sup = 0;
+        int n = 0;
+        for (const auto& rp : sim_->agents().all())
+            if (rp && rp->alive && !rp->is_girl() && rp->polity == p->id) {
+                sup += rp->support_for(cp->id);
+                ++n;
+            }
+        g["support"] = n ? sup / (float)n : 0.0f;
+        girls.push_back(g);
+    }
+    d["girls"] = girls;
+    // History (hourly), compact arrays for charts.
+    PackedFloat32Array food, mood, support, pop;
+    for (const auto& h : p->history) {
+        food.push_back(h.food_days);
+        mood.push_back(h.mood);
+        support.push_back(h.ruler_support);
+        pop.push_back((float)h.population);
+    }
+    Dictionary hist;
+    hist["food_days"] = food;
+    hist["mood"] = mood;
+    hist["ruler_support"] = support;
+    hist["population"] = pop;
+    d["history"] = hist;
+    Array reigns;
+    for (const auto& r : p->reigns) {
+        Dictionary t;
+        t["ruler"] = to_gd(r.ruler_name);
+        t["drive"] = drive_name(*reg_, r.drive);
+        t["from"] = to_gd(icarus::format_time_zh(r.from));
+        t["how"] = to_gd(r.how);
+        reigns.push_back(t);
+    }
+    d["reigns"] = reigns;
+    return d;
+}
+
+Array IcarusSim::piles() const {
+    Array out;
+    if (!sim_) return out;
+    for (const auto& s : sim_->economy().stores()) {
+        if (!s.alive || s.kind != icarus::StoreKind::Pile || s.empty()) continue;
+        Dictionary d;
+        d["pos"] = to_gd(s.pos);
+        int n = 0;
+        for (auto& st : s.items) n += st.count;
+        d["count"] = n;
+        out.push_back(d);
+    }
+    return out;
+}
+
+Dictionary IcarusSim::building_at(const Vector3i& cube) const {
+    Dictionary d;
+    if (!sim_) return d;
+    uint32_t id = sim_->buildings().at(to_ic(cube));
+    const icarus::Building* b = sim_->buildings().get(id);
+    if (!b) return d;
+    d["id"] = (int64_t)b->id;
+    d["name"] = to_gd(b->name);
+    d["integrity"] = b->integrity;
+    d["functional"] = b->functional;
+    d["complete"] = b->complete;
+    d["residents"] = (int64_t)b->residents.size();
+    d["beds"] = b->beds;
+    if (const icarus::Store* s = sim_->economy().store(b->store)) {
+        Array items;
+        for (const auto& st : s->items) {
+            Dictionary t;
+            t["item"] = to_gd(reg_->item(st.item).name);
+            t["count"] = st.count;
+            items.push_back(t);
+        }
+        d["items"] = items;
+    }
+    return d;
+}
+
+Array IcarusSim::buildings() const {
+    Array out;
+    if (!sim_) return out;
+    for (const auto& b : sim_->buildings().all()) {
+        if (!b.alive) continue;
+        Dictionary d;
+        d["id"] = (int64_t)b.id;
+        d["name"] = to_gd(b.name);
+        d["pos"] = to_gd(b.entrance);
+        d["functional"] = b.functional;
+        d["complete"] = b.complete;
+        d["integrity"] = b.integrity;
+        out.push_back(d);
+    }
+    return out;
+}

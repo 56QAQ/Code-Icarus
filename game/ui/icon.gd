@@ -95,7 +95,7 @@ func _draw() -> void:
 			draw_line(P.call(0.56, 0.38), P.call(0.62, 0.2), Color(color, 0.6), w, true)
 		"heart":
 			var h := PackedVector2Array()
-			for i in 33:
+			for i in 32:
 				var t := float(i) / 32.0 * TAU
 				var x := 16.0 * pow(sin(t), 3.0)
 				var y := -(13.0 * cos(t) - 5.0 * cos(2 * t) - 2.0 * cos(3 * t) - cos(4 * t))

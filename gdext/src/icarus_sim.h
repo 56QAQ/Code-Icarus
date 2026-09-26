@@ -48,6 +48,16 @@ public:
     Array debris_mesh(int64_t id) const;
     Array meteors() const;
 
+    // Characters.
+    Array characters() const;               // light per-frame snapshot
+    Array character_body(int64_t id) const; // 6 parts: {mesh, pivot}
+    Dictionary character_info(int64_t id) const;
+    Dictionary polity_info(int64_t id) const;
+    Array polities() const;
+    Array piles() const;
+    Dictionary building_at(const Vector3i& cube) const;
+    Array buildings() const;
+
     // Commands.
     void admin(const String& type, const Dictionary& params);
 

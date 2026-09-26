@@ -5,6 +5,7 @@ extends Node3D
 ##        [--admin type:{json}] [--hide-ui] [--frames N]
 
 var renderer: WorldRenderer
+var chars: CharacterRenderer
 var rig: CameraRig
 var hud: HUD
 var sun: DirectionalLight3D
@@ -25,6 +26,8 @@ func _ready() -> void:
 	add_child(rig)
 	renderer = WorldRenderer.new()
 	add_child(renderer)
+	chars = CharacterRenderer.new()
+	add_child(chars)
 	_build_brush()
 	var ui_layer := CanvasLayer.new()
 	add_child(ui_layer)
@@ -45,6 +48,13 @@ func _ready() -> void:
 		if p.size() >= 6:
 			rig.set_view(Vector3(float(p[0]), float(p[1]), float(p[2])), float(p[3]), float(p[4]), float(p[5]))
 	renderer.setup(Game.sim, rig.camera)
+	chars.setup(Game.sim, rig.camera)
+	hud.selection.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 40.0))
+	hud.civ_card.girl_selected.connect(func(id: int) -> void:
+		_select_character(id)
+		rig.focus(chars.position_of(id), 40.0))
+	if _cli.has("select"):
+		_select_character(int(_cli["select"]))
 	if _cli.has("ticks"):
 		Game.sim.step(int(_cli["ticks"]))
 	for cmd in _cli.get("admin", []):
@@ -251,7 +261,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		_apply_tool()
 
 
+func _select_character(id: int) -> void:
+	chars.selected_id = id
+	hud.selection.show_character(id)
+	Game.select({"kind": "character", "id": id})
+
+
 func _apply_tool() -> void:
+	if Game.current_tool == "inspect":
+		var cid := chars.pick(get_viewport().get_mouse_position())
+		if cid >= 0:
+			_select_character(cid)
+			return
 	var hit := _mouse_ray()
 	if not hit.get("hit", false):
 		return
@@ -270,7 +291,13 @@ func _apply_tool() -> void:
 		"flood":
 			Game.admin("place", {"pos": cube + normal, "radius": r, "material": "water"})
 		"inspect":
-			Game.select({"kind": "cube", "cube": cube})
+			var b: Dictionary = Game.sim.building_at(cube)
+			if not b.is_empty():
+				chars.selected_id = -1
+				hud.selection.show_building(b["id"], cube)
+			else:
+				chars.selected_id = -1
+				hud.selection.visible = false
 
 
 func _screenshot_step() -> void:

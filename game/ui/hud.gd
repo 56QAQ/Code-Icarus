@@ -21,6 +21,9 @@ var _top_center: CenterContainer
 var _top_right: VBoxContainer
 var _bottom_left: VBoxContainer
 var _bottom_center: VBoxContainer
+var _bottom_right: VBoxContainer
+var civ_card: CivCard
+var selection: SelectionCard
 
 const TOOLS := [
 	{"id": "inspect", "icon": "inspect", "label": "观察", "tip": "查看方块、地格与居民"},
@@ -91,7 +94,8 @@ func _build_layout() -> void:
 	_bottom_center.alignment = BoxContainer.ALIGNMENT_END
 	_bottom_center.add_theme_constant_override("separation", 8)
 	bottom.add_child(_bottom_center)
-	_column(bottom, true)
+	_bottom_right = _column(bottom, true)
+	_bottom_right.alignment = BoxContainer.ALIGNMENT_END
 
 
 func _column(parent: Control, expand: bool) -> VBoxContainer:
@@ -170,22 +174,15 @@ func _on_speed_changed(speed: float, paused: bool) -> void:
 # ------------------------------------------------------------------ top-left: status
 
 func _build_status() -> void:
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", UITheme.card_style(UITheme.BG, 12, 8))
-	card.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_top_left.add_child(card)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 2)
-	card.add_child(col)
-	var title := UITheme.label("空岛 · 伊卡洛斯", 13, UITheme.TEXT_DIM)
-	col.add_child(title)
-	_status_box = HBoxContainer.new()
-	_status_box.add_theme_constant_override("separation", 14)
-	col.add_child(_status_box)
-	for key in ["cells", "water", "fire"]:
-		var l := UITheme.label("", 13, UITheme.TEXT)
-		_status_box.add_child(l)
-		_status_labels[key] = l
+	civ_card = CivCard.new()
+	civ_card.sim = Game.sim
+	_top_left.add_child(civ_card)
+	selection = SelectionCard.new()
+	selection.sim = Game.sim
+	_bottom_right.add_child(selection)
+	selection.closed.connect(func() -> void:
+		selection.visible = false
+		Game.select({}))
 
 
 func _process(_delta: float) -> void:
@@ -195,11 +192,6 @@ func _process(_delta: float) -> void:
 	_time_label.text = ci.get("text", "")
 	var night: bool = ci.get("night", false)
 	_day_icon.set_icon("moon" if night else "sun")
-	if Engine.get_process_frames() % 15 == 0:
-		var st: Dictionary = Game.sim.world_stats()
-		_status_labels["cells"].text = "地格 活跃 %d · 休眠 %d · 未生成 %d" % [st.get("active", 0), st.get("dormant", 0), st.get("ungenerated", 0)]
-		_status_labels["water"].text = "流动水 %d" % st.get("water_active", 0)
-		_status_labels["fire"].text = "燃烧 %d" % st.get("fire_active", 0)
 
 
 # ------------------------------------------------------------------ bottom: tool dock
