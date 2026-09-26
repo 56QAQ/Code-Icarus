@@ -2,7 +2,7 @@ extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N] [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--tool id] [--focus-soldiers [dist]]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--tool id] [--focus-soldiers [dist]]
 ##        [--hide-ui] [--frames N]
 
 var renderer: WorldRenderer
@@ -37,19 +37,22 @@ func _ready() -> void:
 	if _cli.has("hide-ui"):
 		ui_layer.visible = false
 
-	var seed := int(_cli.get("seed", "1"))
+	Game.game_started.connect(_on_world_ready)
+	# Launched plainly: a fresh island behind the world menu. Scripted runs (any
+	# command-line arguments) start straight away and never autosave.
+	var interactive := _cli.is_empty()
+	Game.autosave = interactive
+	var seed := int(_cli.get("seed", "1")) if not interactive else randi_range(1, 999999)
 	if not Game.start_new_game({"seed": seed}):
 		push_error("could not start game")
 		return
 	var info: Dictionary = Game.sim.world_info()
-	var v: Vector3i = info["features"]["village"]
-	rig.set_view(Vector3(v) + Vector3(0, 2, 0), 35.0, 48.0, 150.0)
 	if _cli.has("cam"):
 		var p: PackedStringArray = _cli["cam"].split(",")
 		if p.size() >= 6:
 			rig.set_view(Vector3(float(p[0]), float(p[1]), float(p[2])), float(p[3]), float(p[4]), float(p[5]))
-	renderer.setup(Game.sim, rig.camera)
-	chars.setup(Game.sim, rig.camera)
+	if interactive:
+		hud.open_menu()
 	hud.selection.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 40.0))
 	hud.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 45.0))
 	hud.civ_card.girl_selected.connect(func(id: int) -> void:
@@ -109,6 +112,8 @@ func _ready() -> void:
 		hud.toggle_tech()
 	if _cli.has("ending"):
 		hud.show_ending()
+	if _cli.has("menu"):
+		hud.open_menu()
 	if _cli.has("shot"):
 		_shot_path = _cli["shot"]
 		_shot_frames = int(_cli.get("frames", "20"))
@@ -307,8 +312,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				if hud.overlay_open():
 					hud.close_overlays()
-				else:
+				elif Game.current_tool != "inspect":
 					Game.set_tool("inspect")
+				else:
+					hud.open_menu()
 			KEY_J:
 				hud.toggle_council()
 			KEY_C:
@@ -317,6 +324,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.toggle_tech()
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_apply_tool()
+
+
+## A new or loaded world: rebuild what is drawn and look at the village.
+func _on_world_ready() -> void:
+	var info: Dictionary = Game.sim.world_info()
+	var v: Vector3i = info["features"]["village"]
+	rig.set_view(Vector3(v) + Vector3(0, 2, 0), 35.0, 48.0, 150.0)
+	renderer.setup(Game.sim, rig.camera)
+	chars.setup(Game.sim, rig.camera)
+	chars.selected_id = -1
+	Game.select({})
+	hud.on_world_changed()
 
 
 func _select_character(id: int) -> void:

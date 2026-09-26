@@ -89,6 +89,7 @@ jobs:
         run: |
           godot --headless --path game --import || true
           godot --headless --path game --script res://tests/smoke.gd
+          HOME="$(mktemp -d)" godot --headless --path game --script res://tests/save_test.gd | tee /dev/stderr | grep -q "SAVE PASS"
       - name: Export
         run: |
           mkdir -p build/export/windows build/export/linux build/export/macos

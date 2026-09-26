@@ -30,6 +30,7 @@ var council: CouncilPanel
 var chronicle: ChroniclePanel
 var tech: TechPanel
 var ending: EndingPanel
+var menu: WorldMenu
 var _council_wrap: CenterContainer
 var _thinking: HBoxContainer
 
@@ -184,6 +185,9 @@ func _build_time_pill() -> void:
 	var tech_btn := _icon_button("flask", "科技（T）")
 	tech_btn.pressed.connect(func() -> void: toggle_tech())
 	row.add_child(tech_btn)
+	var menu_btn := _icon_button("gear", "世界：新空岛、存档与读档（Esc）")
+	menu_btn.pressed.connect(func() -> void: open_menu())
+	row.add_child(menu_btn)
 	var right_pad := Control.new()
 	right_pad.custom_minimum_size = Vector2(2, 0)
 	row.add_child(right_pad)
@@ -453,6 +457,9 @@ func _build_council() -> void:
 	ending.visible = false
 	_council_wrap.add_child(ending)
 	ending.trace_requested.connect(func(id: int) -> void: toggle_chronicle(id))
+	menu = WorldMenu.new()
+	menu.visible = false
+	_council_wrap.add_child(menu)
 	chronicle.focus_requested.connect(func(p: Vector3) -> void:
 		chronicle.visible = false
 		focus_requested.emit(p))
@@ -501,7 +508,7 @@ func toggle_tech() -> void:
 
 
 func overlay_open() -> bool:
-	return council.visible or chronicle.visible or tech.visible or ending.visible
+	return council.visible or chronicle.visible or tech.visible or ending.visible or menu.visible
 
 
 func close_overlays() -> void:
@@ -509,6 +516,31 @@ func close_overlays() -> void:
 	chronicle.visible = false
 	tech.visible = false
 	ending.visible = false
+	if menu.visible:
+		menu.close()
+
+
+## The world menu: new island, saves, quit.
+func open_menu() -> void:
+	council.visible = false
+	chronicle.visible = false
+	tech.visible = false
+	ending.visible = false
+	menu.open()
+
+
+## After a new or loaded world: forget what belonged to the old one.
+func on_world_changed() -> void:
+	council.visible = false
+	chronicle.visible = false
+	tech.visible = false
+	ending.visible = false
+	for c in _toasts.get_children():
+		c.queue_free()
+	selection.visible = false
+	civ_card.polity_id = 1
+	civ_card._switch_sig = ""
+	civ_card._war_sig = ""
 
 
 ## The round's end card (when the island has been unified).

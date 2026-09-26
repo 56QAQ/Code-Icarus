@@ -163,6 +163,7 @@ Dictionary IcarusSim::world_info() const {
     Dictionary d;
     if (!sim_) return d;
     const icarus::World& w = sim_->world();
+    d["seed"] = (int64_t)w.config().seed;
     d["size"] = Vector3i(w.size_x(), w.size_y(), w.size_z());
     d["cells"] = Vector3i(w.cells_x(), w.cells_y(), w.cells_z());
     d["cell_size"] = icarus::kCellSize;
