@@ -489,6 +489,9 @@ void WorldGen::generate_cell(const Vec3i& cc, Voxel* out) const {
 
     place_ores(cc, out);
     place_trees(cc, out);
+    // Mushrooms, berries, herbs, wild grain and boulders: the same wild plants as the
+    // continent's (the village, fields and bridge are kept clear).
+    place_plants_continent(cc, out);
 
     // Spring cube.
     const Vec3i& sp = feat_.spring;

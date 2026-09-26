@@ -1,13 +1,13 @@
 // Technology: from stone tools to a medieval iron age. Knowledge comes from research
 // work (at the hall, faster in a study) and from practice. A tech unlocks recipes,
 // buildings and decision options that name it in their "tech" field.
-//   era: 0 蒙昧 · 1 部落 · 2 青铜 · 3 铁器
+//   era: 0 蛮荒 · 1 农耕 · 2 青铜 · 3 铁器
 //   effects: optional numeric effects read by the kernel
 //   practice: knowledge gained per unit of everyday work (activity -> points): forage,
 //             forage_<item>, chop, mine, hunt, build, craft, cook, till, sow, harvest,
 //             sleep_rough (a night in the open)
 {
-  "eras": ["蒙昧时代", "部落时代", "青铜时代", "铁器时代"],
+  "eras": ["蛮荒时代", "农耕时代", "青铜时代", "铁器时代"],
   // What a people already know when a game starts in each era (开局时代).
   "start_eras": {
     "wild": ["gathering", "fire"],
@@ -25,13 +25,13 @@
      "desc": "用原木和茅草搭起窝棚，不再露宿荒野。"},
     {"key": "hide_working", "name": "制皮", "era": 0, "cost": 20, "practice": {"hunt": 1.2}, "values": {"welfare": 0.6, "food_security": 0.1}, "requires": ["hunting"],
      "desc": "刮净鞣制兽皮，缝制兽皮衣，抵御寒夜与风雪。"},
-    {"key": "weaving", "name": "编织", "era": 0, "cost": 26, "practice": {"forage": 0.02, "chop": 0.15, "craft": 0.3}, "values": {"welfare": 0.5, "growth": 0.3}, "requires": ["gathering"],
+    {"key": "weaving", "name": "编织", "era": 1, "cost": 26, "practice": {"forage": 0.02, "chop": 0.15, "craft": 0.3}, "values": {"welfare": 0.5, "growth": 0.3}, "requires": ["gathering"],
      "desc": "搓草成绳、织麻为布，缝制布衣。"},
-    {"key": "farming", "name": "农耕", "era": 0, "cost": 32, "practice": {"forage": 0.02, "forage_grain": 0.6}, "values": {"food_security": 1.0, "growth": 0.5}, "requires": ["gathering", "stone_tools"],
+    {"key": "farming", "name": "农耕", "era": 1, "cost": 32, "practice": {"forage": 0.02, "forage_grain": 0.6}, "values": {"food_security": 1.0, "growth": 0.5}, "requires": ["gathering", "stone_tools"],
      "desc": "把野麦的种子种进翻好的土里：翻耕、播种、灌溉与收割。"},
-    {"key": "thatching", "name": "茅草屋", "era": 0, "cost": 28, "practice": {"build": 0.6}, "values": {"welfare": 0.7, "growth": 0.4}, "requires": ["shelter"],
+    {"key": "thatching", "name": "茅草屋", "era": 1, "cost": 28, "practice": {"build": 0.6}, "values": {"welfare": 0.7, "growth": 0.4}, "requires": ["shelter"],
      "desc": "木骨茅顶的小屋，一家人可以安居。"},
-    {"key": "storage", "name": "储藏", "era": 0, "cost": 24, "practice": {"build": 0.3, "forage": 0.01}, "values": {"food_security": 0.5, "frugality": 0.4}, "requires": ["stone_tools", "weaving"],
+    {"key": "storage", "name": "储藏", "era": 1, "cost": 24, "practice": {"build": 0.3, "forage": 0.01}, "values": {"food_security": 0.5, "frugality": 0.4}, "requires": ["stone_tools", "weaving"],
      "desc": "木构仓库，储存公共物资，减缓腐坏。"},
 
     {"key": "carpentry", "name": "木工", "era": 1, "cost": 40, "practice": {"chop": 0.2, "craft": 0.3, "build": 0.2}, "values": {"growth": 0.6, "welfare": 0.2}, "requires": ["stone_tools"],

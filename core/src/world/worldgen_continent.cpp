@@ -723,7 +723,7 @@ void WorldGen::place_plants_continent(const Vec3i& cc, Voxel* out) const {
     for (int lz = 0; lz < kCellSize; ++lz)
         for (int lx = 0; lx < kCellSize; ++lx) {
             const ColumnInfo& col = cb.cols[lz * kCellSize + lx];
-            if (!col.land || col.reserved || col.water_top >= 0) continue;
+            if (!col.land || col.reserved || col.ravine || col.water_top >= 0) continue;
             const int y = col.top + 1;
             if (y < y0 || y >= y0 + kCellSize) continue;
             Voxel& v = out[local_index(lx, y - y0, lz)];
