@@ -348,7 +348,8 @@ void Society::update_crises(Polity& p) {
             if (!ss[i].flowing && seat && sp[i].dist2(seat->entrance) < 200LL * 200LL) sealed = ss[i].lost_event;
     }
     FarmStats fs = ctx_.farming->stats_polity(p.id);
-    const bool fields_dry = fs.plots >= 8 && (float)fs.irrigated < 0.5f * (float)fs.plots;
+    // Ditches take a while to fill after founding; judge irrigation only after a day.
+    const bool fields_dry = ctx_.now > p.founded + day && fs.plots >= 8 && (float)fs.irrigated < 0.5f * (float)fs.plots;
     if (s.water_access < 0.6f) {
         declare(CrisisKind::Water, clampv((0.8f - s.water_access) / 0.8f, 0.1f, 1.0f),
                 recent_cause({EventType::WaterSourceLost, EventType::StructureDestroyed}, day * 3),

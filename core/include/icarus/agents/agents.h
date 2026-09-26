@@ -104,6 +104,9 @@ private:
     };
     float pick_spell(Character& c, SpellPick& out, std::string& why);
     bool task_cast(Character& c);
+    // Trapped (e.g. fell into a ravine): dig a staircase toward reachable ground.
+    bool trapped(const Character& c) const;
+    bool task_escape(Character& c);
     // movement
     enum class Move { Moving, Arrived, Failed };
     Move move_to(Character& c, const Vec3i& goal, bool adjacent_ok);

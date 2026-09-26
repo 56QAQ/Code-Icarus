@@ -2,6 +2,7 @@
 //   icarus_cli map  --seed N --out map.png          top-down map of the generated world
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,8 @@ struct Args {
     int every = 1;                 // print stats every N hours
     bool events = false;           // stream notable events
     std::vector<std::string> admin; // "HOURS:type:json" or shortcuts "HOURS:break_bridge"
+    std::string seeds = "1-6";      // experiment: seed range "a-b" or list "1,4,9"
+    std::string report;             // experiment: markdown report path
 };
 
 Args parse_args(int argc, char** argv) {
@@ -48,6 +51,8 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--every") a.every = std::max(1, std::stoi(next()));
         else if (k == "--events") a.events = true;
         else if (k == "--admin") a.admin.push_back(next());
+        else if (k == "--seeds") a.seeds = next();
+        else if (k == "--report") a.report = next();
     }
     return a;
 }
@@ -241,6 +246,163 @@ int cmd_run(const Args& a) {
     return 0;
 }
 
+// ------------------------------------------------------------------------------ experiment
+// Runs the same scenario (and the same shocks) on many seeds and reports how each
+// civilisation responded and how it ended up. Phase-1 asks for divergent histories:
+// same shock, different girls, different choices, different fates.
+
+std::vector<u64> parse_seeds(const std::string& spec) {
+    std::vector<u64> out;
+    size_t dash = spec.find('-');
+    if (dash != std::string::npos && spec.find(',') == std::string::npos) {
+        u64 a = std::stoull(spec.substr(0, dash)), b = std::stoull(spec.substr(dash + 1));
+        for (u64 s = a; s <= b; ++s) out.push_back(s);
+        return out;
+    }
+    size_t pos = 0;
+    while (pos < spec.size()) {
+        size_t comma = spec.find(',', pos);
+        out.push_back(std::stoull(spec.substr(pos, comma - pos)));
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    return out;
+}
+
+struct RunSummary {
+    u64 seed = 0;
+    std::string ruler, drive, girls;
+    std::vector<std::string> responses;  // first crisis decisions: "who: choice (proposals)"
+    int pop_start = 0, pop_end = 0, deaths = 0, polities = 1, coups = 0, secessions = 0;
+    float food_end = 0, mood_end = 0, support_end = 0;
+    std::string outcome;
+    std::vector<std::string> timeline;
+};
+
+std::string drive_name(const Registry& reg, const std::string& key) {
+    for (const Json& d : reg.doc("drives")["drives"].items())
+        if (d.str("key") == key) return d.str("name", key);
+    return key;
+}
+
+int cmd_experiment(const Args& a) {
+    Registry reg;
+    reg.load_from_dir(a.data);
+    std::vector<RunSummary> runs;
+    for (u64 seed : parse_seeds(a.seeds)) {
+        Simulation sim(reg);
+        GameConfig cfg;
+        cfg.world.seed = seed;
+        cfg.scenario = a.scenario;
+        sim.new_game(cfg);
+        std::vector<Scheduled> sched = parse_admin(a, sim);
+        RunSummary r;
+        r.seed = seed;
+        const Polity* p0 = sim.society().polity(1);
+        if (const Character* ru = p0 ? sim.agents().get(p0->ruler) : nullptr) {
+            r.ruler = ru->name;
+            r.drive = drive_name(reg, ru->girl->drive);
+        }
+        for (const auto& cp : sim.agents().all())
+            if (cp && cp->is_girl())
+                r.girls += (r.girls.empty() ? "" : "、") + cp->name + "(" + drive_name(reg, cp->girl->drive) + "·" + cp->girl->temperament + ")";
+        r.pop_start = sim.agents().count_alive(1);
+        Tick first_shock = sched.empty() ? 0 : sched.front().at;
+        Tick total = (Tick)(a.days * (double)kTicksPerDay);
+        for (Tick t = 0; t < total; ++t) {
+            for (const Scheduled& s : sched)
+                if (s.at == sim.now()) sim.queue_admin(s.cmd);
+            sim.step();
+        }
+        // Responses: the first crisis decisions after the shock.
+        for (const Decision& d : sim.decisions().all()) {
+            if (!d.id || d.kind != "crisis" || d.chosen < 0 || d.created < first_shock) continue;
+            if (r.responses.size() >= 3) break;
+            const Character* g = sim.agents().get(d.girl);
+            std::string line = (g ? g->name : std::string("?")) + "「" + d.options[(size_t)d.chosen].title + "」";
+            std::string props;
+            for (const Proposal& pr : d.proposals) {
+                const Character* pg = sim.agents().get(pr.girl);
+                std::string t = pr.key;
+                for (const DecisionOption& o : d.options)
+                    if (o.key == pr.key) t = o.title;
+                props += (props.empty() ? "" : "；") + (pg ? pg->name : std::string("?")) + "主张" + t;
+            }
+            if (!props.empty()) line += "（" + props + "）";
+            r.responses.push_back(line);
+        }
+        int pols = 0;
+        for (const Polity& p : sim.society().polities()) {
+            if (!p.alive) continue;
+            ++pols;
+            r.pop_end += p.stats.population;
+            r.deaths += p.deaths_total;
+        }
+        r.polities = pols;
+        if (const Polity* p = sim.society().polity(1)) {
+            r.food_end = p->stats.food_days;
+            r.mood_end = p->stats.mood;
+            r.support_end = p->stats.ruler_support;
+        }
+        for (const Event& e : sim.chronicle().events()) {
+            if (e.type == EventType::Coup && e.text.find("失败") == std::string::npos) r.coups++;
+            if (e.type == EventType::Secession) r.secessions++;
+            bool key = e.severity >= 4 || e.type == EventType::DecisionMade || e.type == EventType::Death;
+            if (key && e.tick >= first_shock && r.timeline.size() < 40)
+                r.timeline.push_back(format_time_zh(e.tick) + " " + e.text);
+        }
+        const bool crises_left = [&]() {
+            if (const Polity* p = sim.society().polity(1))
+                for (const Crisis& c : p->crises)
+                    if (c.active && c.severity >= 0.5f) return true;
+            return false;
+        }();
+        if (r.secessions > 0) r.outcome = "分裂";
+        else if (r.coups > 0) r.outcome = "政变";
+        else if (r.pop_end < r.pop_start * 3 / 4 || r.mood_end < 0.4f) r.outcome = "衰落";
+        else if (!crises_left && r.deaths == 0) r.outcome = "恢复";
+        else if (!crises_left) r.outcome = "恢复（有伤亡）";
+        else r.outcome = "僵持";
+        std::printf("seed %llu: %s（%s）→ %s | %s | pop %d→%d deaths %d polities %d food %.1fd mood %.2f support %+.2f\n",
+                    (unsigned long long)seed, r.ruler.c_str(), r.drive.c_str(), r.outcome.c_str(),
+                    r.responses.empty() ? "-" : r.responses.front().c_str(), r.pop_start, r.pop_end, r.deaths, r.polities,
+                    r.food_end, r.mood_end, r.support_end);
+        std::fflush(stdout);
+        runs.push_back(std::move(r));
+    }
+    // Divergence summary.
+    std::map<std::string, int> outcomes, first;
+    for (const RunSummary& r : runs) {
+        outcomes[r.outcome]++;
+        if (!r.responses.empty()) first[r.responses.front().substr(r.responses.front().find("「"))]++;
+    }
+    std::printf("\noutcomes:");
+    for (auto& [k, v] : outcomes) std::printf(" %s×%d", k.c_str(), v);
+    std::printf("\nfirst responses:");
+    for (auto& [k, v] : first) std::printf(" %s×%d", k.c_str(), v);
+    std::printf("\n");
+    if (!a.report.empty()) {
+        std::string md = "# 分歧历史实验报告\n\n";
+        md += strfmt("场景：%s · 每个种子模拟 %.1f 天 · 冲击：", a.scenario.c_str(), a.days);
+        for (const std::string& s : a.admin) md += "`" + s + "` ";
+        md += "\n\n| 种子 | 统治者 | 首要应对 | 结局 | 人口 | 死亡 | 国家数 | 存粮(天) | 心情 | 支持 |\n|---|---|---|---|---|---|---|---|---|---|\n";
+        for (const RunSummary& r : runs)
+            md += strfmt("| %llu | %s（%s） | %s | **%s** | %d→%d | %d | %d | %.1f | %.2f | %+.2f |\n", (unsigned long long)r.seed,
+                         r.ruler.c_str(), r.drive.c_str(), r.responses.empty() ? "-" : r.responses.front().c_str(),
+                         r.outcome.c_str(), r.pop_start, r.pop_end, r.deaths, r.polities, r.food_end, r.mood_end, r.support_end);
+        md += "\n## 各种子的经过\n";
+        for (const RunSummary& r : runs) {
+            md += strfmt("\n### 种子 %llu — %s\n\n魔法少女：%s\n\n", (unsigned long long)r.seed, r.outcome.c_str(), r.girls.c_str());
+            for (const std::string& resp : r.responses) md += "- 应对：" + resp + "\n";
+            md += "\n";
+            for (const std::string& line : r.timeline) md += "    " + line + "\n";
+        }
+        write_file(a.report, md.data(), md.size());
+        std::printf("report written: %s\n", a.report.c_str());
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -248,6 +410,7 @@ int main(int argc, char** argv) {
     try {
         if (a.cmd == "map") return cmd_map(a);
         if (a.cmd == "run") return cmd_run(a);
+        if (a.cmd == "experiment") return cmd_experiment(a);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "error: %s\n", e.what());
         return 2;

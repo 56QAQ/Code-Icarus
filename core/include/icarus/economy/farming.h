@@ -62,7 +62,7 @@ public:
     float growth_days = 2.2f;       // irrigated days from sowing to maturity
     float dry_factor = 0.08f;       // growth multiplier without irrigation
     float wither_days = 1.2f;       // unirrigated young crops die after this
-    int yield = 4;
+    int yield = 5;
 
     void save(BinWriter& w) const;
     void load(BinReader& r);

@@ -67,7 +67,7 @@ struct Memory {
 };
 
 enum class TaskType : u8 {
-    None = 0, Idle, Wander, Eat, Drink, Sleep, Socialize, Work, Flee, Protest, Steal, Heal, Govern, Cast, Fight, Leave
+    None = 0, Idle, Wander, Eat, Drink, Sleep, Socialize, Work, Flee, Protest, Steal, Heal, Govern, Cast, Fight, Leave, Escape
 };
 const char* task_name_zh(TaskType t);
 
@@ -83,6 +83,7 @@ struct Task {
     u8 step = 0;
     u32 job = 0;
     Vec3i target;
+    Vec3i target2;       // secondary position (e.g. the cube being dug)
     StoreId store = kNoStore;
     ItemId item = kNoItem;
     i32 count = 0;

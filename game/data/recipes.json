@@ -1,0 +1,16 @@
+// Crafting recipes. A craft job consumes the inputs from a public store and puts the
+// outputs back into the same store (both logged in the ledger). Jobs are created on
+// demand: construction sites short of an item, or stock below a policy target.
+//   ticks: work per batch at average skill; station: building def that speeds it up.
+{
+  "recipes": [
+    {"key": "split_planks", "name": "劈木成板", "inputs": {"wood": 1}, "outputs": {"planks": 2},
+     "ticks": 70, "batch": 6, "station": "workshop", "tech": "stone_tools"},
+    {"key": "stone_tools", "name": "打制石器", "inputs": {"stone": 2, "wood": 1}, "outputs": {"stone_tools": 1},
+     "ticks": 160, "batch": 2, "station": "workshop", "tech": "stone_tools", "stock_per_resident": 0.5},
+    {"key": "fired_bricks", "name": "烧制砖块", "inputs": {"clay": 2, "wood": 1}, "outputs": {"brick": 2},
+     "ticks": 200, "batch": 3, "station": "workshop", "tech": "pottery"},
+    {"key": "pottery", "name": "烧制陶器", "inputs": {"clay": 2, "wood": 1}, "outputs": {"pottery": 1},
+     "ticks": 180, "batch": 2, "station": "workshop", "tech": "pottery"}
+  ]
+}

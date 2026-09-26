@@ -55,6 +55,7 @@ const char* task_name_zh(TaskType t) {
         case TaskType::Cast: return "施放魔法";
         case TaskType::Fight: return "战斗";
         case TaskType::Leave: return "出走";
+        case TaskType::Escape: return "设法脱困";
         default: return "无";
     }
 }

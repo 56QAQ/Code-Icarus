@@ -56,11 +56,11 @@ const char* job_category(JobType t) {
         case JobType::Forage: return "food";
         case JobType::Build:
         case JobType::HaulToSite:
+        case JobType::Craft:
         case JobType::Dig: return "build";
         case JobType::Chop:
         case JobType::Mine:
         case JobType::HaulPile: return "gather";
-        case JobType::Craft:
         case JobType::Research: return "research";
         case JobType::Guard: return "military";
         default: return "gather";

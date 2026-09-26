@@ -36,7 +36,7 @@ public:
 
     // A* from start to goal. If adjacent_ok, any standable cube within distance 1 (xz)
     // and |dy|<=2 of goal counts as arrival (for working on a cube).
-    bool find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Path& out, int max_expansions = 24000);
+    bool find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Path& out, int max_expansions = 40000);
 
     // Walkable neighbours of a standable position with their move costs (max 8).
     int neighbors(const Vec3i& p, Vec3i* out, float* cost);

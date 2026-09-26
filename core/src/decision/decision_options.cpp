@@ -173,6 +173,17 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
     i64 planks = public_count(ctx_, p.id, "planks"), wood = public_count(ctx_, p.id, "wood");
     auto add_bridge = [&]() {
         if (!bb) return;
+        if (const Project* running = bb->project ? ctx_.society->project(bb->project) : nullptr;
+            running && running->status == 0) {
+            // Already being repaired: the question is only whether to push harder.
+            DecisionOption o = make("expedite_bridge", strfmt("加紧修复断桥（已完成 %.0f%%）", bb->integrity * 100.0f),
+                                    "抽调更多人手优先修桥，其他工作放缓。",
+                                    {{kFoodSecurity, 0.5f}, {kGrowth, 0.3f}, {kSpeed, 0.5f}, {kWelfare, 0.1f}, {kFrugality, -0.1f}},
+                                    act("expedite"));
+            o.action.set("project", (double)running->id);
+            O.push_back(o);
+            return;
+        }
         auto need = ctx_.buildings->remaining_cost(*bb);
         int np = need.count(ctx_.reg->find_item("planks")) ? need[ctx_.reg->find_item("planks")] : 0;
         int nl = need.count(ctx_.reg->find_item("wood")) ? need[ctx_.reg->find_item("wood")] : 0;
@@ -250,16 +261,24 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
                                             {{kFoodSecurity, 0.8f}, {kGrowth, 0.9f}, {kWelfare, 0.2f}, {kSpeed, -0.6f}, {kFrugality, -0.2f}},
                                             act("found_farm"));
                     o.action.set("n", 24);
+                    if (public_count(ctx_, p.id, "grain") < 44) {
+                        o.feasible = false;
+                        o.why_not = "存粮太少，拿不出谷种";
+                    }
                     O.push_back(o);
                 }
             }
             if (farm) {
                 int n = 20;
                 DecisionOption o = make("expand_farms", strfmt("扩建田地（约 +%d 块）", n),
-                                        "在灌溉渠附近开垦新田：需要人手翻耕播种，约 3 天后才有收成。",
+                                        strfmt("在灌溉渠附近开垦新田：每块要一份谷种（共约 %d 份），约 3 天后才有收成。", n),
                                         {{kFoodSecurity, 0.7f}, {kGrowth, 0.8f}, {kWelfare, 0.2f}, {kSpeed, -0.6f}, {kFrugality, -0.2f}},
                                         act("expand_farm"));
                 o.action.set("n", n);
+                if (public_count(ctx_, p.id, "grain") < n + 20) {
+                    o.feasible = false;
+                    o.why_not = "存粮太少，拿不出谷种";
+                }
                 O.push_back(o);
             }
             {
@@ -382,6 +401,10 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
                                         {{kFoodSecurity, 0.5f}, {kGrowth, 0.6f}, {kSpeed, -0.3f}, {kFrugality, -0.2f}}, act("found_farm"));
                 o.action.set("n", 20);
                 (void)plots;
+                if (public_count(ctx_, p.id, "grain") < 40) {
+                    o.feasible = false;
+                    o.why_not = "存粮太少，拿不出谷种";
+                }
                 O.push_back(o);
             }
             DecisionOption o = make("lakeside_huts", "在湖边新建茅屋", "让居民住到水源附近。",
@@ -468,9 +491,13 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         O.push_back(o);
     }
     if (polity_farm(ctx_, p.id)) {
-        DecisionOption o = make("expand_farms", "扩建田地", "为将来储备粮食。",
+        DecisionOption o = make("expand_farms", "扩建田地", "为将来储备粮食；每块新田要一份谷种。",
                                 {{kFoodSecurity, 0.5f}, {kGrowth, 0.7f}, {kFrugality, -0.2f}, {kSpeed, -0.4f}}, act("expand_farm"));
         o.action.set("n", 16);
+        if (p.stats.food_days < 2.0f || public_count(ctx_, p.id, "grain") < 40) {
+            o.feasible = false;
+            o.why_not = "存粮不宽裕，现在扩田会吃掉口粮";
+        }
         O.push_back(o);
     }
     if (q.punishment < 0.85f) {
@@ -891,6 +918,12 @@ void Decisions::execute(Decision& d) {
         pr.params = Json::object();
         pr.params.set("cubes", a["cubes"]);
         d.project = ctx_.society->add_project(pr);
+    } else if (what == "expedite") {
+        if (Project* pr = ctx_.society->project((u32)a.num("project"))) {
+            pr->priority = std::max(pr->priority, 2.0f);
+            p->policies.pri_build = std::max(p->policies.pri_build, 1.5f);
+            policy_event("加紧推进：" + pr->title);
+        }
     } else if (what == "found_farm") {
         // Nearest water surfaces to the seat that can irrigate fertile ground.
         const Building* seat = ctx_.buildings->get(p->seat);

@@ -31,6 +31,7 @@ void Agents::run_task(Character& c) {
         case TaskType::Steal: ok = task_steal(c); break;
         case TaskType::Govern: ok = task_govern(c); break;
         case TaskType::Cast: ok = task_cast(c); break;
+        case TaskType::Escape: ok = task_escape(c); break;
         case TaskType::Wander:
         case TaskType::Idle: ok = task_wander(c); break;
         default: break;
@@ -175,7 +176,9 @@ bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
     }
     // Nearest candidates by straight line, verified by an actual path.
     std::vector<std::pair<i64, Vec3i>> cands;
+    bool same_region = false;  // spots known to be reachable deserve a full search
     for (int pass = 0; pass < 2 && cands.empty(); ++pass) {
+        same_region = pass == 0 && c.region != 0;
         if (pass == 1 && !c.region) break;
         for (size_t i = 0; i < water_spots_.size(); ++i) {
             const Vec3i& s = water_spots_[i];
@@ -193,7 +196,7 @@ bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
         if (tries >= 4) break;
         if (!nav.standable(s) || !water_next_to(s, water)) continue;
         ++tries;
-        if (nav.find_path(c.foot, s, false, tmp, 8000)) {
+        if (nav.find_path(c.foot, s, false, tmp, same_region ? 40000 : 8000)) {
             stand = s;
             c.water_spot = s;
             return true;
@@ -275,6 +278,19 @@ bool Agents::task_eat(Character& c) {
         if (need <= 0.02f) {
             end_task(c, true);
             return true;
+        }
+        // Hands full of cargo (e.g. building materials for an unreachable site)? Put it
+        // into this store, or set it down here, before taking food.
+        if (carried_weight(c) > tune.carry_capacity - 2.0f) {
+            StoreId here = t.store;
+            const Store* hs = ctx_.econ->store(here);
+            if (hs && hs->kind == StoreKind::Stockpile) deposit_all(c, here);
+            if (carried_weight(c) > tune.carry_capacity - 2.0f) ctx_.econ->drop(c.inv, c.foot);
+            s = ctx_.econ->store(t.store);
+            if (!s) {
+                end_task(c, false);
+                return false;
+            }
         }
         std::vector<ItemStack> avail = s->items;
         std::stable_sort(avail.begin(), avail.end(), [&](const ItemStack& a, const ItemStack& b) {
@@ -955,7 +971,9 @@ bool Agents::task_work(Character& c) {
                     return fail("运不过去，只好卸在路边");
                 }
                 if (m != Move::Arrived) return true;
-                deposit_all(c, dest);
+                // A site receives only what was ordered; anything else goes back later.
+                if (j->type == JobType::HaulToSite) ctx_.econ->transfer(c.inv, dest, j->item, 1 << 30);
+                else deposit_all(c, dest);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 end_task(c, true);
@@ -1086,6 +1104,58 @@ bool Agents::task_work(Character& c) {
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 end_task(c, true);
+            }
+            return true;
+        }
+        case JobType::Craft: {
+            // Work the recipe at the store that holds the inputs; outputs go back in.
+            const Json& recipes = reg.doc("recipes")["recipes"];
+            if (j->plot >= recipes.size()) return fail("不知道怎么做");
+            const Json& r = recipes[(size_t)j->plot];
+            const Store* s = ctx_.econ->store(j->from);
+            if (!s) return fail("材料仓库不见了");
+            auto have_inputs = [&](int batches) {
+                for (const auto& [k, v] : r["inputs"].members())
+                    if (ctx_.econ->available(j->from, reg.find_item(k), c.id) < v.as_int() * batches) return false;
+                return true;
+            };
+            if (t.step == 0) {
+                if (!have_inputs(1)) return fail("材料不够");
+                for (const auto& [k, v] : r["inputs"].members())
+                    ctx_.econ->reserve(j->from, reg.find_item(k), v.as_int() * std::max(1, j->count), c.id, now_ + kTicksPerHour * 2);
+                t.step = 1;
+            }
+            if (t.step == 1) {
+                say(c, "去工坊：" + r.str("name"));
+                Move m = move_to(c, s->pos, true);
+                if (m == Move::Failed) return fail("到不了材料仓库");
+                if (m != Move::Arrived) return true;
+                // A working workshop nearby makes the job quicker.
+                float speed = 1.0f;
+                for (const Building& b : ctx_.buildings->all())
+                    if (b.alive && b.functional && b.def == r.str("station") && b.polity == c.polity &&
+                        b.entrance.dist2(c.foot) < 16 * 16)
+                        speed = 0.6f;
+                t.until = now_ + work_ticks(r.flt("ticks", 100.0f) * (float)std::max(1, j->count) * speed);
+                t.step = 2;
+            }
+            if (t.step == 2) {
+                say(c, r.str("name"));
+                if (now_ < t.until) return true;
+                int done = 0;
+                const std::string reason = "craft:" + r.str("key");
+                for (int b = 0; b < std::max(1, j->count) && have_inputs(1); ++b) {
+                    for (const auto& [k, v] : r["inputs"].members())
+                        ctx_.econ->remove(j->from, reg.find_item(k), v.as_int(), reason);
+                    for (const auto& [k, v] : r["outputs"].members())
+                        ctx_.econ->add(j->from, reg.find_item(k), v.as_int(), reason);
+                    ++done;
+                }
+                ctx_.econ->release(j->from, c.id);
+                c.skills[kCrafting] = std::min(1.0f, c.skills[kCrafting] + 0.01f * (float)done);
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                end_task(c, done > 0);
             }
             return true;
         }

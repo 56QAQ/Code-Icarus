@@ -508,6 +508,7 @@ void Agents::save(BinWriter& w) const {
         w.u8v(c.task.step);
         w.u32v(c.task.job);
         w.vec3i(c.task.target);
+        w.vec3i(c.task.target2);
         w.u32v(c.task.store);
         w.u16v(c.task.item);
         w.vari(c.task.count);
@@ -679,6 +680,7 @@ void Agents::load(BinReader& outer) {
         c.task.step = r.u8v();
         c.task.job = r.u32v();
         c.task.target = r.vec3i();
+        c.task.target2 = r.vec3i();
         c.task.store = r.u32v();
         c.task.item = r.u16v();
         c.task.count = (i32)r.vari();

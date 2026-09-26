@@ -201,6 +201,64 @@ void Agents::generate_jobs() {
         }
     }
 
+    // Crafting on demand: whatever construction sites still lack (planks for a bridge),
+    // plus stock targets per resident (tools), made from inputs in the public stores.
+    {
+        const Json& recipes = reg.doc("recipes")["recipes"];
+        for (auto& pc : ctx_.society->polities()) {
+            if (!pc.alive || recipes.size() == 0) continue;
+            std::vector<StoreId> stores = ctx_.society->public_stores(pc.id);
+            auto public_count = [&](ItemId it) {
+                i64 n = 0;
+                for (StoreId sid : stores) n += econ.available(sid, it);
+                return n;
+            };
+            std::map<ItemId, i64> demand;
+            for (const Building& b : ctx_.buildings->all()) {
+                if (!b.alive || b.complete || b.polity != pc.id) continue;
+                for (auto& [it, n] : ctx_.buildings->remaining_cost(b)) demand[it] += n;
+            }
+            int residents = 0;
+            for (auto& cp : chars_)
+                if (cp && cp->alive && !cp->departed && !cp->is_girl() && cp->polity == pc.id) ++residents;
+            for (size_t ri = 0; ri < recipes.size(); ++ri) {
+                const Json& r = recipes[ri];
+                if (!r.str("tech").empty() && !pc.has_tech(r.str("tech"))) continue;
+                // How many units of the recipe's first output are wanted?
+                if (r["outputs"].members().empty()) continue;
+                const auto& out0 = r["outputs"].members().front();
+                ItemId out = reg.find_item(out0.first);
+                if (out == kNoItem) continue;
+                i64 want = demand.count(out) ? demand[out] : 0;
+                if (r.has("stock_per_resident")) want += (i64)std::ceil(r.flt("stock_per_resident") * (float)residents);
+                i64 shortfall = want - public_count(out);
+                if (shortfall <= 0) continue;
+                int open = 0;
+                for (const Job& j : jobs.all())
+                    if (j.alive && j.type == JobType::Craft && j.polity == pc.id && j.plot == ri) ++open;
+                if (open >= 2) continue;
+                // A store holding the inputs for at least one batch.
+                for (StoreId sid : stores) {
+                    const Store* st = econ.store(sid);
+                    if (!st || st->kind != StoreKind::Stockpile) continue;
+                    int batches = r.integer("batch", 1);
+                    for (const auto& [k, v] : r["inputs"].members()) {
+                        ItemId in = reg.find_item(k);
+                        batches = std::min(batches, econ.available(sid, in) / std::max(1, v.as_int()));
+                    }
+                    int per = std::max(1, out0.second.as_int());
+                    batches = std::min<int>(batches, (int)((shortfall + per - 1) / per));
+                    if (batches <= 0) continue;
+                    Job& j = add(JobType::Craft, pc.id, st->pos, 1.15f);
+                    j.from = sid;
+                    j.plot = (u32)ri;
+                    j.count = batches;
+                    break;
+                }
+            }
+        }
+    }
+
     // Kitchens: turn grain into bread when there is grain to spare.
     for (const Building& k : ctx_.buildings->all()) {
         if (!k.alive || !k.complete || !k.functional || k.def != "kitchen" || !k.store) continue;

@@ -167,6 +167,13 @@ void Agents::think(Character& c) {
         if (steal > 0.05f) add("偷取食物", steal * 2.0f, strfmt("饥饿难耐，公共粮仓却不开放（服从 %s）", pct(c.pers.conformity)));
     }
 
+    if (trapped(c)) {
+        // Needs cannot be met from here; getting out comes first unless dying of thirst
+        // right next to water.
+        float need = std::max(1.0f - c.needs.food, 1.0f - c.needs.water);
+        add("设法脱困", 1.4f + 2.0f * need, "被困在无法走出的地方，只能挖出一条路");
+    }
+
     SpellPick spell;
     if (c.is_girl()) {
         std::string why;
@@ -190,6 +197,7 @@ void Agents::think(Character& c) {
             case TaskType::Steal: return "偷取食物";
             case TaskType::Wander: return "闲逛";
             case TaskType::Cast: return "施法";
+            case TaskType::Escape: return "设法脱困";
             default: return "";
         }
     };
@@ -215,6 +223,7 @@ void Agents::think(Character& c) {
     else if (best.label == "逃离危险") start_task(c, TaskType::Flee, best.score, best.why);
     else if (best.label == "抗议") start_task(c, TaskType::Protest, best.score, best.why);
     else if (best.label == "偷取食物") start_task(c, TaskType::Steal, best.score, best.why);
+    else if (best.label == "设法脱困") start_task(c, TaskType::Escape, best.score, best.why);
     else if (best.label == "施法") {
         start_task(c, TaskType::Cast, best.score, best.why);
         c.task.count = spell.effect;

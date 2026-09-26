@@ -168,7 +168,7 @@ void build_village_scenario(SimContext& ctx, const GameConfig& cfg, Rng& rng) {
         const Building* sb = ctx.buildings->get(store);
         StoreId s = sb->store;
         auto give = [&](const char* item, int n) { ctx.econ->add(s, reg.item_id(item), n, "initial"); };
-        give("grain", 150);
+        give("grain", 220);
         give("berries", 30);
         give("wood", 80);
         give("planks", 50);
