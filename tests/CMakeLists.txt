@@ -1,0 +1,5 @@
+file(GLOB ICARUS_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+add_executable(icarus_tests ${ICARUS_TEST_SOURCES})
+target_link_libraries(icarus_tests PRIVATE icarus_core)
+target_compile_definitions(icarus_tests PRIVATE ICARUS_DATA_DIR="${PROJECT_SOURCE_DIR}/game/data")
+add_test(NAME icarus_tests COMMAND icarus_tests)

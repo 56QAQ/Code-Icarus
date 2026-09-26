@@ -1,0 +1,29 @@
+# Build outputs
+/build/
+/build-*/
+*.o
+*.os
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+*.lib
+*.exp
+*.pdb
+.sconsign*.dblite
+__pycache__/
+
+# Godot
+game/.godot/
+game/bin/*.so
+game/bin/*.dll
+game/bin/*.dylib
+game/bin/*.framework/
+game/export/
+*.import.tmp
+
+# Run outputs
+/runs/
+/screenshots/
+/out/

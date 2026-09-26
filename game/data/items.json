@@ -1,0 +1,38 @@
+// Items: physical goods in the material ledger. Every unit exists in exactly one place
+// (a stockpile, a character's hands, or a pile on the ground).
+{
+  "items": [
+    {"key": "wood", "name": "木材", "weight": 2.0, "value": 1.0, "place_mat": "log", "tags": ["material", "fuel"]},
+    {"key": "planks", "name": "木板", "weight": 1.0, "value": 1.5, "place_mat": "planks", "tags": ["material"]},
+    {"key": "stone", "name": "石料", "weight": 3.0, "value": 0.8, "place_mat": "rubble", "tags": ["material"]},
+    {"key": "stone_block", "name": "石块", "weight": 3.0, "value": 2.0, "place_mat": "stone_brick", "tags": ["material"]},
+    {"key": "dirt", "name": "土", "weight": 2.0, "value": 0.1, "place_mat": "dirt", "tags": ["material"]},
+    {"key": "sand", "name": "沙", "weight": 2.0, "value": 0.2, "place_mat": "sand", "tags": ["material"]},
+    {"key": "clay", "name": "黏土", "weight": 2.0, "value": 0.6, "place_mat": "clay", "tags": ["material"]},
+    {"key": "brick", "name": "砖", "weight": 2.0, "value": 2.0, "place_mat": "brick", "tags": ["material"]},
+    {"key": "fiber", "name": "草秆", "weight": 0.3, "value": 0.3, "place_mat": "thatch", "tags": ["material"]},
+    {"key": "copper_ore", "name": "铜矿石", "weight": 3.0, "value": 2.0, "tags": ["ore"]},
+    {"key": "iron_ore", "name": "铁矿石", "weight": 3.5, "value": 3.0, "tags": ["ore"]},
+    {"key": "meteoric_iron", "name": "陨铁", "weight": 4.0, "value": 6.0, "tags": ["ore", "metal"]},
+    {"key": "coal", "name": "煤", "weight": 1.5, "value": 1.5, "tags": ["fuel"]},
+    {"key": "copper", "name": "铜锭", "weight": 2.0, "value": 5.0, "tags": ["metal"]},
+    {"key": "iron", "name": "铁锭", "weight": 2.0, "value": 8.0, "tags": ["metal"]},
+    {"key": "levistone_shard", "name": "浮石碎片", "weight": 0.5, "value": 20.0, "tags": ["magic"]},
+    {"key": "grain", "name": "谷物", "weight": 0.5, "nutrition": 0.30, "joy": 0.0, "spoil_per_day": 0.005, "value": 1.0, "tags": ["food", "raw"]},
+    {"key": "berries", "name": "浆果", "weight": 0.3, "nutrition": 0.18, "joy": 0.02, "spoil_per_day": 0.08, "value": 0.8, "tags": ["food", "raw"]},
+    {"key": "bread", "name": "面包", "weight": 0.5, "nutrition": 0.45, "joy": 0.05, "spoil_per_day": 0.03, "value": 2.0, "tags": ["food", "meal"]},
+    {"key": "feast", "name": "盛宴料理", "weight": 0.6, "nutrition": 0.55, "joy": 0.20, "spoil_per_day": 0.10, "value": 5.0, "tags": ["food", "meal"]},
+    {"key": "herbs", "name": "草药", "weight": 0.2, "value": 1.5, "spoil_per_day": 0.04, "tags": ["medicine"]},
+    {"key": "stone_tools", "name": "石器", "weight": 1.5, "value": 2.0, "tags": ["tool"]},
+    {"key": "copper_tools", "name": "铜工具", "weight": 1.5, "value": 8.0, "tags": ["tool"]},
+    {"key": "iron_tools", "name": "铁工具", "weight": 1.8, "value": 14.0, "tags": ["tool"]},
+    {"key": "spear", "name": "长矛", "weight": 2.0, "value": 4.0, "tags": ["weapon"]},
+    {"key": "copper_sword", "name": "铜剑", "weight": 2.0, "value": 12.0, "tags": ["weapon"]},
+    {"key": "iron_sword", "name": "铁剑", "weight": 2.2, "value": 20.0, "tags": ["weapon"]},
+    {"key": "bow", "name": "弓", "weight": 1.0, "value": 8.0, "tags": ["weapon", "ranged"]},
+    {"key": "hide_armor", "name": "皮甲", "weight": 3.0, "value": 5.0, "tags": ["armor"]},
+    {"key": "bronze_armor", "name": "铜甲", "weight": 6.0, "value": 18.0, "tags": ["armor"]},
+    {"key": "iron_armor", "name": "铁甲", "weight": 7.0, "value": 30.0, "tags": ["armor"]},
+    {"key": "pottery", "name": "陶器", "weight": 1.0, "value": 2.0, "tags": ["storage"]}
+  ]
+}

@@ -1,0 +1,30 @@
+; Engine configuration file.
+; Code:Icarus — Godot is the presentation layer; the simulation kernel lives in the
+; icarus GDExtension (see ../core and ../gdext).
+
+config_version=5
+
+[application]
+
+config/name="Code:Icarus"
+config/description="3D voxel god-simulation of magical girls and emergent civilisations on a floating island."
+config/version="0.1.0"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.5", "Forward Plus")
+boot_splash/bg_color=Color(0.05, 0.06, 0.09, 1)
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/aspect="expand"
+
+[gui]
+
+
+theme/custom_font="res://assets/fonts/NotoSansSC-Regular.woff2"
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2
+environment/defaults/default_clear_color=Color(0.05, 0.06, 0.09, 1)
