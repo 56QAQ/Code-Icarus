@@ -87,7 +87,8 @@ relationships, support for each magical girl, inventory, memories (linked to chr
 events) and a decision trace (the scored options behind the current activity).
 
 * **Utility AI with hysteresis** (`agents_ai.cpp`): eat, drink, sleep, talk, work,
-  govern, flee, protest, steal, cast, escape, wander. The current activity gets a
+  govern, flee, protest, steal, cast, escape, serve as a soldier, get wounds dressed,
+  go over to another polity, wander. The current activity gets a
   commitment bonus; the top options are kept as the "why" shown in the UI.
 * **Tasks** are small state machines (`agents_tasks.cpp`); every resource target is
   reserved with an expiry; unreachable targets are blacklisted for a while.
@@ -103,6 +104,16 @@ events) and a decision trace (the scored options behind the current activity).
   45° staircase out of the rock (`agents_escape.cpp`).
 * **Magic on her own initiative** (`agents_magic.cpp`): healing the injured nearby,
   quenching fires. Strategic spells go through decisions (below).
+* **Migration** (`agents_migrate.cpp`): grievance (resentment of the ruler, hunger, low
+  mood) times the pull of another polity (better fed, a favoured ruler, friends there;
+  less so an enemy), damped by conformity and caution. Migrants walk to the other seat
+  with what they carry; the move is a `Migration` event caused by their latest bitter
+  memory.
+* **Medicine and carts** (`agents_medicine.cpp`): with herbalism, gatherers bring in
+  herbs when the stock is short; the wounded fetch a bundle and have their wounds
+  dressed (at a 药庐 if there is one): bleeding stops and regrowth runs faster, and the
+  herbs are used up. Carts made in a workshop raise what a hauler carries; equipment is
+  picked up when unloading at a store.
 
 ## 7. Economy (core/economy)
 

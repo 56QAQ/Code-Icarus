@@ -213,6 +213,10 @@ func _refresh() -> void:
 		_badge("%s %d%%" % [cr["kind"], int(float(cr["severity"]) * 100)], UITheme.BAD)
 	if int(st.get("protesters", 0)) > 0:
 		_badge("抗议 %d人" % st["protesters"], UITheme.WARN)
+	if int(d.get("emigrated_day", 0)) > 0:
+		_badge("一日内出走 %d人" % d["emigrated_day"], UITheme.WARN)
+	if int(d.get("immigrated_day", 0)) > 0:
+		_badge("一日内来投 %d人" % d["immigrated_day"], UITheme.GOOD)
 	_badges.visible = _badges.get_child_count() > 0
 	_detail.visible = expanded
 	if expanded:

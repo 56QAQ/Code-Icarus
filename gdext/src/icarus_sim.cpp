@@ -926,6 +926,18 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
     out["trees_initial"] = f.initial;
     out["stability"] = s.stability;
     d["outcomes"] = out;
+    // Who left and who came in the past day (migration is how residents vote).
+    int left = 0, came = 0;
+    const auto& evs = sim_->chronicle().events();
+    for (size_t i = evs.size(); i-- > 0;) {
+        const icarus::Event& e = evs[i];
+        if (e.tick + icarus::kTicksPerDay < sim_->now()) break;
+        if (e.type != icarus::EventType::Migration) continue;
+        if (e.polity == p->id) ++left;
+        if (e.data.integer("to", 0) == (int)p->id) ++came;
+    }
+    d["emigrated_day"] = left;
+    d["immigrated_day"] = came;
     return d;
 }
 
