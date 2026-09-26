@@ -2,9 +2,13 @@
 # exports playable game builds as workflow artifacts.
 name: build
 
+# macOS runners bill at ten times the minutes: the macOS build runs when started by
+# hand (Actions → build → Run workflow) or for a tag. Docs-only pushes build nothing.
 on:
   push:
+    paths-ignore: ["docs/**", "**/*.md"]
   pull_request:
+    paths-ignore: ["docs/**", "**/*.md"]
   workflow_dispatch:
 
 # A newer push to the same branch supersedes a running build.
@@ -39,10 +43,9 @@ jobs:
           - name: windows
             os: ubuntu-24.04
             scons: platform=windows arch=x86_64 use_mingw=yes
-          - name: macos
-            os: macos-14
-            scons: platform=macos arch=universal
     runs-on: ${{ matrix.os }}
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/.scons-cache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +53,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: .scons-cache
+          key: scons-${{ matrix.name }}-${{ hashFiles('gdext/SConstruct') }}-${{ github.sha }}
+          restore-keys: scons-${{ matrix.name }}-
       - name: Toolchain
         run: |
           python -m pip install scons
@@ -67,8 +75,39 @@ jobs:
           path: game/bin/
           if-no-files-found: error
 
+  extension-macos:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-14
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/.scons-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: .scons-cache
+          key: scons-macos-${{ hashFiles('gdext/SConstruct') }}-${{ github.sha }}
+          restore-keys: scons-macos-
+      - name: Build extension (release and debug)
+        run: |
+          python -m pip install scons
+          cd gdext
+          scons platform=macos arch=universal target=template_release -j4
+          scons platform=macos arch=universal target=template_debug -j4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gdext-macos
+          path: game/bin/
+          if-no-files-found: error
+
   export:
-    needs: [kernel, extension]
+    needs: [kernel, extension, extension-macos]
+    # Runs when the macOS build was skipped, not when anything failed.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +137,9 @@ jobs:
           mkdir -p build/export/windows build/export/linux build/export/macos
           godot --headless --path game --export-release "Windows Desktop" ../build/export/windows/CodeIcarus.exe
           godot --headless --path game --export-release "Linux" ../build/export/linux/CodeIcarus.x86_64
-          godot --headless --path game --export-release "macOS" ../build/export/macos/CodeIcarus.zip || echo "macOS export failed"
+          if [ -d game/bin/libicarus.macos.template_release.framework ]; then
+            godot --headless --path game --export-release "macOS" ../build/export/macos/CodeIcarus.zip || echo "macOS export failed"
+          fi
           cp README.md build/export/windows/ build/export/linux/ 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         with:

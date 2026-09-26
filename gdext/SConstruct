@@ -8,6 +8,10 @@ ARGUMENTS.setdefault("disable_exceptions", "no")
 
 env = SConscript("../thirdparty/godot-cpp/SConstruct")
 
+# CI keeps compiled objects between runs (godot-cpp alone is most of the build).
+if os.environ.get("SCONS_CACHE"):
+    CacheDir(os.environ["SCONS_CACHE"])
+
 # godot-cpp archives ~1000 objects in one command. SCons runs commands through `sh -c`,
 # which takes the whole line as one argument, and Linux caps a single argument at
 # 128 KB; with a long checkout path the archive line exceeds that. Run such lines
