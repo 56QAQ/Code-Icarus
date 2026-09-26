@@ -54,6 +54,7 @@ public:
     Dictionary character_info(int64_t id) const;
     Dictionary polity_info(int64_t id) const;
     Array tech_tree(int64_t polity) const;  // every tech with its state for the polity
+    Dictionary round_state() const;         // {unified, event, text, time, polity}
     Array polities() const;
     Array piles() const;
     Dictionary building_at(const Vector3i& cube) const;
@@ -94,6 +95,9 @@ protected:
     static void _bind_methods();
 
 private:
+    icarus::ForestStats forest() const;
+    mutable icarus::ForestStats forest_;
+    mutable int64_t forest_tick_ = -1;
     Dictionary event_to_dict(const icarus::Event& e) const;
     Dictionary decision_summary(const icarus::Decision& d) const;
 

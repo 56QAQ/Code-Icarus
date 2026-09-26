@@ -484,9 +484,41 @@ void WorldGen::place_ores(const Vec3i& cc, Voxel* out) const {
             }
 }
 
+// Tree slots and the decision to plant one; shared by place_trees and tree_bases so
+// the two can never disagree.
+namespace {
+constexpr int kTreeSlot = 6;
+}
+
+std::vector<Vec3i> WorldGen::tree_bases() const {
+    std::vector<Vec3i> out;
+    const int S = kTreeSlot;
+    const int nx = cfg_.cells_x * kCellSize / S + 1, nz = cfg_.cells_z * kCellSize / S + 1;
+    for (int sz = 0; sz < nz; ++sz)
+        for (int sx = 0; sx < nx; ++sx) {
+            u64 h = hash3(cfg_.seed ^ 0x7EE5, sx, 0, sz);
+            int tx = sx * S + 1 + (int)(splitmix64(h) % (S - 2));
+            int tz = sz * S + 1 + (int)(splitmix64(h + 9) % (S - 2));
+            if (tx >= cfg_.cells_x * kCellSize || tz >= cfg_.cells_z * kCellSize) continue;
+            float roll = hash_to_unit(splitmix64(h + 17));
+            ColumnInfo col = column(tx, tz);
+            if (!col.land || col.ravine || col.reserved || col.water_top >= 0) continue;
+            float p = 0.0f;
+            switch (col.biome) {
+                case Biome::Forest: p = 0.55f; break;
+                case Biome::Grassland: p = 0.05f; break;
+                case Biome::Highland: p = 0.12f; break;
+                case Biome::Islet: p = 0.30f; break;
+                default: p = 0.0f;
+            }
+            if (roll < p) out.push_back({tx, col.top + 1, tz});
+        }
+    return out;
+}
+
 void WorldGen::place_trees(const Vec3i& cc, Voxel* out) const {
     const CoreMats& M = reg_->m();
-    constexpr int S = 6;
+    constexpr int S = kTreeSlot;
     const int bx0 = cc.x * kCellSize, by0 = cc.y * kCellSize, bz0 = cc.z * kCellSize;
     int sx0 = floordiv(bx0 - 4, S), sx1 = floordiv(bx0 + kCellSize + 4, S);
     int sz0 = floordiv(bz0 - 4, S), sz1 = floordiv(bz0 + kCellSize + 4, S);

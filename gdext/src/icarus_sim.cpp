@@ -53,6 +53,7 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("character_info", "id"), &IcarusSim::character_info);
     ClassDB::bind_method(D_METHOD("polity_info", "id"), &IcarusSim::polity_info);
     ClassDB::bind_method(D_METHOD("tech_tree", "polity"), &IcarusSim::tech_tree);
+    ClassDB::bind_method(D_METHOD("round_state"), &IcarusSim::round_state);
     ClassDB::bind_method(D_METHOD("polities"), &IcarusSim::polities);
     ClassDB::bind_method(D_METHOD("piles"), &IcarusSim::piles);
     ClassDB::bind_method(D_METHOD("building_at", "cube"), &IcarusSim::building_at);
@@ -123,6 +124,7 @@ bool IcarusSim::new_game(const Dictionary& config) {
         for (const auto& d : j["girl_drives"].items()) cfg.girl_drives.push_back(d.as_str());
         sim_ = std::make_unique<icarus::Simulation>(*reg_);
         sim_->new_game(cfg);
+        forest_tick_ = -1;
         mesher_ = std::make_unique<icarus::Mesher>(sim_->world());
         return true;
     } catch (const std::exception& e) {
@@ -407,6 +409,7 @@ String IcarusSim::event_category(int type) {
         case T::DecisionRequested: case T::DecisionMade: case T::PolicyChanged: case T::Secession: case T::Coup:
         case T::RulerChanged: case T::Protest: case T::Punishment: case T::Refusal: case T::Rebellion:
         case T::SupportShift: case T::LevelUp: case T::WarDeclared: case T::Battle: case T::Peace:
+        case T::Unification:
             return "politics";
         case T::MeteorImpact: case T::FireStarted: case T::FireSpread: case T::Flood: case T::Collapse:
         case T::DebrisLanded: case T::StructureDamaged: case T::StructureDestroyed: case T::WaterSourceLost:
@@ -459,6 +462,7 @@ bool IcarusSim::load_bytes(const PackedByteArray& data) {
         std::vector<uint8_t> blob(data.ptr(), data.ptr() + data.size());
         auto sim = std::make_unique<icarus::Simulation>(*reg_);
         sim->load(blob);
+        forest_tick_ = -1;
         sim_ = std::move(sim);
         mesher_ = std::make_unique<icarus::Mesher>(sim_->world());
         return true;
@@ -838,7 +842,10 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
         t["ruler"] = to_gd(r.ruler_name);
         t["drive"] = drive_name(*reg_, r.drive);
         t["from"] = to_gd(icarus::format_time_zh(r.from));
-        t["how"] = to_gd(r.how);
+        static const std::map<std::string, const char*> hows = {
+            {"founding", "建国"}, {"succession", "继位"}, {"secession", "分裂自立"}, {"coup", "政变夺权"}};
+        auto hw = hows.find(r.how);
+        t["how"] = hw != hows.end() ? String::utf8(hw->second) : to_gd(r.how);
         reigns.push_back(t);
     }
     d["reigns"] = reigns;
@@ -893,6 +900,61 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
         op["event"] = (int64_t)p->op.event;
     }
     d["op"] = op;
+    // The measures a round is judged by: unification wins it, these say what it cost.
+    Dictionary out;
+    int peak = s.population;
+    for (const auto& h : p->history) peak = std::max(peak, h.population);
+    out["population"] = s.population;
+    out["population_peak"] = peak;
+    out["living"] = std::clamp(0.45f * s.food_access + 0.2f * s.water_access + 0.35f * s.mood, 0.0f, 1.0f);
+    const int total_techs = (int)reg_->doc("techs")["techs"].size();
+    out["knowledge"] = total_techs ? (float)p->techs.size() / (float)total_techs : 0.0f;
+    const icarus::ForestStats f = forest();
+    out["ecology"] = f.ratio();
+    out["trees"] = f.standing;
+    out["trees_initial"] = f.initial;
+    out["stability"] = s.stability;
+    d["outcomes"] = out;
+    return d;
+}
+
+icarus::ForestStats IcarusSim::forest() const {
+    // The tally is cheap but not free; the island's forest changes slowly.
+    if (sim_ && (forest_tick_ < 0 || (int64_t)sim_->now() - forest_tick_ >= icarus::kTicksPerHour)) {
+        forest_ = sim_->world().forest();
+        forest_tick_ = (int64_t)sim_->now();
+    }
+    return forest_;
+}
+
+Dictionary IcarusSim::round_state() const {
+    Dictionary d;
+    if (!sim_) return d;
+    const icarus::EventId u = sim_->society().unification_event();
+    d["unified"] = u != 0;
+    // The island's toll so far (there are no births: everyone who ever lived is here).
+    int ever = 0, dead = 0, girls_dead = 0, left = 0;
+    for (const auto& cp : sim_->agents().all()) {
+        if (!cp) continue;
+        ++ever;
+        if (cp->departed) ++left;
+        else if (!cp->alive) {
+            ++dead;
+            if (cp->is_girl()) ++girls_dead;
+        }
+    }
+    d["people_ever"] = ever;
+    d["dead"] = dead;
+    d["girls_dead"] = girls_dead;
+    d["departed"] = left;
+    if (u) {
+        d["event"] = (int64_t)u;
+        if (const icarus::Event* e = sim_->chronicle().get(u)) {
+            d["text"] = to_gd(e->text);
+            d["time"] = to_gd(icarus::format_time_zh(e->tick));
+            d["polity"] = e->polity;
+        }
+    }
     return d;
 }
 

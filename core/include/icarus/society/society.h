@@ -61,6 +61,8 @@ public:
     // The winner absorbs the loser: people, fields, buildings and stores change hands.
     void annex(u16 winner, u16 loser, EventId cause, const std::string& how = "");
     void refresh_passives(Polity& p);
+    // Set once one polity holds the whole island after there had been several.
+    EventId unification_event() const { return unification_; }
     // Convenience for systems that only know a polity id.
     float passive(u16 polity, const std::string& effect) const {
         const Polity* p = this->polity(polity);
@@ -81,10 +83,15 @@ private:
     void update_projects();
     void update_wars(Polity& p);
 
+    void check_unification();
+
     SimContext& ctx_;
     Rng rng_;
     std::vector<Polity> polities_ = std::vector<Polity>(1);
     std::vector<Project> projects_ = std::vector<Project>(1);
+    int most_polities_ = 1;     // most polities alive at once so far
+    EventId last_merge_ = 0;    // latest annexation
+    EventId unification_ = 0;   // the island was unified (once per round)
 };
 
 }  // namespace icarus

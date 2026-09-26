@@ -314,9 +314,14 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
             add_spell("feast", "cast_feast", {{kWelfare, 0.8f}, {kFoodSecurity, 0.2f}, {kCooperation, 0.2f}, {kSpeed, 0.8f}, {kFrugality, -0.2f}});
             add_spell("grow", "cast_grow", {{kFoodSecurity, 0.6f}, {kSpeed, 0.9f}, {kGrowth, 0.2f}});
             if (girl.girl && girl.girl->drive == "gluttony") {
-                O.push_back(make("hoard", "把余粮收归自己与亲信", "把公共粮仓的一部分划归魔法少女私用。",
-                                 {{kSelfPower, 0.9f}, {kFoodSecurity, 0.1f}, {kWelfare, -0.7f}, {kFairness, -0.9f}, {kHarshness, 0.4f}},
-                                 act("hoard")));
+                DecisionOption o = make("hoard", "把余粮收归自己与亲信", "把公共粮仓的一部分划归魔法少女私用。",
+                                        {{kSelfPower, 0.9f}, {kFoodSecurity, 0.1f}, {kWelfare, -0.7f}, {kFairness, -0.9f}, {kHarshness, 0.4f}},
+                                        act("hoard"));
+                if (ctx_.society->public_food(p.id) < 15.0f) {
+                    o.feasible = false;
+                    o.why_not = "公仓里已没有余粮可占";
+                }
+                O.push_back(o);
             }
             add_wait(-0.3f);
             break;

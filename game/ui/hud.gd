@@ -29,6 +29,7 @@ signal focus_requested(pos: Vector3)
 var council: CouncilPanel
 var chronicle: ChroniclePanel
 var tech: TechPanel
+var ending: EndingPanel
 var _council_wrap: CenterContainer
 var _thinking: HBoxContainer
 
@@ -447,6 +448,11 @@ func _build_council() -> void:
 	tech.sim = Game.sim
 	tech.visible = false
 	_council_wrap.add_child(tech)
+	ending = EndingPanel.new()
+	ending.sim = Game.sim
+	ending.visible = false
+	_council_wrap.add_child(ending)
+	ending.trace_requested.connect(func(id: int) -> void: toggle_chronicle(id))
 	chronicle.focus_requested.connect(func(p: Vector3) -> void:
 		chronicle.visible = false
 		focus_requested.emit(p))
@@ -495,13 +501,22 @@ func toggle_tech() -> void:
 
 
 func overlay_open() -> bool:
-	return council.visible or chronicle.visible or tech.visible
+	return council.visible or chronicle.visible or tech.visible or ending.visible
 
 
 func close_overlays() -> void:
 	council.visible = false
 	chronicle.visible = false
 	tech.visible = false
+	ending.visible = false
+
+
+## The round's end card (when the island has been unified).
+func show_ending() -> void:
+	council.visible = false
+	chronicle.visible = false
+	tech.visible = false
+	ending.open()
 
 
 # ------------------------------------------------------------------ toasts
@@ -516,6 +531,8 @@ func _build_toasts() -> void:
 
 
 func _on_event(ev: Dictionary) -> void:
+	if ev.get("type", "") == "unification":
+		show_ending()
 	var sev: int = ev.get("severity", 0)
 	if sev < 3:
 		return

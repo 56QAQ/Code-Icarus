@@ -273,8 +273,9 @@ struct RunSummary {
     u64 seed = 0;
     std::string ruler, drive, girls;
     std::vector<std::string> responses;  // first crisis decisions: "who: choice (proposals)"
-    int pop_start = 0, pop_end = 0, deaths = 0, polities = 1, coups = 0, secessions = 0;
-    float food_end = 0, mood_end = 0, support_end = 0;
+    int pop_start = 0, pop_end = 0, deaths = 0, polities = 1, coups = 0, secessions = 0, wars = 0;
+    float food_end = 0, mood_end = 0, support_end = 0, forest_end = 1;
+    bool unified = false;
     std::string outcome;
     std::vector<std::string> timeline;
 };
@@ -347,6 +348,7 @@ int cmd_experiment(const Args& a) {
         for (const Event& e : sim.chronicle().events()) {
             if (e.type == EventType::Coup && e.text.find("失败") == std::string::npos) r.coups++;
             if (e.type == EventType::Secession) r.secessions++;
+            if (e.type == EventType::WarDeclared) r.wars++;
             bool key = e.severity >= 4 || e.type == EventType::DecisionMade || e.type == EventType::Death;
             if (key && e.tick >= first_shock && r.timeline.size() < 40)
                 r.timeline.push_back(format_time_zh(e.tick) + " " + e.text);
@@ -357,16 +359,19 @@ int cmd_experiment(const Args& a) {
                     if (c.active && c.severity >= 0.5f) return true;
             return false;
         }();
-        if (r.secessions > 0) r.outcome = "分裂";
+        r.unified = sim.society().unification_event() != 0;
+        r.forest_end = sim.world().forest().ratio();
+        if (r.unified) r.outcome = r.wars > 0 ? "分裂、战争后重归统一" : "分裂后重归统一";
+        else if (r.secessions > 0) r.outcome = r.wars > 0 ? "分裂并交战" : "分裂";
         else if (r.coups > 0) r.outcome = "政变";
         else if (r.pop_end < r.pop_start * 3 / 4 || r.mood_end < 0.4f) r.outcome = "衰落";
         else if (!crises_left && r.deaths == 0) r.outcome = "恢复";
         else if (!crises_left) r.outcome = "恢复（有伤亡）";
         else r.outcome = "僵持";
-        std::printf("seed %llu: %s（%s）→ %s | %s | pop %d→%d deaths %d polities %d food %.1fd mood %.2f support %+.2f\n",
+        std::printf("seed %llu: %s（%s）→ %s | %s | pop %d→%d deaths %d polities %d wars %d food %.1fd mood %.2f support %+.2f forest %.0f%%\n",
                     (unsigned long long)seed, r.ruler.c_str(), r.drive.c_str(), r.outcome.c_str(),
                     r.responses.empty() ? "-" : r.responses.front().c_str(), r.pop_start, r.pop_end, r.deaths, r.polities,
-                    r.food_end, r.mood_end, r.support_end);
+                    r.wars, r.food_end, r.mood_end, r.support_end, 100.0f * r.forest_end);
         std::fflush(stdout);
         runs.push_back(std::move(r));
     }
@@ -385,11 +390,12 @@ int cmd_experiment(const Args& a) {
         std::string md = "# 分歧历史实验报告\n\n";
         md += strfmt("场景：%s · 每个种子模拟 %.1f 天 · 冲击：", a.scenario.c_str(), a.days);
         for (const std::string& s : a.admin) md += "`" + s + "` ";
-        md += "\n\n| 种子 | 统治者 | 首要应对 | 结局 | 人口 | 死亡 | 国家数 | 存粮(天) | 心情 | 支持 |\n|---|---|---|---|---|---|---|---|---|---|\n";
+        md += "\n\n| 种子 | 统治者 | 首要应对 | 结局 | 人口 | 死亡 | 国家数 | 战争 | 存粮(天) | 心情 | 支持 | 林木 |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n";
         for (const RunSummary& r : runs)
-            md += strfmt("| %llu | %s（%s） | %s | **%s** | %d→%d | %d | %d | %.1f | %.2f | %+.2f |\n", (unsigned long long)r.seed,
-                         r.ruler.c_str(), r.drive.c_str(), r.responses.empty() ? "-" : r.responses.front().c_str(),
-                         r.outcome.c_str(), r.pop_start, r.pop_end, r.deaths, r.polities, r.food_end, r.mood_end, r.support_end);
+            md += strfmt("| %llu | %s（%s） | %s | **%s** | %d→%d | %d | %d | %d | %.1f | %.2f | %+.2f | %.0f%% |\n",
+                         (unsigned long long)r.seed, r.ruler.c_str(), r.drive.c_str(),
+                         r.responses.empty() ? "-" : r.responses.front().c_str(), r.outcome.c_str(), r.pop_start, r.pop_end,
+                         r.deaths, r.polities, r.wars, r.food_end, r.mood_end, r.support_end, 100.0f * r.forest_end);
         md += "\n## 各种子的经过\n";
         for (const RunSummary& r : runs) {
             md += strfmt("\n### 种子 %llu — %s\n\n魔法少女：%s\n\n", (unsigned long long)r.seed, r.outcome.c_str(), r.girls.c_str());

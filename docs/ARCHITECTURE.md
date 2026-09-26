@@ -140,6 +140,22 @@ growth depends on irrigation from real water nearby.
   5. *Reaction and review*: residents judge the decision and the alternatives by their
      own personalities (support shifts); advisers whose proposal was ignored lose
      loyalty; outcomes are reviewed later and remembered as experience.
+* **War** (`society/war.cpp`, `agents/agents_war.cpp`, `decision/decision_war.cpp`):
+  wars are declared by rulers; armies are drafted able-bodied residents who arm
+  themselves from the stores and follow one operation at a time (muster, march, raid or
+  take the objective, return). Hits remove voxels from bodies, reduced by armour;
+  raiders haul real food home; conquest annexes people, land and stores.
+* **Miracles** (`sim/simulation.cpp`, `apply_admin`): besides matter (dig, place,
+  meteor, fire, water) the god can bless food (items enter the ledger as
+  `admin_bless`), inspire or terrify (fear, memories, a hazard people flee), heal (lost
+  limbs regrow; the dead stay dead), smite, grant research, empower a girl, or whisper
+  to her: a value whisper shifts one feature weight for two days, is told to the remote
+  model, and is recorded as a cause of the decisions it pushed.
+* **Outcomes**: a round is won when one polity holds the whole island after there had
+  been several (`EventType::Unification`, caused by the last annexation). The measures
+  it is judged by — population, living standard, knowledge, ecology (share of the
+  generator's trees still standing; `World::forest()` looks only at modified cells) and
+  stability — are shown with it.
 * The Godot autoload `Jev` sends awaiting decisions to the Claude Messages API (raw
   HTTP; `fallbacks: "default"`), and `tools/jev_mock_server.py` stands in for the API in
   tests.
@@ -149,13 +165,15 @@ growth depends on irrigation from real water nearby.
 Godot renders cell meshes from the kernel, characters as voxel parts, debris and
 meteors. The UI is built in code (`ui/ui_theme.gd`) as floating cards over the world —
 time pill, civilisation card with polity switcher, tool dock, toasts, contextual
-selection card with tabs — plus two centred overlays: **议事录** (decisions) and
-**编年史** (history with a causal-chain graph). No permanent side panels.
+selection card with tabs — plus centred overlays: **议事录** (decisions), **编年史**
+(history with a causal-chain graph), **科技** (the tech tree) and the round's ending
+card. No permanent side panels.
 
 ## 10. Validation
 
 `icarus_cli experiment` runs the same scenario and shocks on many seeds and reports how
-each civilisation responded and ended (recovered / declined / split / coup). Reports
+each civilisation responded and ended (recovered / declined / split / coup / war /
+reunified), with the forest left standing. Reports
 live in `docs/experiments/`.
 
 ## 11. Determinism

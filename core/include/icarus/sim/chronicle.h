@@ -61,6 +61,7 @@ enum class EventType : u16 {
     Rescue,
     Construction,
     Info,
+    Unification,  // one polity holds the whole island
     Count
 };
 

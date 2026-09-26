@@ -32,6 +32,8 @@ void Society::reset(u64 seed) {
     rng_.seed(seed, 0x5061E7);
     polities_.assign(1, Polity{});
     projects_.assign(1, Project{});
+    most_polities_ = 1;
+    last_merge_ = unification_ = 0;
 }
 
 u16 Society::create_polity(const std::string& name, u32 color, u16 parent) {
@@ -174,7 +176,37 @@ void Society::hourly(Tick now) {
         if (p.history.size() > 24 * 60) p.history.erase(p.history.begin());
     }
     update_projects();
+    check_unification();
     (void)now;
+}
+
+void Society::check_unification() {
+    int alive = 0;
+    const Polity* last = nullptr;
+    for (const Polity& p : polities_)
+        if (p.alive) {
+            ++alive;
+            last = &p;
+        }
+    most_polities_ = std::max(most_polities_, alive);
+    if (unification_ || alive != 1 || most_polities_ < 2 || !last) return;
+    // Victory belongs to the ruler and her drive; whether the island is happy or
+    // sustainable is another matter (see the outcome measures).
+    const Character* r = ctx_.agents->get(last->ruler);
+    std::string drive;
+    if (r && r->girl)
+        for (const Json& d : ctx_.reg->doc("drives")["drives"].items())
+            if (d.str("key") == r->girl->drive) drive = d.str("name");
+    Event e;
+    e.type = EventType::Unification;
+    e.severity = 5;
+    e.polity = last->id;
+    e.actor = r ? r->id : kNoEntity;
+    e.causes[0] = last_merge_;
+    e.text = r ? strfmt("「%s」统一了空岛：象征%s的魔法少女%s与她的源动力「%s」赢得了本轮", title(last->id).c_str(),
+                        drive.c_str(), r->name.c_str(), drive.c_str())
+               : strfmt("「%s」统一了空岛", title(last->id).c_str());
+    unification_ = ctx_.chron->emit(std::move(e));
 }
 
 void Society::daily(Tick now) {
@@ -698,6 +730,9 @@ void Society::save(BinWriter& w) const {
         w.str(p.params.dump());
         w.f32(p.progress);
     }
+    w.vari(most_polities_);
+    w.u64v(last_merge_);
+    w.u64v(unification_);
     w.end_section(sec);
 }
 
@@ -830,6 +865,13 @@ void Society::load(BinReader& outer) {
         std::string pj = r.str();
         p.params = pj.empty() ? Json() : Json::parse(pj);
         p.progress = r.f32();
+    }
+    most_polities_ = 1;
+    last_merge_ = unification_ = 0;
+    if (!r.at_end()) {
+        most_polities_ = (int)r.vari();
+        last_merge_ = r.u64v();
+        unification_ = r.u64v();
     }
 }
 

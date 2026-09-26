@@ -1,5 +1,6 @@
 #include "icarus/world/world.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "icarus/util/log.h"
@@ -15,6 +16,8 @@ void World::init(const WorldConfig& cfg) {
     cells_z_ = cfg.cells_z;
     cells_.clear();
     cells_.resize((size_t)cells_x_ * cells_y_ * cells_z_);
+    tree_bases_.clear();
+    trees_known_ = false;
     for (int y = 0; y < cells_y_; ++y)
         for (int z = 0; z < cells_z_; ++z)
             for (int x = 0; x < cells_x_; ++x) {
@@ -268,6 +271,26 @@ int World::surface_y_peek(int x, int z) const {
         if (m.solid) return y;
     }
     return -1;
+}
+
+ForestStats World::forest() const {
+    if (!trees_known_) {
+        tree_bases_ = gen_.tree_bases();
+        std::sort(tree_bases_.begin(), tree_bases_.end(), [&](const Vec3i& a, const Vec3i& b) {
+            size_t ca = cell_index(cell_of(a)), cb = cell_index(cell_of(b));
+            return ca != cb ? ca < cb : (a.x != b.x ? a.x < b.x : a.z < b.z);
+        });
+        trees_known_ = true;
+    }
+    ForestStats f;
+    const MatId log = reg_->m().log;
+    for (const Vec3i& t : tree_bases_) {
+        if (!in_bounds(t)) continue;
+        ++f.initial;
+        const Cell& c = cells_[cell_index(cell_of(t))];
+        if (c.state == CellState::Ungenerated || c.pristine || vmat(peek(t)) == log) ++f.standing;
+    }
+    return f;
 }
 
 WorldStats World::stats() const {

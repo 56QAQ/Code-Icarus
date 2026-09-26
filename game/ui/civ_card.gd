@@ -166,11 +166,18 @@ func _refresh_switcher() -> void:
 func _refresh() -> void:
 	if sim == null or not sim.has_game():
 		return
-	_refresh_switcher()
 	var d: Dictionary = sim.polity_info(polity_id)
 	if d.is_empty():
-		_title.text = "无主之地"
-		return
+		# The polity we were following is gone (absorbed, conquered): follow one that
+		# still stands.
+		var ps: Array = sim.polities()
+		if ps.is_empty():
+			_title.text = "无主之地"
+			return
+		polity_id = int(ps[0]["id"])
+		_switch_sig = ""
+		d = ps[0]
+	_refresh_switcher()
 	_title.text = d["title"]
 	for c in _chips.get_children():
 		c.queue_free()
@@ -233,6 +240,30 @@ func _refresh() -> void:
 		var pol: Dictionary = d["policies"]
 		var dist := ["平均分配", "按劳分配", "精英优先"]
 		_detail.add_child(UITheme.label("配给 %d%% · 惩罚 %d%% · 工时 %d小时 · %s" % [int(float(pol["ration"]) * 100), int(float(pol["punishment"]) * 100), int(pol["work_hours"]), dist[clampi(int(pol["distribution"]), 0, 2)]], 13))
+		_detail.add_child(UITheme.label("文明指标", 12, UITheme.TEXT_FAINT))
+		var oc: Dictionary = d.get("outcomes", {})
+		if not oc.is_empty():
+			var grid := GridContainer.new()
+			grid.columns = 2
+			grid.add_theme_constant_override("h_separation", 12)
+			grid.add_theme_constant_override("v_separation", 2)
+			_detail.add_child(grid)
+			var peak := maxi(1, int(oc["population_peak"]))
+			var rows := [
+				["人口", float(oc["population"]) / float(peak), "%d/%d" % [oc["population"], peak]],
+				["生活", float(oc["living"]), ""],
+				["知识", float(oc["knowledge"]), ""],
+				["生态", float(oc["ecology"]), ""],
+				["稳定", float(oc["stability"]), ""],
+			]
+			for r in rows:
+				var bar := UIBar.new(r[0], false)
+				bar.label_width = 30
+				bar.custom_minimum_size = Vector2(160, 18)
+				bar.set_value(r[1], r[2])
+				if r[0] == "生态":
+					bar.tooltip_text = "全岛林木保有率：%d / %d 棵树仍然挺立" % [oc["trees"], oc["trees_initial"]]
+				grid.add_child(bar)
 		_detail.add_child(UITheme.label("趋势（近 %d 小时）" % (d["history"]["food_days"] as PackedFloat32Array).size(), 12, UITheme.TEXT_FAINT))
 		var spark := Sparklines.new()
 		spark.series = [

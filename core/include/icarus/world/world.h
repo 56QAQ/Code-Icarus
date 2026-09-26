@@ -62,6 +62,12 @@ struct VoxelChange {
     u32 cause = 0;
 };
 
+// How much of the islands' forest still stands (trees counted by their trunk base).
+struct ForestStats {
+    int initial = 0, standing = 0;
+    float ratio() const { return initial > 0 ? (float)standing / (float)initial : 1.0f; }
+};
+
 struct WorldStats {
     int ungenerated = 0, dormant = 0, active = 0;
     int non_uniform = 0;
@@ -130,6 +136,9 @@ public:
     int surface_y_peek(int x, int z) const;
 
     WorldStats stats() const;
+    // Cheap: cells never touched still hold their generated trees; only modified cells
+    // are looked at.
+    ForestStats forest() const;
 
     // ---- persistence ----
     void save(BinWriter& w) const;
@@ -149,6 +158,8 @@ private:
     const Registry* reg_;
     WorldGen gen_;
     int cells_x_ = 0, cells_y_ = 0, cells_z_ = 0;
+    mutable std::vector<Vec3i> tree_bases_;  // lazily enumerated, sorted by cell
+    mutable bool trees_known_ = false;
     mutable std::vector<Cell> cells_;
     std::vector<VoxelChange> changes_;
     std::vector<u8> dirty_flag_;

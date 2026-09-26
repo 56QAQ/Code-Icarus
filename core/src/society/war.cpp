@@ -185,7 +185,7 @@ void Society::annex(u16 winner, u16 loser, EventId cause, const std::string& how
         if (b.alive && b.polity == loser) ctx_.buildings->get(b.id)->polity = winner;
     for (const Farm& f : ctx_.farming->all())
         if (f.alive && f.polity == loser) ctx_.farming->get(f.id)->polity = winner;
-    if (w->war_with(loser)) make_peace(winner, loser, "的战争以征服告终", cause);
+    if (w->war_with(loser)) make_peace(winner, loser, how.empty() ? "的战争以征服告终" : "的战争随之结束", cause);
     Event e;
     e.type = EventType::Coup;  // a change of sovereignty
     e.severity = 5;
@@ -193,7 +193,7 @@ void Society::annex(u16 winner, u16 loser, EventId cause, const std::string& how
     e.causes[0] = cause;
     e.text = how.empty() ? strfmt("「%s」征服了「%s」，其人民与土地并入", title(winner).c_str(), old_title.c_str())
                          : strfmt("「%s」%s「%s」", old_title.c_str(), how.c_str(), title(winner).c_str());
-    ctx_.chron->emit(std::move(e));
+    last_merge_ = ctx_.chron->emit(std::move(e));
     l->alive = false;
 }
 

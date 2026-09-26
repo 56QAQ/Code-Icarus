@@ -73,6 +73,9 @@ public:
 
     // Fill kCellVol voxels for cell coordinate cc.
     void generate_cell(const Vec3i& cc, Voxel* out) const;
+    // Every tree the generator plants on the islands (the lowest trunk cube of each),
+    // without generating any cell.
+    std::vector<Vec3i> tree_bases() const;
     ColumnInfo column(int x, int z) const;
     // Macro summary of a cell without generating it.
     Biome cell_biome(const Vec3i& cc) const;
