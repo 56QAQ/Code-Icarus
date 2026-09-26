@@ -1,0 +1,143 @@
+// 源动力 (drives) of magical girls. A drive sets power, spells and what she values when
+// governing; her personality (separate) sets HOW she pursues it.
+// values: weights over decision features used by the local persona model and shown to Jev.
+//   food_security welfare order harshness cooperation self_power growth frugality military risk fairness speed
+// Positive drives have lower power but govern and cooperate better; negative drives are
+// stronger but rule by punishment and rarely share power.
+{
+  "features": {
+    "food_security": "粮食安全", "welfare": "民生福祉", "order": "秩序", "harshness": "严厉惩罚",
+    "cooperation": "与其他魔法少女合作", "self_power": "个人权力", "growth": "长远发展", "frugality": "节省资源",
+    "military": "武力", "risk": "冒险", "fairness": "公平", "speed": "见效速度"
+  },
+  "drives": [
+    {
+      "key": "hope", "name": "希望", "valence": 1, "category": "governance", "power": 0.85, "mana_regen": 1.1,
+      "punish_bias": 0.1, "cooperation": 0.9, "costume": {"cloth": "#f4f1e6", "accent": "#8fd3e8", "hair": "#f2e2b8"},
+      "values": {"food_security": 0.9, "welfare": 1.2, "order": 0.2, "harshness": -1.0, "cooperation": 1.0, "self_power": -0.2,
+                 "growth": 0.8, "frugality": 0.0, "military": -0.3, "risk": 0.3, "fairness": 1.0, "speed": 0.2},
+      "spells": [
+        {"key": "light_of_hope", "name": "希望之光", "type": "active", "level": 1, "mana": 0.35, "cooldown_h": 6, "effect": "heal", "radius": 6,
+         "desc": "治愈附近伤者的身体。再生会消耗被治疗者的体力（饱腹度）。"},
+        {"key": "undying_wish", "name": "不灭的期盼", "type": "passive", "level": 2, "effect": "mood_floor", "amount": 0.05,
+         "desc": "她所在国家的居民心情下限提高。"},
+        {"key": "prayer_song", "name": "祈愿之歌", "type": "active", "level": 4, "mana": 0.5, "cooldown_h": 24, "effect": "inspire", "radius": 14, "amount": 0.15,
+         "desc": "鼓舞附近的居民，提升心情与对她的支持。"},
+        {"key": "seed_of_rebirth", "name": "再生之种", "type": "passive", "level": 6, "effect": "regrow_limbs",
+         "desc": "希望之光可以令断肢重生，但代价是更多的饱腹度。"}
+      ]
+    },
+    {
+      "key": "courage", "name": "勇气", "valence": 1, "category": "combat", "power": 1.0, "mana_regen": 1.0,
+      "punish_bias": 0.3, "cooperation": 0.7, "costume": {"cloth": "#d9534f", "accent": "#f0c05a", "hair": "#e87a3a"},
+      "values": {"food_security": 0.7, "welfare": 0.6, "order": 0.5, "harshness": -0.3, "cooperation": 0.7, "self_power": 0.5,
+                 "growth": 0.4, "frugality": -0.2, "military": 1.1, "risk": 0.9, "fairness": 0.6, "speed": 0.8},
+      "spells": [
+        {"key": "blade_of_courage", "name": "勇气之刃", "type": "active", "level": 1, "mana": 0.2, "cooldown_h": 1, "effect": "strike", "radius": 2.5, "amount": 0.35,
+         "desc": "强力的斩击，削去敌人的身体方块。"},
+        {"key": "unyielding", "name": "不屈", "type": "passive", "level": 2, "effect": "toughness", "amount": 0.6,
+         "desc": "受到的伤害降低。"},
+        {"key": "war_cry", "name": "战吼", "type": "active", "level": 4, "mana": 0.4, "cooldown_h": 12, "effect": "rally", "radius": 14,
+         "desc": "附近的同伴恐惧消散，战斗力提升。"},
+        {"key": "vanguard", "name": "先锋", "type": "passive", "level": 6, "effect": "army_bonus", "amount": 0.3,
+         "desc": "追随她作战的士兵战斗力提升。"}
+      ]
+    },
+    {
+      "key": "light", "name": "光明", "valence": 1, "category": "governance", "power": 0.9, "mana_regen": 1.0,
+      "punish_bias": 0.35, "cooperation": 0.65, "costume": {"cloth": "#f7e7a8", "accent": "#ffffff", "hair": "#fff2c4"},
+      "values": {"food_security": 0.8, "welfare": 0.7, "order": 1.2, "harshness": 0.1, "cooperation": 0.6, "self_power": 0.2,
+                 "growth": 0.7, "frugality": 0.3, "military": 0.3, "risk": -0.4, "fairness": 1.2, "speed": 0.3},
+      "spells": [
+        {"key": "light_arrow", "name": "光矢", "type": "active", "level": 1, "mana": 0.15, "cooldown_h": 1, "effect": "ranged", "radius": 1.5, "amount": 0.25,
+         "desc": "远程光箭。"},
+        {"key": "clear_sight", "name": "明察", "type": "passive", "level": 2, "effect": "detect", "amount": 0.5,
+         "desc": "偷窃与怠工更容易被发现，惩罚更有针对性，居民较少感到冤屈。"},
+        {"key": "radiance", "name": "照耀", "type": "active", "level": 4, "mana": 0.45, "cooldown_h": 8, "effect": "quench", "radius": 9,
+         "desc": "以光驱散火焰：熄灭范围内燃烧的方块。"},
+        {"key": "law_of_order", "name": "秩序之律", "type": "passive", "level": 6, "effect": "calm", "amount": 0.1,
+         "desc": "居民的不满较难演变为抗议。"}
+      ]
+    },
+    {
+      "key": "gourmet", "name": "美食", "valence": 1, "category": "development", "power": 0.8, "mana_regen": 1.1,
+      "punish_bias": 0.15, "cooperation": 0.85, "costume": {"cloth": "#f2c38a", "accent": "#e36b5a", "hair": "#f5d7a1"},
+      "values": {"food_security": 1.5, "welfare": 1.1, "order": 0.2, "harshness": -0.8, "cooperation": 0.9, "self_power": 0.1,
+                 "growth": 0.9, "frugality": -0.3, "military": -0.5, "risk": 0.0, "fairness": 0.7, "speed": 0.5},
+      "spells": [
+        {"key": "harvest_feast", "name": "丰收之宴", "type": "active", "level": 1, "mana": 0.4, "cooldown_h": 12, "effect": "feast", "amount": 12,
+         "desc": "把仓库里的谷物烹制成盛宴料理：更顶饱，也让人快乐。材料来自真实的存粮。"},
+        {"key": "good_appetite", "name": "好胃口", "type": "passive", "level": 2, "effect": "meal_joy", "amount": 0.05,
+         "desc": "她的国家里，饭食带来更多满足感。"},
+        {"key": "nourishing_soil", "name": "滋养之土", "type": "active", "level": 4, "mana": 0.5, "cooldown_h": 24, "effect": "grow", "radius": 10,
+         "desc": "催熟附近的作物，但每株会消耗附近一份水。"},
+        {"key": "food_wisdom", "name": "食之慧", "type": "passive", "level": 6, "effect": "preserve", "amount": 0.5,
+         "desc": "她的国家仓库里的食物腐坏减半。"}
+      ]
+    },
+    {
+      "key": "wrath", "name": "愤怒", "valence": -1, "category": "combat", "power": 1.35, "mana_regen": 1.2,
+      "punish_bias": 0.8, "cooperation": 0.25, "costume": {"cloth": "#5a1e22", "accent": "#ff5a2a", "hair": "#2a1a1a"},
+      "values": {"food_security": 0.6, "welfare": 0.1, "order": 1.0, "harshness": 1.1, "cooperation": -0.6, "self_power": 1.0,
+                 "growth": 0.2, "frugality": 0.0, "military": 1.3, "risk": 0.9, "fairness": -0.2, "speed": 1.1},
+      "spells": [
+        {"key": "rage_burst", "name": "怒焰爆", "type": "active", "level": 1, "mana": 0.35, "cooldown_h": 4, "effect": "firebomb", "radius": 3,
+         "desc": "爆炸并点燃周围，真实地破坏方块与身体。"},
+        {"key": "pent_fury", "name": "怒意积蓄", "type": "passive", "level": 2, "effect": "wounded_power", "amount": 0.8,
+         "desc": "伤得越重，力量越强。"},
+        {"key": "berserk", "name": "狂暴", "type": "active", "level": 4, "mana": 0.5, "cooldown_h": 12, "effect": "berserk",
+         "desc": "短时间内力量倍增。"},
+        {"key": "intimidation", "name": "威压", "type": "passive", "level": 6, "effect": "fear_rule", "amount": 0.15,
+         "desc": "居民更加畏惧与服从，但心情更差。"}
+      ]
+    },
+    {
+      "key": "envy", "name": "嫉妒", "valence": -1, "category": "governance", "power": 1.2, "mana_regen": 1.0,
+      "punish_bias": 0.7, "cooperation": 0.15, "costume": {"cloth": "#2f5a3a", "accent": "#9be36b", "hair": "#1e2f24"},
+      "values": {"food_security": 0.6, "welfare": 0.0, "order": 1.1, "harshness": 0.8, "cooperation": -0.8, "self_power": 1.3,
+                 "growth": 0.3, "frugality": 0.4, "military": 0.6, "risk": 0.2, "fairness": -0.4, "speed": 0.6},
+      "spells": [
+        {"key": "seize", "name": "夺取", "type": "active", "level": 1, "mana": 0.3, "cooldown_h": 6, "effect": "drain_mana",
+         "desc": "夺走另一位魔法少女的魔力。"},
+        {"key": "eye_of_suspicion", "name": "猜忌之眼", "type": "passive", "level": 2, "effect": "spy", "amount": 0.5,
+         "desc": "能看穿居民的不忠，针对性地惩罚反对者。"},
+        {"key": "sow_discord", "name": "离间", "type": "active", "level": 4, "mana": 0.45, "cooldown_h": 24, "effect": "discord", "radius": 16,
+         "desc": "削弱其他魔法少女在民众中的支持。"},
+        {"key": "comparison", "name": "比较", "type": "passive", "level": 6, "effect": "envy_power", "amount": 0.5,
+         "desc": "周围的强者越多，她越强。"}
+      ]
+    },
+    {
+      "key": "despair", "name": "绝望", "valence": -1, "category": "governance", "power": 1.25, "mana_regen": 0.9,
+      "punish_bias": 0.75, "cooperation": 0.2, "costume": {"cloth": "#2a2a3e", "accent": "#7a6ab0", "hair": "#c8c8d8"},
+      "values": {"food_security": 0.8, "welfare": -0.2, "order": 1.3, "harshness": 0.9, "cooperation": -0.5, "self_power": 0.8,
+                 "growth": -0.2, "frugality": 0.8, "military": 0.5, "risk": -0.6, "fairness": -0.3, "speed": 0.2},
+      "spells": [
+        {"key": "despair_field", "name": "绝望领域", "type": "active", "level": 1, "mana": 0.35, "cooldown_h": 6, "effect": "terrify", "radius": 10,
+         "desc": "范围内的人丧失斗志，陷入恐惧。"},
+        {"key": "numbness", "name": "麻木", "type": "passive", "level": 2, "effect": "numb", "amount": 0.15,
+         "desc": "居民的需求消耗变慢，但心情上限降低。"},
+        {"key": "wither", "name": "枯萎", "type": "active", "level": 4, "mana": 0.5, "cooldown_h": 24, "effect": "wither", "radius": 8,
+         "desc": "令范围内的植物与作物枯死。"},
+        {"key": "abyss_power", "name": "深渊之力", "type": "passive", "level": 6, "effect": "gloom_power", "amount": 0.6,
+         "desc": "国家越是消沉，她越强。"}
+      ]
+    },
+    {
+      "key": "gluttony", "name": "暴食", "valence": -1, "category": "development", "power": 1.3, "mana_regen": 1.3,
+      "punish_bias": 0.6, "cooperation": 0.2, "costume": {"cloth": "#6b2d5c", "accent": "#e8b04a", "hair": "#d86aa0"},
+      "values": {"food_security": 1.6, "welfare": 0.2, "order": 0.6, "harshness": 0.7, "cooperation": -0.7, "self_power": 1.2,
+                 "growth": 0.5, "frugality": -0.6, "military": 0.4, "risk": 0.5, "fairness": -0.6, "speed": 0.9},
+      "spells": [
+        {"key": "devour", "name": "吞噬", "type": "active", "level": 1, "mana": 0.2, "cooldown_h": 3, "effect": "devour", "radius": 2.5,
+         "desc": "吞下周围的物质方块，化作自身魔力。被吞掉的物质不会再回来。"},
+        {"key": "bottomless", "name": "无底", "type": "passive", "level": 2, "effect": "big_eater", "amount": 2.0,
+         "desc": "她吃得是常人的三倍，也因此更加强壮。"},
+        {"key": "hunger_fang", "name": "饥饿之牙", "type": "active", "level": 4, "mana": 0.35, "cooldown_h": 2, "effect": "drain_strike", "radius": 2, "amount": 0.3,
+         "desc": "撕咬敌人并吸取其体力。"},
+        {"key": "hoard", "name": "储备", "type": "passive", "level": 6, "effect": "hoard", "amount": 0.5,
+         "desc": "她的国家仓库容量更大，但她会把更多粮食据为己有。"}
+      ]
+    }
+  ]
+}

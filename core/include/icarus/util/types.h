@@ -85,6 +85,10 @@ struct Vec3f {
     Vec3f& operator+=(const Vec3f& o) { x += o.x; y += o.y; z += o.z; return *this; }
     float dot(const Vec3f& o) const { return x * o.x + y * o.y + z * o.z; }
     float length() const { return std::sqrt(x * x + y * y + z * z); }
+    float dist_sq(const Vec3f& o) const {
+        float dx = x - o.x, dy = y - o.y, dz = z - o.z;
+        return dx * dx + dy * dy + dz * dz;
+    }
     float length_xz() const { return std::sqrt(x * x + z * z); }
     Vec3f normalized() const {
         float l = length();

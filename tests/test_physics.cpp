@@ -51,6 +51,7 @@ TEST("physics: water is conserved while it flows and settles") {
     const CoreMats& M = sim.reg().m();
     Vec3i o = build_tub(sim, 10);
     sim.physics().evaporation = 0.0f;  // evaporation stats are global; isolate the tub
+    sim.physics().evaporation_samples = 0;
     // Drop a tall column of water into one corner.
     for (int y = 1; y <= 5; ++y) w.set(o + Vec3i{0, y, 0}, make_voxel(M.water, kFluidFull));
     sim.run(2);
@@ -70,6 +71,7 @@ TEST("physics: water falling off the island is lost to the abyss") {
     World& w = sim.world();
     const CoreMats& M = sim.reg().m();
     Vec3i p{40, 30, 40};  // open sky far from islands
+    sim.physics().evaporation_samples = 0;
     w.set(p, make_voxel(M.water, kFluidFull));
     sim.run(80);
     CHECK_EQ(sim.physics().stats().water_units_to_void, (i64)kFluidFull);

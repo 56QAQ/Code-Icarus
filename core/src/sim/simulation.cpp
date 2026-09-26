@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 
+#include "icarus/sim/scenario.h"
 #include "icarus/util/log.h"
 
 namespace icarus {
@@ -58,8 +59,30 @@ GameConfig config_from_json(const Json& j) {
 }
 }  // namespace
 
-Simulation::Simulation(const Registry& reg) : reg_(&reg), world_(reg), physics_(world_, chronicle_) {
+Simulation::Simulation(const Registry& reg)
+    : reg_(&reg),
+      world_(reg),
+      physics_(world_, chronicle_),
+      econ_(reg),
+      buildings_(world_, econ_, chronicle_),
+      farming_(world_, chronicle_),
+      nav_(world_),
+      agents_(ctx_),
+      society_(ctx_) {
     world_.on_wake = [this](Cell& c, Tick last, Tick now) { on_cell_wake(c, last, now); };
+    ctx_.reg = reg_;
+    ctx_.world = &world_;
+    ctx_.chron = &chronicle_;
+    ctx_.physics = &physics_;
+    ctx_.econ = &econ_;
+    ctx_.buildings = &buildings_;
+    ctx_.farming = &farming_;
+    ctx_.jobs = &jobs_;
+    ctx_.nav = &nav_;
+    ctx_.agents = &agents_;
+    ctx_.society = &society_;
+    buildings_.load_defs(reg);
+    buildings_.set_physics(&physics_);
 }
 
 Simulation::~Simulation() = default;
@@ -73,15 +96,26 @@ void Simulation::new_game(const GameConfig& cfg) {
     chronicle_.clear();
     chronicle_.set_now(tick_);
     physics_.reset(hash_combine(cfg.world.seed, 0xF1));
+    econ_.reset();
+    buildings_.reset();
+    farming_.reset();
+    jobs_.reset();
+    u64 pseed = cfg.personality_seed ? cfg.personality_seed : hash_combine(cfg.world.seed, 0xB0);
+    agents_.reset(hash_combine(cfg.world.seed, 0xA9));
+    society_.reset(hash_combine(cfg.world.seed, 0x50));
+    scenario_rng_.seed(pseed, 0x5CE7);
+    ctx_.now = tick_;
+    econ_.set_now(tick_);
     admin_queue_.clear();
     const IslandFeatures& f = world_.gen().features();
     if (f.spring.y > 0) physics_.add_spring(f.spring);
-    world_.changes().clear();
     Event e;
     e.type = EventType::Info;
     e.severity = 3;
     e.text = "空岛纪元开始";
     chronicle_.emit(std::move(e));
+    if (cfg.scenario == "village") build_village_scenario(ctx_, cfg_, scenario_rng_);
+    dispatch_changes();
 }
 
 void Simulation::on_cell_wake(Cell& c, Tick last, Tick now) {
@@ -97,6 +131,7 @@ void Simulation::dispatch_changes() {
     changes.swap(world_.changes());
     if (changes.empty()) return;
     physics_.on_changes(changes);
+    buildings_.on_changes(changes);
 }
 
 void Simulation::step() {
@@ -109,19 +144,29 @@ void Simulation::step() {
         q.swap(admin_queue_);
         for (const AdminCommand& c : q) apply_admin(c);
     }
+    ctx_.now = tick_;
+    econ_.set_now(tick_);
     dispatch_changes();
     auto t1 = std::chrono::steady_clock::now();
     physics_.step(tick_);
     dispatch_changes();
+    farming_.step(tick_, agents_.rng());
     auto t2 = std::chrono::steady_clock::now();
-
-    physics_.damage_queue().clear();  // consumed by agents once they exist
+    agents_.step(tick_);
+    physics_.damage_queue().clear();
+    dispatch_changes();
+    auto t3 = std::chrono::steady_clock::now();
+    society_.step(tick_);
+    dispatch_changes();
+    auto t4 = std::chrono::steady_clock::now();
 
     if (tick_ % 100 == 0) world_.update_lifecycle(tick_, cfg_.lifecycle_idle_ticks);
 
-    auto t3 = std::chrono::steady_clock::now();
+    auto t5 = std::chrono::steady_clock::now();
     profile_.physics_us = std::chrono::duration<double, std::micro>(t2 - t1).count();
-    profile_.total_us = std::chrono::duration<double, std::micro>(t3 - t0).count();
+    profile_.agents_us = std::chrono::duration<double, std::micro>(t3 - t2).count();
+    profile_.society_us = std::chrono::duration<double, std::micro>(t4 - t3).count();
+    profile_.total_us = std::chrono::duration<double, std::micro>(t5 - t0).count();
     ++tick_;
 }
 
@@ -216,6 +261,14 @@ std::vector<u8> Simulation::save() const {
     world_.save(w);
     chronicle_.save(w);
     physics_.save(w);
+    econ_.save(w);
+    buildings_.save(w);
+    farming_.save(w);
+    jobs_.save(w);
+    agents_.save(w);
+    society_.save(w);
+    w.u64v(scenario_rng_.state());
+    w.u64v(scenario_rng_.inc());
     size_t s = w.begin_section("ADMQ");
     w.varu(admin_queue_.size());
     for (const AdminCommand& c : admin_queue_) {
@@ -242,6 +295,18 @@ void Simulation::load(const std::vector<u8>& data) {
     chronicle_.load(r);
     chronicle_.set_now(tick_);
     physics_.load(r);
+    econ_.load(r);
+    buildings_.load(r);
+    farming_.load(r);
+    jobs_.load(r);
+    agents_.load(r);
+    society_.load(r);
+    {
+        u64 st = r.u64v(), inc = r.u64v();
+        scenario_rng_.set_raw(st, inc);
+    }
+    ctx_.now = tick_;
+    econ_.set_now(tick_);
     BinReader q = r.section("ADMQ");
     admin_queue_.clear();
     u64 n = q.varu();
@@ -258,6 +323,12 @@ u64 Simulation::state_hash() const {
     u64 h = hash_combine(tick_, world_.state_hash());
     h = hash_combine(h, chronicle_.hash());
     h = hash_combine(h, physics_.hash());
+    h = hash_combine(h, econ_.hash());
+    h = hash_combine(h, buildings_.hash());
+    h = hash_combine(h, farming_.hash());
+    h = hash_combine(h, jobs_.hash());
+    h = hash_combine(h, agents_.hash());
+    h = hash_combine(h, society_.hash());
     return h;
 }
 

@@ -84,9 +84,69 @@ void Physics::on_changes(const std::vector<VoxelChange>& changes) {
     }
 }
 
+void Physics::step_evaporation() {
+    // Sample random columns of active cells; exposed water surfaces lose a unit. The rate
+    // is proportional to exposed surface area, so lakes shrink slowly without inflow.
+    if (evaporation_samples <= 0) return;
+    const CoreMats& M = w_.reg().m();
+    if (now_ % 50 == 0) {
+        active_cells_.clear();
+        for (int y = 0; y < w_.cells_y(); ++y)
+            for (int z = 0; z < w_.cells_z(); ++z)
+                for (int x = 0; x < w_.cells_x(); ++x) {
+                    const Cell* c = w_.cell({x, y, z});
+                    if (c && c->state == CellState::Active && !(c->uniform && vmat(c->uniform_value) == M.air))
+                        active_cells_.push_back({x, y, z});
+                }
+    }
+    if (active_cells_.empty()) return;
+    // Weather: occasional rain spells (deterministic from the physics RNG).
+    if (now_ >= next_weather_) {
+        if (next_weather_ != 0 && rng_.chance(0.45f)) {
+            rain_until_ = now_ + (Tick)(2500 + rng_.below(4000));
+            Event e;
+            e.type = EventType::Info;
+            e.severity = 1;
+            e.text = "下雨了";
+            chron_.emit(std::move(e));
+        }
+        next_weather_ = now_ + 6000 + rng_.below(6000);
+    }
+    const bool rain = rain_until_ > now_;
+    const int samples = rain ? evaporation_samples * 3 : evaporation_samples;
+    for (int i = 0; i < samples; ++i) {
+        const Vec3i& cc = active_cells_[rng_.below((u32)active_cells_.size())];
+        int x = cc.x * kCellSize + (int)rng_.below(kCellSize);
+        int z = cc.z * kCellSize + (int)rng_.below(kCellSize);
+        for (int y = cc.y * kCellSize + kCellSize - 1; y >= cc.y * kCellSize; --y) {
+            Vec3i p{x, y, z};
+            Voxel v = w_.get(p);
+            MatId m = vmat(v);
+            if (m == M.air) continue;
+            bool open_sky = vmat(w_.get(p + Vec3i{0, 1, 0})) == M.air;
+            if (m == M.water && open_sky) {
+                if (rain) {
+                    if (vlevel(v) < kFluidFull) {
+                        w_.set(p, make_voxel(M.water, (u8)(vlevel(v) + 1)));
+                        stats_.water_units_rain++;
+                    }
+                } else {
+                    int l = vlevel(v) - 1;
+                    w_.set(p, l > 0 ? make_voxel(M.water, (u8)l) : make_voxel(M.air));
+                    stats_.water_units_evaporated++;
+                }
+            } else if (rain && vburning(v) && open_sky) {
+                w_.set(p, with_burning(v, false));
+            }
+            break;
+        }
+    }
+}
+
 void Physics::step(Tick now) {
     now_ = now;
     step_springs(now);
+    step_evaporation();
     step_meteors();
     step_water();
     step_fire();
@@ -184,10 +244,24 @@ void Physics::step_water() {
                     }
                 }
                 if (best < 0) break;
-                if (!best_drop && best_level >= level - 1) break;
+                if (!best_drop && best_level >= level) break;
+                if (!best_drop && best_level == level - 1) {
+                    // A one-unit difference only flows if it continues downhill beyond the
+                    // neighbour; this levels long channels without endless jitter.
+                    Vec3i n = p + kDir4H[best];
+                    bool downhill = false;
+                    for (int k = 0; k < 4 && !downhill; ++k) {
+                        Vec3i m = n + kDir4H[k];
+                        if (m == p || !w_.in_bounds(m)) continue;
+                        Voxel mv = w_.get(m);
+                        if (!water_can_enter(mv)) continue;
+                        int ml = vmat(mv) == M.water ? vlevel(mv) : 0;
+                        if (ml <= level - 2) downhill = true;
+                    }
+                    if (!downhill) break;
+                }
                 Vec3i n = p + kDir4H[best];
                 int give = best_drop ? std::max(1, level / 2) : std::max(1, (level - best_level) / 2);
-                if (!best_drop && level - give < best_level + give - 1) give = std::max(1, (level - best_level) / 2);
                 give = std::min(give, (int)kFluidFull - best_level);
                 if (give <= 0) break;
                 w_.set(n, make_voxel(M.water, (u8)(best_level + give)));
@@ -312,10 +386,12 @@ void Physics::step_granular() {
             Voxel sv = w_.get(s), sdv = w_.get(sd);
             const Material& sm = reg.mat(vmat(sv));
             const Material& sdm = reg.mat(vmat(sdv));
-            if (!sm.solid && !sm.fluid && vmat(sv) == M.air && !sdm.solid && vmat(sdv) != M.crop) {
+            if (!sm.solid && !sm.fluid && vmat(sv) == M.air && !sdm.solid && vmat(sdv) != M.crop &&
+                vmat(sdv) != M.berry_bush) {
                 if (rng_.chance(0.6f)) {
+                    // Swap so any water in the way is displaced, never destroyed.
                     w_.set(sd, v);
-                    w_.set(p, make_voxel(M.air));
+                    w_.set(p, sdm.fluid ? sdv : make_voxel(M.air));
                     granular_.push(sd);
                 }
                 break;
@@ -388,7 +464,14 @@ void Physics::step_support() {
     removal_causes_.clear();
 }
 
-void Physics::collapse_component(const std::vector<Vec3i>& comp, EventId cause) {
+void Physics::collapse_cubes(const std::vector<Vec3i>& cubes, EventId cause, const std::string& text) {
+    std::vector<Vec3i> solid;
+    for (const Vec3i& c : cubes)
+        if (w_.material(c).solid) solid.push_back(c);
+    collapse_component(solid, cause, text.c_str());
+}
+
+void Physics::collapse_component(const std::vector<Vec3i>& comp, EventId cause, const char* text) {
     if (comp.empty()) return;
     const Registry& reg = w_.reg();
     DebrisBody b;
@@ -421,7 +504,8 @@ void Physics::collapse_component(const std::vector<Vec3i>& comp, EventId cause) 
     e.severity = comp.size() > 500 ? 4 : (comp.size() > 50 ? 3 : 2);
     e.pos = comp[0];
     e.causes[0] = cause;
-    e.text = strfmt("失去支撑的结构坍塌（%zu 个方块）", b.voxels.size());
+    e.text = text ? strfmt("%s（%zu 个方块）", text, b.voxels.size())
+                  : strfmt("失去支撑的结构坍塌（%zu 个方块）", b.voxels.size());
     e.data.set("cubes", (double)b.voxels.size());
     b.cause = chron_.emit(std::move(e));
     for (const DebrisVoxel& dv : b.voxels) w_.set(mn + dv.off, make_voxel(0), b.cause);
@@ -697,6 +781,11 @@ void Physics::save(BinWriter& w) const {
     w.i64v(stats_.water_units_to_void);
     w.i64v(stats_.water_units_spring);
     w.i64v(stats_.water_units_evaporated);
+    w.varu(active_cells_.size());
+    for (const Vec3i& c : active_cells_) w.vec3i(c);
+    w.u64v(rain_until_);
+    w.u64v(next_weather_);
+    w.i64v(stats_.water_units_rain);
     w.end_section(s);
 }
 
@@ -752,6 +841,12 @@ void Physics::load(BinReader& outer) {
     stats_.water_units_to_void = r.i64v();
     stats_.water_units_spring = r.i64v();
     stats_.water_units_evaporated = r.i64v();
+    active_cells_.clear();
+    u64 nac = r.varu();
+    for (u64 i = 0; i < nac; ++i) active_cells_.push_back(r.vec3i());
+    rain_until_ = r.u64v();
+    next_weather_ = r.u64v();
+    stats_.water_units_rain = r.i64v();
     damage_.clear();
 }
 

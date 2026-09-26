@@ -6,7 +6,15 @@
 #include <vector>
 
 #include "icarus/data/registry.h"
+#include "icarus/agents/agents.h"
+#include "icarus/agents/jobs.h"
+#include "icarus/agents/nav.h"
+#include "icarus/economy/buildings.h"
+#include "icarus/economy/economy.h"
+#include "icarus/economy/farming.h"
 #include "icarus/sim/chronicle.h"
+#include "icarus/sim/context.h"
+#include "icarus/society/society.h"
 #include "icarus/sim/clock.h"
 #include "icarus/sim/physics.h"
 #include "icarus/util/json.h"
@@ -52,6 +60,18 @@ public:
     Chronicle& chronicle() { return chronicle_; }
     const Chronicle& chronicle() const { return chronicle_; }
     Physics& physics() { return physics_; }
+    Economy& economy() { return econ_; }
+    Buildings& buildings() { return buildings_; }
+    Farming& farming() { return farming_; }
+    JobBoard& jobs() { return jobs_; }
+    Nav& nav() { return nav_; }
+    Agents& agents() { return agents_; }
+    Society& society() { return society_; }
+    const Agents& agents() const { return agents_; }
+    const Society& society() const { return society_; }
+    const Economy& economy() const { return econ_; }
+    const Buildings& buildings() const { return buildings_; }
+    SimContext& ctx() { return ctx_; }
 
     void queue_admin(AdminCommand cmd) { admin_queue_.push_back(std::move(cmd)); }
     // Applies immediately (used by tests and scenario scripts). Returns the event id.
@@ -77,6 +97,15 @@ private:
     World world_;
     Chronicle chronicle_;
     Physics physics_;
+    Economy econ_;
+    Buildings buildings_;
+    Farming farming_;
+    JobBoard jobs_;
+    Nav nav_;
+    SimContext ctx_;
+    Agents agents_;
+    Society society_;
+    Rng scenario_rng_;
     std::vector<AdminCommand> admin_queue_;
     Tick tick_ = 0;
     Profile profile_;

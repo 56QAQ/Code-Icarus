@@ -1,0 +1,714 @@
+// Agents: lifecycle, needs, health, movement and persistence.
+#include "icarus/agents/agents.h"
+
+#include <algorithm>
+#include <cmath>
+
+#include "icarus/economy/buildings.h"
+#include "icarus/sim/clock.h"
+#include "icarus/society/society.h"
+#include "icarus/util/log.h"
+
+namespace icarus {
+
+Agents::Agents(SimContext& ctx) : ctx_(ctx) {}
+
+void Agents::reset(u64 seed) {
+    rng_.seed(seed, 0xA6E27);
+    chars_.clear();
+    chars_.resize(1);
+    dangers_.clear();
+    day = {};
+}
+
+EntityId Agents::spawn(CharKind kind, const std::string& name, bool female, const Vec3i& foot, u16 polity) {
+    auto c = std::make_unique<Character>();
+    c->id = (EntityId)chars_.size();
+    c->kind = kind;
+    c->name = name;
+    c->female = female;
+    c->polity = polity;
+    c->born = ctx_.now;
+    c->inv = ctx_.econ->create_store(StoreKind::Carried, foot, polity, c->id, tune.carry_capacity);
+    c->next_think = ctx_.now + (Tick)(c->id % 20);
+    if (kind == CharKind::MagicalGirl) c->girl = std::make_unique<GirlData>();
+    chars_.push_back(std::move(c));
+    Character& ref = *chars_.back();
+    place_at(ref, foot);
+    return ref.id;
+}
+
+std::vector<Character*> Agents::living() {
+    std::vector<Character*> out;
+    for (auto& c : chars_)
+        if (c && c->alive && !c->departed) out.push_back(c.get());
+    return out;
+}
+
+int Agents::count_alive(u16 polity) const {
+    int n = 0;
+    for (auto& c : chars_)
+        if (c && c->alive && !c->departed && c->polity == polity) ++n;
+    return n;
+}
+
+void Agents::randomize(Character& c, Rng& rng) {
+    for (int i = 0; i < Personality::kCount; ++i) c.pers.at(i) = clampv(rng.normalish(0.5f, 0.2f), 0.02f, 0.98f);
+    for (int s = 0; s < kSkillCount; ++s) c.skills[s] = clampv(rng.normalish(0.3f, 0.12f), 0.05f, 0.9f);
+    int spec = (int)rng.below(kSkillCount);
+    c.skills[spec] = clampv(c.skills[spec] + 0.35f, 0.0f, 0.95f);
+    static const u32 skins[] = {0xF1D3BD, 0xE8C4A8, 0xD9A98A, 0xC68F6E, 0xF5E0D0};
+    static const u32 hairs[] = {0x3B2A20, 0x5A3E2B, 0x8A6A4A, 0x2A2A32, 0xC9A36B, 0x7A3B2E, 0xB8B8C8, 0x4A5A7A};
+    static const u32 cloths[] = {0x6B7F99, 0x8A7560, 0x6F8A6B, 0x9A6B6B, 0x7A6F92, 0xA89A7A, 0x5E7A80};
+    c.look.skin = skins[rng.below(5)];
+    c.look.hair = hairs[rng.below(8)];
+    c.look.cloth = cloths[rng.below(7)];
+    c.look.accent = 0xC9B27A;
+    c.look.long_hair = c.female && rng.chance(0.6f);
+    c.look.dress = c.female && rng.chance(0.4f);
+    c.needs.food = rng.uniform(0.6f, 0.95f);
+    c.needs.water = rng.uniform(0.6f, 0.95f);
+    c.needs.rest = rng.uniform(0.7f, 1.0f);
+    c.needs.social = rng.uniform(0.5f, 0.9f);
+    c.mood = 0.6f;
+    c.body.build(c.look);
+}
+
+void Agents::place_at(Character& c, const Vec3i& foot) {
+    c.foot = foot;
+    c.pos = Vec3f((float)foot.x + 0.5f, (float)foot.y, (float)foot.z + 0.5f);
+    c.fall_speed = 0;
+    c.path.clear();
+    if (Store* s = ctx_.econ->store(c.inv)) s->pos = foot;
+}
+
+// ------------------------------------------------------------------------------ main loop
+
+void Agents::step(Tick now) {
+    now_ = now;
+    if (now % 50 == 0) {
+        ctx_.jobs->expire(now);
+        ctx_.econ->expire_reservations(now);
+        generate_jobs();
+    }
+    // Physics hazards → damage and danger memory.
+    for (const AreaDamage& d : ctx_.physics->damage_queue()) {
+        apply_area_damage(d);
+        dangers_.push_back({d.center, d.radius * 2.0f + 3.0f});
+    }
+    if (now % 100 == 0 && !dangers_.empty()) dangers_.erase(dangers_.begin(), dangers_.begin() + (long)(dangers_.size() + 1) / 2);
+
+    for (size_t i = 1; i < chars_.size(); ++i) {
+        Character* cp = chars_[i].get();
+        if (!cp || !cp->alive || cp->departed) continue;
+        Character& c = *cp;
+        update_physics(c);
+        if (!c.alive) continue;
+        update_needs(c);
+        update_health(c);
+        if (!c.alive) continue;
+        if ((now + c.id) % kTicksPerHour == 0) hourly(c);
+        if (now >= c.next_think || c.task.type == TaskType::None) think(c);
+        run_task(c);
+    }
+}
+
+void Agents::update_needs(Character& c) {
+    const float per_tick = 1.0f / (float)kTicksPerDay;
+    float activity = c.task.type == TaskType::Work ? 1.25f : (c.sleeping ? 0.6f : 1.0f);
+    c.needs.food = clampv(c.needs.food - tune.food_per_day * per_tick * activity, 0.0f, 1.0f);
+    c.needs.water = clampv(c.needs.water - tune.water_per_day * per_tick * activity, 0.0f, 1.0f);
+    if (c.sleeping) {
+        c.needs.rest = clampv(c.needs.rest + 3.0f * per_tick * 1.1f, 0.0f, 1.0f);
+    } else {
+        c.needs.rest = clampv(c.needs.rest - tune.rest_per_day * per_tick * activity, 0.0f, 1.0f);
+    }
+    c.needs.social = clampv(c.needs.social - tune.social_per_day * per_tick, 0.0f, 1.0f);
+    // Safety recovers when away from danger.
+    float dz = danger_at(c);
+    if (dz > 0.1f) c.needs.safety = clampv(c.needs.safety - 0.02f * dz, 0.0f, 1.0f);
+    else c.needs.safety = clampv(c.needs.safety + 0.0015f, 0.0f, 1.0f);
+}
+
+void Agents::update_health(Character& c) {
+    Body& b = c.body;
+    const float per_tick = 1.0f / (float)kTicksPerDay;
+    float loss = b.bleeding * per_tick;
+    if (c.needs.food <= 0.0f) loss += 0.6f * per_tick;   // starving
+    if (c.needs.water <= 0.0f) loss += 1.2f * per_tick;  // dehydrated
+    if (loss > 0) b.vitality -= loss;
+    else b.vitality = std::min(1.0f, b.vitality + 0.3f * per_tick);
+    b.bleeding = std::max(0.0f, b.bleeding - 0.9f * per_tick);
+    if (b.vitality <= 0.0f || b.fatal()) {
+        std::string cause = "伤势过重";
+        if (c.needs.food <= 0.0f && b.bleeding < 0.1f) cause = "饿死";
+        if (c.needs.water <= 0.0f && b.bleeding < 0.1f) cause = "渴死";
+        kill(c, cause, 0);
+    }
+}
+
+void Agents::update_physics(Character& c) {
+    World& w = *ctx_.world;
+    Nav& nav = *ctx_.nav;
+    Vec3i below{c.foot.x, c.foot.y - 1, c.foot.z};
+    bool ground = w.in_bounds(below) && w.material(below).solid && !w.material(below).passable;
+    if (!ground || c.fall_speed > 0) {
+        // Falling: ground vanished (dug out, blasted, collapsed).
+        c.fall_speed = std::min(1.2f, c.fall_speed + 0.02f);
+        c.pos.y -= c.fall_speed;
+        c.path.clear();
+        Vec3i f{(int)std::floor(c.pos.x), (int)std::floor(c.pos.y), (int)std::floor(c.pos.z)};
+        if (c.pos.y < -10.0f) {
+            EventId e = 0;
+            kill(c, "坠入云海深渊", e);
+            return;
+        }
+        Vec3i fb{f.x, f.y - 1, f.z};
+        if (w.in_bounds(fb) && w.material(fb).solid && !w.material(fb).passable) {
+            float speed = c.fall_speed;
+            c.fall_speed = 0;
+            place_at(c, f);
+            if (speed > 0.35f) damage(c, clampv((speed - 0.3f) * 0.25f, 0.0f, 0.6f), -1, "坠落", 0);
+        } else {
+            c.foot = f;
+        }
+        return;
+    }
+    // Buried (something solid now occupies the body space): step up / aside.
+    if (!nav.passable(c.foot) || !nav.passable(c.foot + Vec3i{0, 1, 0})) {
+        Vec3i np;
+        if (nav.find_standable_near(c.foot + Vec3i{0, 1, 0}, np, 3)) place_at(c, np);
+        else damage(c, 0.01f, kTorso, "被掩埋", 0);
+    }
+    // Standing in fire.
+    if (vburning(w.get(c.foot)) || vburning(w.get(below))) damage(c, 0.004f, -1, "烧伤", 0);
+}
+
+void Agents::hourly(Character& c) {
+    // Regeneration costs food: missing voxels regrow slowly when fed and not bleeding.
+    if (c.needs.food > 0.3f && c.needs.water > 0.3f && c.body.bleeding < 0.05f) {
+        int missing = c.body.total_voxels() - c.body.total_alive();
+        if (missing > 0) {
+            int grow = std::max(1, (int)(c.body.total_voxels() * 0.012f));
+            int done = c.body.regrow(std::min(grow, missing), c.look);
+            c.needs.food = std::max(0.0f, c.needs.food - 0.0008f * (float)done);
+        }
+    }
+    // Mood drifts toward a target shaped by needs, memories and circumstances.
+    const Needs& n = c.needs;
+    float target = 0.18f + 0.22f * n.food + 0.18f * n.water + 0.12f * n.rest + 0.12f * n.social * (0.5f + c.pers.sociability) +
+                   0.1f * n.safety + 0.08f * n.comfort;
+    if (c.home == 0) target -= 0.06f;
+    float mem = 0;
+    for (auto& m : c.memories) {
+        float age_days = (float)(now_ - m.tick) / (float)kTicksPerDay;
+        mem += m.valence * std::exp(-age_days / 2.5f);
+    }
+    target += clampv(mem, -0.4f, 0.3f);
+    float injury = 1.0f - (float)c.body.total_alive() / (float)std::max(1, c.body.total_voxels());
+    target -= injury * 0.5f;
+    target = clampv(target, 0.0f, 1.0f);
+    c.mood += (target - c.mood) * 0.25f;
+    c.stress = clampv(c.stress * 0.95f + (c.mood < 0.3f ? 0.05f : 0.0f), 0.0f, 1.0f);
+    c.fear = clampv(c.fear * 0.97f, 0.0f, 1.0f);
+    if (c.needs.food < 0.15f) c.remember(now_, MemoryKind::Hungry, kNoEntity, -0.08f, 0);
+    if (c.needs.water < 0.15f) c.remember(now_, MemoryKind::Thirsty, kNoEntity, -0.08f, 0);
+    // Forget stale memories.
+    c.memories.erase(std::remove_if(c.memories.begin(), c.memories.end(),
+                                    [&](const Memory& m) { return now_ - m.tick > kTicksPerDay * 8; }),
+                     c.memories.end());
+    // Unreachable blacklist expiry.
+    c.unreachable.erase(std::remove_if(c.unreachable.begin(), c.unreachable.end(),
+                                       [&](const std::pair<Vec3i, Tick>& u) { return u.second <= now_; }),
+                        c.unreachable.end());
+    // Duty: during work hours, time not spent working accrues as shirked duty.
+    if (is_work_time(c) && c.task.type != TaskType::Work && c.task.type != TaskType::Eat &&
+        c.task.type != TaskType::Drink && c.task.type != TaskType::Sleep && c.task.type != TaskType::Govern)
+        c.work_debt = std::min(12.0f, c.work_debt + 1.0f);
+    else if (c.task.type == TaskType::Work)
+        c.work_debt = std::max(0.0f, c.work_debt - 1.0f);
+    // Skill practice.
+    if (c.task.type == TaskType::Work && c.task.job) {
+        if (const Job* j = ctx_.jobs->get(c.task.job)) {
+            int s = job_skill(j->type);
+            c.skills[s] = std::min(1.0f, c.skills[s] + 0.004f);
+        }
+    }
+}
+
+void Agents::kill(Character& c, const std::string& cause, EventId ev_cause) {
+    if (!c.alive) return;
+    c.alive = false;
+    c.died = now_;
+    c.death_cause = cause;
+    c.sleeping = false;
+    if (c.task.job) ctx_.jobs->release(c.task.job, c.id);
+    ctx_.econ->release_agent(c.id);
+    // Belongings drop where they fell.
+    if (ctx_.econ->store(c.inv)) {
+        Store* s = ctx_.econ->store(c.inv);
+        if (!s->empty()) ctx_.econ->drop(c.inv, c.foot);
+    }
+    Event e;
+    e.type = EventType::Death;
+    e.severity = c.is_girl() ? 5 : 3;
+    e.pos = c.foot;
+    e.actor = c.id;
+    e.polity = c.polity;
+    e.causes[0] = ev_cause;
+    e.text = strfmt("%s死亡：%s", c.name.c_str(), cause.c_str());
+    e.data.set("cause", cause);
+    c.death_event = ctx_.chron->emit(std::move(e));
+    if (Polity* p = ctx_.society->polity(c.polity)) p->deaths_total++;
+    // Witnesses and friends remember.
+    for (auto& o : chars_) {
+        if (!o || !o->alive || o->id == c.id) continue;
+        float aff = o->affinity(c.id);
+        if (aff > 0.3f) o->remember(now_, MemoryKind::FriendDied, c.id, -0.25f * aff, c.death_event);
+        else if (o->pos.dist_sq(c.pos) < 144.0f) o->remember(now_, MemoryKind::SawDeath, c.id, -0.08f, c.death_event);
+    }
+}
+
+void Agents::damage(Character& c, float fraction, int part, const std::string& what, EventId cause) {
+    if (!c.alive || fraction <= 0) return;
+    // Armour absorbs part of the harm.
+    if (c.armor != kNoItem) fraction *= 0.6f;
+    DamageReport r = c.body.damage_spread(fraction, rng_, part);
+    if (r.removed == 0) return;
+    float frac = (float)r.removed / (float)std::max(1, c.body.total_voxels());
+    if (frac > 0.03f || r.severed_part >= 0) {
+        Event e;
+        e.type = EventType::Injury;
+        e.severity = r.severed_part >= 0 ? 3 : 2;
+        e.pos = c.foot;
+        e.actor = c.id;
+        e.polity = c.polity;
+        e.causes[0] = cause;
+        e.text = r.severed_part >= 0 ? strfmt("%s因%s失去了%s", c.name.c_str(), what.c_str(), body_part_name_zh(r.severed_part))
+                                     : strfmt("%s因%s受伤", c.name.c_str(), what.c_str());
+        EventId id = ctx_.chron->emit(std::move(e));
+        c.remember(now_, MemoryKind::Injured, kNoEntity, -0.15f - frac, id);
+        cause = id;
+    }
+    c.needs.safety = std::max(0.0f, c.needs.safety - 0.3f);
+    if (r.lethal) kill(c, what, cause);
+}
+
+void Agents::apply_area_damage(const AreaDamage& d) {
+    for (auto& cp : chars_) {
+        if (!cp || !cp->alive || cp->departed) continue;
+        Character& c = *cp;
+        Vec3f center = c.pos + Vec3f(0, 1.2f, 0);
+        float dist = (center - d.center).length();
+        if (dist > d.radius) continue;
+        float falloff = 1.0f - dist / std::max(0.1f, d.radius);
+        const char* what = d.kind == 1 ? "火焰" : (d.kind == 2 ? "坠落物砸中" : "冲击");
+        damage(c, d.amount * falloff, -1, what, d.cause);
+        c.needs.safety = 0.0f;
+        if (c.alive) c.remember(now_, MemoryKind::Disaster, kNoEntity, -0.12f, d.cause);
+    }
+}
+
+float Agents::danger_at(const Character& c) const {
+    float worst = 0;
+    for (auto& [p, r] : dangers_) {
+        float d = (c.pos - p).length();
+        if (d < r) worst = std::max(worst, 1.0f - d / r);
+    }
+    return worst;
+}
+
+bool Agents::is_work_time(const Character& c) const {
+    float h = hour_of(now_);
+    const Polity* p = ctx_.society->polity(c.polity);
+    float hours = p ? p->policies.work_hours : 9.0f;
+    float start = 7.0f;
+    return h >= start && h < start + hours + 1.0f;  // includes a meal break hour
+}
+
+// ------------------------------------------------------------------------------ movement
+
+bool Agents::blacklisted(Character& c, const Vec3i& p) {
+    for (auto& u : c.unreachable)
+        if (u.first == p) return true;
+    return false;
+}
+
+void Agents::blacklist(Character& c, const Vec3i& p, Tick duration) {
+    c.unreachable.push_back({p, now_ + duration});
+    if (c.unreachable.size() > 32) c.unreachable.erase(c.unreachable.begin());
+}
+
+Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) {
+    auto arrived = [&]() {
+        if (c.foot == goal) return true;
+        if (!adjacent_ok) return false;
+        return std::abs(c.foot.x - goal.x) <= 1 && std::abs(c.foot.z - goal.z) <= 1 && c.foot.y - goal.y <= 2 &&
+               goal.y - c.foot.y <= 3;
+    };
+    if (arrived()) {
+        c.moving = false;
+        c.path.clear();
+        return Move::Arrived;
+    }
+    Nav& nav = *ctx_.nav;
+    if (!c.path.valid() || c.path_goal != goal) {
+        c.path.clear();
+        if (blacklisted(c, goal)) return Move::Failed;
+        if (!nav.find_path(c.foot, goal, adjacent_ok, c.path)) {
+            blacklist(c, goal, kTicksPerHour * 3);
+            day.path_failures++;
+            if (debug_path_failures.size() < 200) debug_path_failures.push_back({c.id, c.foot, goal, now_});
+            return Move::Failed;
+        }
+        c.path_goal = goal;
+        if (!c.path.valid()) return arrived() ? Move::Arrived : Move::Failed;
+    }
+    Vec3i next = c.path.nodes[c.path.next];
+    // The world may have changed: validate the step.
+    if (!nav.standable(next)) {
+        c.path.clear();
+        return Move::Moving;  // repath next tick
+    }
+    const World& w = *ctx_.world;
+    (void)w;
+    float speed = tune.walk_speed * c.body.mobility();
+    if (c.needs.rest < 0.15f) speed *= 0.7f;
+    if (c.needs.food < 0.1f || c.needs.water < 0.1f) speed *= 0.75f;
+    if (c.fear > 0.5f && c.task.type == TaskType::Flee) speed *= 1.3f;
+    float cost = nav.step_cost(next);
+    speed /= std::max(0.6f, cost);
+    Vec3f target((float)next.x + 0.5f, (float)next.y, (float)next.z + 0.5f);
+    Vec3f d = target - c.pos;
+    float dist = d.length();
+    c.moving = true;
+    if (dist > 0.01f) c.yaw = std::atan2(d.x, d.z);
+    if (dist <= speed) {
+        c.pos = target;
+        c.foot = next;
+        c.path.next++;
+        if (Store* s = ctx_.econ->store(c.inv)) s->pos = c.foot;
+        if (arrived()) {
+            c.moving = false;
+            c.path.clear();
+            return Move::Arrived;
+        }
+    } else {
+        c.pos += d * (speed / dist);
+    }
+    c.walk_phase += speed * 2.2f;
+    return Move::Moving;
+}
+
+float Agents::carried_weight(const Character& c) const {
+    const Store* s = ctx_.econ->store(c.inv);
+    return s ? ctx_.econ->weight(*s) : 0.0f;
+}
+
+void Agents::deposit_all(Character& c, StoreId to) {
+    Store* s = ctx_.econ->store(c.inv);
+    if (!s || s->empty()) return;
+    ctx_.econ->transfer_all(c.inv, to);
+    if (!ctx_.econ->store(c.inv)->empty()) ctx_.econ->drop(c.inv, c.foot);
+}
+
+// ------------------------------------------------------------------------------ persistence
+
+namespace {
+void save_pers(BinWriter& w, const Personality& p) {
+    for (int i = 0; i < Personality::kCount; ++i) w.f32(p.at(i));
+}
+void load_pers(BinReader& r, Personality& p) {
+    for (int i = 0; i < Personality::kCount; ++i) p.at(i) = r.f32();
+}
+}  // namespace
+
+void Agents::save(BinWriter& w) const {
+    size_t sec = w.begin_section("AGNT");
+    w.u64v(rng_.state());
+    w.u64v(rng_.inc());
+    w.varu(chars_.size());
+    for (size_t i = 1; i < chars_.size(); ++i) {
+        const Character& c = *chars_[i];
+        w.u8v((u8)c.kind);
+        w.str(c.name);
+        w.boolean(c.female);
+        w.boolean(c.alive);
+        w.boolean(c.departed);
+        w.u64v(c.born);
+        w.u64v(c.died);
+        w.str(c.death_cause);
+        w.u32v(c.death_event);
+        w.u16v(c.polity);
+        w.vec3f(c.pos);
+        w.vec3i(c.foot);
+        w.f32(c.yaw);
+        w.f32(c.fall_speed);
+        w.f32(c.walk_phase);
+        c.body.save(w);
+        for (u32 col : c.look.palette()) w.u32v(col);
+        w.boolean(c.look.long_hair);
+        w.boolean(c.look.dress);
+        w.boolean(c.look.ribbon);
+        w.f32(c.needs.food);
+        w.f32(c.needs.water);
+        w.f32(c.needs.rest);
+        w.f32(c.needs.social);
+        w.f32(c.needs.safety);
+        w.f32(c.needs.comfort);
+        w.f32(c.mood);
+        w.f32(c.stress);
+        w.f32(c.fear);
+        w.f32(c.work_debt);
+        save_pers(w, c.pers);
+        for (float s : c.skills) w.f32(s);
+        w.varu(c.relations.size());
+        for (auto& r : c.relations) {
+            w.u32v(r.other);
+            w.f32(r.affinity);
+        }
+        w.varu(c.support.size());
+        for (auto& s : c.support) {
+            w.u32v(s.girl);
+            w.f32(s.value);
+        }
+        w.varu(c.memories.size());
+        for (auto& m : c.memories) {
+            w.u64v(m.tick);
+            w.u8v((u8)m.kind);
+            w.u32v(m.subject);
+            w.f32(m.valence);
+            w.u32v(m.event);
+        }
+        w.u32v(c.inv);
+        w.u16v(c.tool);
+        w.u16v(c.weapon);
+        w.u16v(c.armor);
+        w.u32v(c.home);
+        w.str(c.occupation);
+        // Task.
+        w.u8v((u8)c.task.type);
+        w.u8v(c.task.step);
+        w.u32v(c.task.job);
+        w.vec3i(c.task.target);
+        w.u32v(c.task.store);
+        w.u16v(c.task.item);
+        w.vari(c.task.count);
+        w.u32v(c.task.other);
+        w.u64v(c.task.started);
+        w.u64v(c.task.until);
+        w.f32(c.task.utility);
+        w.vari(c.task.fails);
+        w.str(c.task.label);
+        w.varu(c.path.nodes.size());
+        for (auto& p : c.path.nodes) w.vec3i(p);
+        w.varu(c.path.next);
+        w.vec3i(c.path_goal);
+        w.vec3i(c.water_spot);
+        w.u64v(c.next_think);
+        w.u64v(c.last_ate);
+        w.u64v(c.last_drank);
+        w.u64v(c.last_slept);
+        w.u64v(c.last_social);
+        w.u64v(c.last_punished);
+        w.varu(c.unreachable.size());
+        for (auto& u : c.unreachable) {
+            w.vec3i(u.first);
+            w.u64v(u.second);
+        }
+        w.boolean(c.drafted);
+        w.boolean(c.rebel);
+        w.boolean(c.sleeping);
+        w.str(c.status_text);
+        w.boolean(c.girl != nullptr);
+        if (c.girl) {
+            const GirlData& g = *c.girl;
+            w.str(g.drive);
+            w.vari(g.level);
+            w.f32(g.xp);
+            w.f32(g.mana);
+            save_pers(w, g.persona);
+            w.str(g.temperament);
+            w.str(g.role);
+            w.str(g.domain);
+            w.f32(g.loyalty);
+            w.f32(g.ambition_pressure);
+            w.varu(g.spell_cooldowns.size());
+            for (u32 cd : g.spell_cooldowns) w.u32v(cd);
+            w.u64v(g.last_decision);
+            w.varu(g.decisions.size());
+            for (u32 d : g.decisions) w.u32v(d);
+            w.str(g.stance);
+        }
+    }
+    w.varu(dangers_.size());
+    for (auto& [p, r] : dangers_) {
+        w.vec3f(p);
+        w.f32(r);
+    }
+    w.varu(water_spots_.size());
+    for (const Vec3i& p : water_spots_) w.vec3i(p);
+    w.end_section(sec);
+}
+
+void Agents::load(BinReader& outer) {
+    BinReader r = outer.section("AGNT");
+    u64 st = r.u64v(), inc = r.u64v();
+    rng_.set_raw(st, inc);
+    u64 n = r.varu();
+    chars_.clear();
+    chars_.resize(1);
+    for (size_t i = 1; i < (size_t)n; ++i) {
+        auto cp = std::make_unique<Character>();
+        Character& c = *cp;
+        c.id = (EntityId)i;
+        c.kind = (CharKind)r.u8v();
+        c.name = r.str();
+        c.female = r.boolean();
+        c.alive = r.boolean();
+        c.departed = r.boolean();
+        c.born = r.u64v();
+        c.died = r.u64v();
+        c.death_cause = r.str();
+        c.death_event = r.u32v();
+        c.polity = r.u16v();
+        c.pos = r.vec3f();
+        c.foot = r.vec3i();
+        c.yaw = r.f32();
+        c.fall_speed = r.f32();
+        c.walk_phase = r.f32();
+        c.body.load(r);
+        c.look.skin = r.u32v();
+        c.look.hair = r.u32v();
+        c.look.cloth = r.u32v();
+        c.look.accent = r.u32v();
+        c.look.shoes = r.u32v();
+        c.look.eyes = r.u32v();
+        r.u32v();  // bone colour (fixed)
+        c.look.long_hair = r.boolean();
+        c.look.dress = r.boolean();
+        c.look.ribbon = r.boolean();
+        c.needs.food = r.f32();
+        c.needs.water = r.f32();
+        c.needs.rest = r.f32();
+        c.needs.social = r.f32();
+        c.needs.safety = r.f32();
+        c.needs.comfort = r.f32();
+        c.mood = r.f32();
+        c.stress = r.f32();
+        c.fear = r.f32();
+        c.work_debt = r.f32();
+        load_pers(r, c.pers);
+        for (float& s : c.skills) s = r.f32();
+        u64 nr = r.varu();
+        for (u64 k = 0; k < nr; ++k) {
+            Relation rel;
+            rel.other = r.u32v();
+            rel.affinity = r.f32();
+            c.relations.push_back(rel);
+        }
+        u64 ns = r.varu();
+        for (u64 k = 0; k < ns; ++k) {
+            Support s;
+            s.girl = r.u32v();
+            s.value = r.f32();
+            c.support.push_back(s);
+        }
+        u64 nm = r.varu();
+        for (u64 k = 0; k < nm; ++k) {
+            Memory m;
+            m.tick = r.u64v();
+            m.kind = (MemoryKind)r.u8v();
+            m.subject = r.u32v();
+            m.valence = r.f32();
+            m.event = r.u32v();
+            c.memories.push_back(m);
+        }
+        c.inv = r.u32v();
+        c.tool = r.u16v();
+        c.weapon = r.u16v();
+        c.armor = r.u16v();
+        c.home = r.u32v();
+        c.occupation = r.str();
+        c.task.type = (TaskType)r.u8v();
+        c.task.step = r.u8v();
+        c.task.job = r.u32v();
+        c.task.target = r.vec3i();
+        c.task.store = r.u32v();
+        c.task.item = r.u16v();
+        c.task.count = (i32)r.vari();
+        c.task.other = r.u32v();
+        c.task.started = r.u64v();
+        c.task.until = r.u64v();
+        c.task.utility = r.f32();
+        c.task.fails = (int)r.vari();
+        c.task.label = r.str();
+        u64 np = r.varu();
+        for (u64 k = 0; k < np; ++k) c.path.nodes.push_back(r.vec3i());
+        c.path.next = (size_t)r.varu();
+        c.path_goal = r.vec3i();
+        c.water_spot = r.vec3i();
+        c.next_think = r.u64v();
+        c.last_ate = r.u64v();
+        c.last_drank = r.u64v();
+        c.last_slept = r.u64v();
+        c.last_social = r.u64v();
+        c.last_punished = r.u64v();
+        u64 nu = r.varu();
+        for (u64 k = 0; k < nu; ++k) {
+            Vec3i p = r.vec3i();
+            Tick t = r.u64v();
+            c.unreachable.push_back({p, t});
+        }
+        c.drafted = r.boolean();
+        c.rebel = r.boolean();
+        c.sleeping = r.boolean();
+        c.status_text = r.str();
+        if (r.boolean()) {
+            c.girl = std::make_unique<GirlData>();
+            GirlData& g = *c.girl;
+            g.drive = r.str();
+            g.level = (int)r.vari();
+            g.xp = r.f32();
+            g.mana = r.f32();
+            load_pers(r, g.persona);
+            g.temperament = r.str();
+            g.role = r.str();
+            g.domain = r.str();
+            g.loyalty = r.f32();
+            g.ambition_pressure = r.f32();
+            u64 nc = r.varu();
+            g.spell_cooldowns.clear();
+            for (u64 k = 0; k < nc; ++k) g.spell_cooldowns.push_back(r.u32v());
+            g.last_decision = r.u64v();
+            u64 nd = r.varu();
+            for (u64 k = 0; k < nd; ++k) g.decisions.push_back(r.u32v());
+            g.stance = r.str();
+        }
+        chars_.push_back(std::move(cp));
+    }
+    dangers_.clear();
+    u64 ndg = r.varu();
+    for (u64 k = 0; k < ndg; ++k) {
+        Vec3f p = r.vec3f();
+        float rad = r.f32();
+        dangers_.push_back({p, rad});
+    }
+    water_spots_.clear();
+    u64 nws = r.varu();
+    for (u64 k = 0; k < nws; ++k) water_spots_.push_back(r.vec3i());
+}
+
+u64 Agents::hash() const {
+    u64 h = hash_combine(rng_.state(), rng_.inc());
+    for (auto& c : chars_) {
+        if (!c) continue;
+        h = fnv1a64(&c->pos, sizeof(c->pos), h);
+        h = fnv1a64(&c->needs, sizeof(c->needs), h);
+        h = hash_combine(h, (u64)c->task.type);
+        h = hash_combine(h, (u64)c->body.total_alive());
+    }
+    return h;
+}
+
+}  // namespace icarus

@@ -247,7 +247,10 @@ ColumnInfo WorldGen::compute_column(int xi, int zi) const {
                 float lu_l = 0.40f * R, lv_l = 0.22f * R;
                 float lu_r = ravine_center_u(lv_l) + 4.0f;
                 if (lv > lv_l - 1.6f && lv < lv_l + 1.6f && lu < lu_l && lu > lu_r - 2.0f) {
-                    float t = saturate((lu_l - lu) / std::max(1.0f, lu_l - lu_r));
+                    // Only overflow leaves the lake: the channel floor stays at the lake's top
+                    // layer until well past the shore, then descends toward the ravine.
+                    float lu_shore = lu_l - (float)feat_.lake_radius - 4.0f;
+                    float t = saturate((lu_shore - lu) / std::max(1.0f, lu_shore - lu_r));
                     float bed = (float)lake_wt - std::floor(t * 4.0f);
                     ft = std::min(ft, bed);
                     reserved = true;

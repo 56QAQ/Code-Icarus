@@ -1,0 +1,64 @@
+// Navigation over cube positions. A position p is standable if the three cubes
+// p, p+1, p+2 are free (air, water, plants, doors) and p-1 is solid ground.
+// A* with 8-way horizontal moves, 1-cube step up, up to 3-cube drops.
+#pragma once
+
+#include <vector>
+
+#include "icarus/world/world.h"
+
+namespace icarus {
+
+struct Path {
+    std::vector<Vec3i> nodes;  // from start (exclusive) to goal (inclusive)
+    size_t next = 0;
+    bool valid() const { return next < nodes.size(); }
+    void clear() {
+        nodes.clear();
+        next = 0;
+    }
+};
+
+struct NavStats {
+    u64 searches = 0, failures = 0, expansions = 0;
+};
+
+class Nav {
+public:
+    explicit Nav(World& w);
+
+    bool passable(const Vec3i& p);   // body can occupy this cube
+    bool standable(const Vec3i& p);  // feet can be here
+    float step_cost(const Vec3i& p);
+    // Finds the nearest standable position at or below/above p within dy range.
+    bool find_standable_near(const Vec3i& p, Vec3i& out, int radius = 2);
+
+    // A* from start to goal. If adjacent_ok, any standable cube within distance 1 (xz)
+    // and |dy|<=2 of goal counts as arrival (for working on a cube).
+    bool find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Path& out, int max_expansions = 24000);
+
+    NavStats stats;
+
+private:
+    struct Node {
+        u64 key = 0;
+        u32 gen = 0;
+        float g = 0;
+        u64 parent = 0;
+        bool closed = false;
+    };
+    Node* slot(u64 key, bool create);
+    static u64 pack(const Vec3i& p) {
+        return ((u64)(u32)(p.x & 0xFFFFF) << 40) | ((u64)(u32)(p.y & 0xFFFFF) << 20) | (u64)(u32)(p.z & 0xFFFFF);
+    }
+    static Vec3i unpack(u64 k) {
+        auto sx = [](u64 v) { return (i32)(v & 0xFFFFF) - ((v & 0x80000) ? 0x100000 : 0); };
+        return {sx(k >> 40), sx(k >> 20), sx(k)};
+    }
+
+    World& w_;
+    std::vector<Node> table_;
+    u32 gen_ = 1;
+};
+
+}  // namespace icarus

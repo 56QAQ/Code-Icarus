@@ -70,7 +70,7 @@ struct AreaDamage {
 struct PhysicsStats {
     size_t water_active = 0, fire_active = 0, granular_active = 0, support_checks = 0;
     size_t debris = 0, meteors = 0;
-    i64 water_units_to_void = 0, water_units_spring = 0, water_units_evaporated = 0;
+    i64 water_units_to_void = 0, water_units_spring = 0, water_units_evaporated = 0, water_units_rain = 0;
 };
 
 class Physics {
@@ -87,15 +87,23 @@ public:
     void ignite(const Vec3i& p, EventId cause);
     u32 spawn_meteor(const Vec3f& target, float radius, EventId cause);
     void explode(const Vec3f& center, float radius, EventId cause, bool meteor);
+    // Turns the given cubes into a falling debris body (structural failure).
+    void collapse_cubes(const std::vector<Vec3i>& cubes, EventId cause, const std::string& text);
 
     const std::vector<DebrisBody>& debris() const { return debris_; }
     const std::vector<Meteor>& meteors() const { return meteors_; }
     std::vector<AreaDamage>& damage_queue() { return damage_; }
     const PhysicsStats& stats() const { return stats_; }
 
+    // Weather: rain refills water surfaces and douses exposed fires.
+    bool raining() const { return rain_until_ > now_; }
+    void start_rain(Tick duration) { rain_until_ = now_ + duration; }
+    Tick rain_until() const { return rain_until_; }
+
     // Parameters (tunable).
     int water_budget = 30000;
-    int spring_interval = 4;     // ticks per emitted water unit
+    int spring_interval = 1;     // ticks per emitted water unit
+    int evaporation_samples = 64;  // surface columns sampled per tick
     float evaporation = 1.0f / 1500.0f;  // chance per tick for shallow puddles
     int support_max_nodes = 40000;
 
@@ -105,6 +113,7 @@ public:
 
 private:
     void step_springs(Tick now);
+    void step_evaporation();
     void step_water();
     void step_fire();
     void step_granular();
@@ -113,7 +122,7 @@ private:
     void step_meteors();
     void wake_neighbors(const Vec3i& p);
     bool water_can_enter(Voxel v) const;
-    void collapse_component(const std::vector<Vec3i>& comp, EventId cause);
+    void collapse_component(const std::vector<Vec3i>& comp, EventId cause, const char* text = nullptr);
     void land_debris(DebrisBody& b, float impact_speed);
     EventId cause_of_removal(const Vec3i& p) const;
 
@@ -131,6 +140,9 @@ private:
     // cause attribution for support checks: position -> cause event of the removal
     std::vector<std::pair<Vec3i, EventId>> removal_causes_;
     EventId current_cause_ = 0;
+    std::vector<Vec3i> active_cells_;
+    Tick rain_until_ = 0;
+    Tick next_weather_ = 0;
 };
 
 }  // namespace icarus

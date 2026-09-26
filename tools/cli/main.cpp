@@ -24,6 +24,7 @@ struct Args {
     double days = 1.0;
     std::string scenario = "village";
     std::string save;
+    bool verbose = false;
 };
 
 Args parse_args(int argc, char** argv) {
@@ -39,6 +40,7 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--days") a.days = std::stod(next());
         else if (k == "--scenario") a.scenario = next();
         else if (k == "--save") a.save = next();
+        else if (k == "-v" || k == "--verbose") a.verbose = true;
     }
     return a;
 }
@@ -117,15 +119,34 @@ int cmd_run(const Args& a) {
         sum_us += pr.total_us;
         if (sim.now() % kTicksPerHour == 0) {
             const PhysicsStats& ps = sim.physics().stats();
-            WorldStats ws = sim.world().stats();
-            std::printf("%s  water_active=%zu fire=%zu debris=%zu spring=%lld void=%lld evap=%lld | cells act=%d dorm=%d ungen=%d | avg %.0fus max %.0fus\n",
-                        format_time_zh(sim.now()).c_str(), ps.water_active, ps.fire_active, ps.debris,
-                        (long long)ps.water_units_spring, (long long)ps.water_units_to_void,
-                        (long long)ps.water_units_evaporated, ws.active, ws.dormant, ws.ungenerated,
-                        sum_us / (double)kTicksPerHour, max_us);
+            std::printf("%s | water %zu fire %zu | ", format_time_zh(sim.now()).c_str(), ps.water_active, ps.fire_active);
+            for (const Polity& p : sim.society().polities()) {
+                if (!p.alive) continue;
+                const PolityStats& st = p.stats;
+                std::printf("%s pop %d food %.0f (%.1fd) fed %.0f%% water %.0f%% mood %.2f sup %.2f prot %d | ",
+                            sim.society().title(p.id).c_str(), st.population, st.food_stock, st.food_days,
+                            st.food_access * 100, st.water_access * 100, st.mood, st.ruler_support, st.protesters);
+            }
+            FarmStats fs = sim.farming().stats_polity(1);
+            std::printf("farm %d/%d grow %d ripe %d irr %d | ", fs.growing, fs.plots, fs.growing, fs.mature, fs.irrigated);
+            const auto& d = sim.agents().day;
+            std::printf("jobs %zu harv %d drinks %d pathfail %d nofood %d nowater %d | avg %.0fus max %.0fus\n",
+                        sim.jobs().open_count(), d.harvested, d.drinks, d.path_failures, d.hungry_no_food,
+                        d.thirsty_no_water, sum_us / (double)kTicksPerHour, max_us);
             sum_us = 0;
             max_us = 0;
         }
+    }
+    if (a.verbose) {
+        for (const auto& cp : sim.agents().all()) {
+            if (!cp) continue;
+            const Character& c = *cp;
+            std::printf("  #%u %-6s %s food %.2f water %.2f rest %.2f mood %.2f task %s [%s] %s\n", c.id, c.name.c_str(),
+                        c.alive ? "" : "(dead)", c.needs.food, c.needs.water, c.needs.rest, c.mood,
+                        task_name_zh(c.task.type), c.status_text.c_str(), c.task.label.c_str());
+        }
+        for (const Event& e : sim.chronicle().events())
+            if (e.severity >= 2) std::printf("  [%s] %s\n", format_time_zh(e.tick).c_str(), e.text.c_str());
     }
     std::printf("final hash %016llx, events %zu\n", (unsigned long long)sim.state_hash(), sim.chronicle().events().size());
     if (!a.save.empty()) {

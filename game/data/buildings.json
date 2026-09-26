@@ -1,0 +1,113 @@
+// Building blueprints. Layers list horizontal slices from the ground up; each slice is
+// rows along z (first row = back, last row = front where the door faces +z).
+// Legend: letters map to materials, '.' must be empty (air), ' ' is left untouched.
+{
+  "legend": {
+    "L": "log", "P": "planks", "T": "thatch", "D": "door", "S": "stone_brick", "B": "brick",
+    "R": "rubble", "G": "glass", "C": "clay", "F": "path"
+  },
+  "buildings": [
+    {
+      "key": "hut", "name": "茅屋", "category": "housing", "beds": 3,
+      "description": "木骨茅顶的小屋，可供三人居住。",
+      "layers": [
+        ["LLLLL", "L...L", "L...L", "L...L", "LLDLL"],
+        ["LPPPL", "P...P", "P...P", "P...P", "LPDPL"],
+        ["LPPPL", "P...P", "P...P", "P...P", "LPDPL"],
+        ["LLLLL", "L...L", "L...L", "L...L", "LLLLL"],
+        ["TTTTT", "TTTTT", "TTTTT", "TTTTT", "TTTTT"],
+        [".....", ".TTT.", ".TTT.", ".TTT.", "....."],
+        [".....", ".....", "..T..", ".....", "....."]
+      ]
+    },
+    {
+      "key": "longhouse", "name": "长屋", "category": "housing", "beds": 6, "tech": "carpentry",
+      "description": "木板长屋，可供六人居住。",
+      "layers": [
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "L.....L", "LLLDLLL"],
+        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "P.....P", "LPPDPPL"],
+        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "P.....P", "LPPDPPL"],
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "L.....L", "LLLLLLL"],
+        ["TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT"],
+        [".......", ".TTTTT.", ".TTTTT.", ".TTTTT.", ".TTTTT.", "......."]
+      ]
+    },
+    {
+      "key": "storehouse", "name": "仓库", "category": "storage", "storage": 900, "spoil_factor": 0.8,
+      "description": "原木仓库，储存公共物资。",
+      "layers": [
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "L.....L", "L.....L", "LLL.LLL"],
+        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "P.....P", "P.....P", "LPP.PPL"],
+        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "P.....P", "P.....P", "LPP.PPL"],
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "L.....L", "L.....L", "LLLLLLL"],
+        ["PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP"],
+        [".......", ".TTTTT.", ".TTTTT.", ".TTTTT.", ".TTTTT.", ".TTTTT.", "......."]
+      ]
+    },
+    {
+      "key": "granary", "name": "粮仓", "category": "storage", "storage": 700, "spoil_factor": 0.3, "tech": "pottery",
+      "description": "陶罐与干燥地基，大幅减缓粮食腐坏。",
+      "layers": [
+        ["SSSSS", "S...S", "S...S", "S...S", "SS.SS"],
+        ["CPPPC", "P...P", "P...P", "P...P", "CP.PC"],
+        ["CPPPC", "P...P", "P...P", "P...P", "CP.PC"],
+        ["CCCCC", "C...C", "C...C", "C...C", "CCCCC"],
+        ["TTTTT", "TTTTT", "TTTTT", "TTTTT", "TTTTT"],
+        [".....", ".TTT.", ".TTT.", ".TTT.", "....."]
+      ]
+    },
+    {
+      "key": "hall", "name": "议事厅", "category": "civic", "seat": true,
+      "description": "统治者议政之所。魔法少女在此制定政策。",
+      "layers": [
+        ["SSSSSSSSS", "S.......S", "S.......S", "S.......S", "S.......S", "S.......S", "S.......S", "SSSS.SSSS"],
+        ["LPPPPPPPL", "P.......P", "P.......P", "P.......P", "P.......P", "P.......P", "P.......P", "LPPP.PPPL"],
+        ["LPPGPGPPL", "P.......P", "G.......G", "P.......P", "P.......P", "G.......G", "P.......P", "LPPP.PPPL"],
+        ["LPPPPPPPL", "P.......P", "P.......P", "P.......P", "P.......P", "P.......P", "P.......P", "LPPPPPPPL"],
+        ["LLLLLLLLL", "L.......L", "L.......L", "L.......L", "L.......L", "L.......L", "L.......L", "LLLLLLLLL"],
+        ["TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT"],
+        [".........", ".TTTTTTT.", ".TTTTTTT.", ".TTTTTTT.", ".TTTTTTT.", ".TTTTTTT.", ".TTTTTTT.", "........."],
+        [".........", ".........", "..TTTTT..", "..TTTTT..", "..TTTTT..", "..TTTTT..", ".........", "........."]
+      ]
+    },
+    {
+      "key": "kitchen", "name": "灶房", "category": "production", "workstation": "cooking", "storage": 120,
+      "description": "把谷物做成面包；饭食比生粮更顶饱，也更令人满足。",
+      "layers": [
+        ["L...L", ".....", "..R..", ".....", "L...L"],
+        ["L...L", ".....", ".....", ".....", "L...L"],
+        ["L...L", ".....", ".....", ".....", "L...L"],
+        ["TTTTT", "TTTTT", "TT.TT", "TTTTT", "TTTTT"]
+      ]
+    },
+    {
+      "key": "workshop", "name": "工坊", "category": "production", "workstation": "crafting", "storage": 200, "tech": "carpentry",
+      "description": "制作工具、武器与木板。",
+      "layers": [
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "LLL.LLL"],
+        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "LPP.PPL"],
+        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "LPP.PPL"],
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "LLLLLLL"],
+        ["TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT"]
+      ]
+    },
+    {
+      "key": "study", "name": "智者小屋", "category": "research", "workstation": "research", "tech": "writing",
+      "description": "积累与传承知识的场所。",
+      "layers": [
+        ["SSSSS", "S...S", "S...S", "S...S", "SS.SS"],
+        ["PPPPP", "P...P", "G...G", "P...P", "PP.PP"],
+        ["PPPPP", "P...P", "P...P", "P...P", "PP.PP"],
+        ["TTTTT", "TTTTT", "TTTTT", "TTTTT", "TTTTT"]
+      ]
+    },
+    {
+      "key": "watchtower", "name": "瞭望塔", "category": "defense", "tech": "fortification",
+      "description": "警戒与防御。",
+      "layers": [
+        ["L.L", "...", "L.L"], ["L.L", "...", "L.L"], ["L.L", "...", "L.L"], ["L.L", "...", "L.L"],
+        ["PPP", "PPP", "PPP"], ["L.L", "...", "L.L"], ["TTT", "TTT", "TTT"]
+      ]
+    }
+  ]
+}
