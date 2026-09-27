@@ -470,6 +470,20 @@ int cmd_run(const Args& a) {
         for (const auto& [k, v] : sim.economy().reasons()) std::printf(" %s=%lld", k.c_str(), (long long)v);
         std::printf("\n");
     }
+    // What each people has built and finished, and how many beds it has.
+    for (const Polity& p : sim.society().polities()) {
+        if (!p.alive) continue;
+        std::map<std::string, int> built;
+        int beds = 0;
+        for (const Building& b : sim.buildings().all())
+            if (b.alive && b.functional && b.polity == p.id) {
+                built[b.name]++;
+                beds += b.beds;
+            }
+        std::printf("buildings %s: beds %d |", p.name.c_str(), beds);
+        for (const auto& [k, v] : built) std::printf(" %s×%d", k.c_str(), v);
+        std::printf("\n");
+    }
     std::printf("final hash %016llx, events %zu\n", (unsigned long long)sim.state_hash(), sim.chronicle().events().size());
     if (!a.save.empty()) {
         auto blob = sim.save();
