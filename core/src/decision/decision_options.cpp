@@ -573,6 +573,10 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         // A people that can write but has nowhere to study builds that first: without it
         // no knowledge beyond the wild era grows.
         const bool no_study = ctx_.society->scholar_seats(p.id) == 0;
+        // Once every wild-era tech is known, knowledge stands still until there is one.
+        bool wild_left = false;
+        for (const Json& t : ctx_.reg->doc("techs")["techs"].items())
+            if (!ctx_.society->needs_scholars(t.str("key")) && !p.has_tech(t.str("key"))) wild_left = true;
         auto rank = [no_study](const std::string& cat) {
             if (cat == "research" && no_study) return -1;
             if (cat == "storage") return 0;
@@ -600,7 +604,7 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
             else if (cat == "civic") vals = {{kOrder, 0.6f}, {kSelfPower, 0.4f}, {kGrowth, 0.3f}, {kFrugality, -0.5f}};
             DecisionOption o = make("build_" + key, "兴建" + bd.str("name"), bd.str("description"), {}, act("build"));
             for (const auto& [f, v] : vals) o.f[f] = v;
-            if (cat == "research" && no_study) o.bias += 0.35f;
+            if (cat == "research" && no_study) o.bias += wild_left ? 0.35f : 0.8f;
             o.action.set("def", key);
             if (const Building* seat = ctx_.buildings->get(p.seat)) {
                 Json near = Json::array();
