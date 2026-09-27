@@ -21,6 +21,7 @@ using decision_util::make;
 
 namespace {
 constexpr float kAidHunger = 3.0f;  // a neighbour with less food than this (days) may be helped
+constexpr int kEnvoyGift = 6;        // food carried as gifts by an envoy
 int residents_of(SimContext& ctx, u16 polity) {
     int n = 0;
     for (auto& cp : ctx.agents->all())
@@ -33,6 +34,9 @@ int armed_stock(SimContext& ctx, u16 polity) {
         if (const Store* s = ctx.econ->store(sid))
             for (auto& st : s->items)
                 if (ctx.reg->item(st.item).has_tag("weapon")) n += st.count;
+    // ...and the spears and bows already in hunters' hands.
+    for (const auto& c : ctx.agents->all())
+        if (c && c->alive && !c->departed && c->polity == polity && c->weapon != kNoItem) ++n;
     return n;
 }
 // What trading would bring beyond the ruler's taste for it: goods we lack (food above
@@ -65,10 +69,24 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
     O.push_back(make("keep_peace", "维持现状", strfmt("与「%s」相安无事（关系 %+.2f）。", other.name.c_str(), att),
                      {{kFrugality, 0.5f}, {kRisk, -0.4f}, {kOrder, 0.2f}}, act("wait")));
     {
-        DecisionOption o = make("reconcile", "遣使修好", "派人携礼前往，缓和两国关系。",
-                                {{kCooperation, 0.9f}, {kWelfare, 0.3f}, {kRisk, -0.3f}, {kMilitary, -0.3f}, {kSelfPower, -0.1f}},
+        // Envoys carry real gifts (food from our stores), and their welcome depends on the
+        // other ruler's nature and on the wrongs between us.
+        const Diplo* dp = p.diplo_of(other.id);
+        DecisionOption o = make("reconcile", "遣使修好", strfmt("派人携粮食 %d 份为礼前往，缓和两国关系。", kEnvoyGift),
+                                {{kCooperation, 0.9f}, {kWelfare, 0.3f}, {kRisk, -0.3f}, {kMilitary, -0.3f}, {kSelfPower, -0.1f},
+                                 {kFrugality, -0.2f}},
                                 act("reconcile"));
         o.action.set("other", (int)other.id);
+        if (dp && dp->envoy_at && now_ - dp->envoy_at < kTicksPerDay * 4) {
+            o.feasible = false;
+            o.why_not = "使者刚从对方那里回来";
+        } else if (p.stats.food_stock < 3.0f * kEnvoyGift) {
+            o.feasible = false;
+            o.why_not = "拿不出像样的礼物";
+        } else if (att > 0.5f) {
+            o.feasible = false;
+            o.why_not = "两国已然交好";
+        }
         O.push_back(o);
     }
     // Trade: what each side could spare for the other.
@@ -147,11 +165,16 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
     // against their plenty, or overwhelming strength.
     const Diplo* dg = p.diplo_of(other.id);
     const bool casus = (dg && dg->grievance >= 0.25f) || as.opportunity >= 0.3f || as.ratio >= 2.2f ||
-                       (p.stats.food_days < 2.0f && other.stats.food_days > 4.0f);
+                       (p.stats.food_days < 2.0f && other.stats.food_days > 4.0f) || as.motive >= 0.6f;
+    std::string other_war;
+    for (const War& w : p.wars)
+        if (w.enemy != other.id)
+            if (const Polity* e = ctx_.society->polity(w.enemy)) other_war = e->name;
     auto why_not_war = [&](float min_ratio) -> std::string {
         if (!as.settled) return "立国未稳，正是埋头发展的时候";
         if (!casus) return "没有开战的理由，发展要紧";
         if (as.truce) return "停战协定尚未到期";
+        if (!other_war.empty() && as.ratio < 2.5f) return "正与「" + other_war + "」交战，无力两线作战";
         if (p.allied_with(other.id)) return "两国结有盟约";
         if (p.overlord == other.id || other.overlord == p.id) return "宗藩之间不得开战";
         if (as.ratio < min_ratio) return strfmt("兵力不足（我方 %.0f，对方连同盟友 %.0f）", as.ours, as.theirs);
@@ -178,12 +201,15 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         if (!no.empty()) {
             o.feasible = false;
             o.why_not = no;
-        } else if (att > -0.2f) {
+        } else if (att > -0.2f && as.motive < 0.8f) {
             o.feasible = false;
             o.why_not = "两国并无积怨，师出无名";
         } else if (ours < 6) {
             o.feasible = false;
             o.why_not = "人手太少";
+        } else if (weapons < (raiders + 1) / 2) {
+            o.feasible = false;
+            o.why_not = strfmt("武器不足（%d 件，出动 %d 人）", weapons, raiders);
         }
         O.push_back(o);
     }
@@ -200,13 +226,16 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         o.action.set("soldiers", army);
         o.facts.set("strength_ratio", as.ratio);
         o.bias += 0.5f * (as.motive + as.opportunity) + 0.3f * (as.ratio - 1.5f) - 0.5f;
-        const std::string no = why_not_war(1.4f);
+        const std::string no = why_not_war(1.6f);
         if (!no.empty()) {
             o.feasible = false;
             o.why_not = no;
         } else if (att > -0.4f) {
             o.feasible = false;
             o.why_not = "仇恨还不足以发动征服";
+        } else if (weapons < (army + 1) / 2) {
+            o.feasible = false;
+            o.why_not = strfmt("武器不足（%d 件，出动 %d 人）", weapons, army);
         }
         O.push_back(o);
     }
@@ -250,7 +279,7 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         for (const Polity& t : ctx_.society->polities()) {
             if (!t.alive || t.id == p.id || t.id == other.id) continue;
             const bool shared_enemy = p.war_with(t.id) && other.war_with(t.id);
-            if (shared_enemy || ctx_.society->strength(t.id) > 0.9f * std::max(mine, theirs_s)) threat = t.name;
+            if (shared_enemy || ctx_.society->strength(t.id) > 1.15f * std::max(mine, theirs_s)) threat = t.name;
         }
         DecisionOption o = make("propose_alliance", "提议与「" + other.name + "」结盟",
                                 threat.empty() ? std::string("互为援手，一方遭到攻击时另一方出兵相助。")
@@ -259,9 +288,9 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
                                 act("propose_alliance"));
         o.action.set("other", (int)other.id);
         o.bias += threat.empty() ? -0.2f : 0.3f;
-        if (att < -0.1f) {
+        if (att < 0.1f) {
             o.feasible = false;
-            o.why_not = "两国关系不睦";
+            o.why_not = att < -0.1f ? "两国关系不睦" : "两国交情尚浅";
         } else if (threat.empty()) {
             o.feasible = false;
             o.why_not = "并无共同的威胁";
@@ -351,7 +380,9 @@ void Decisions::add_peace_offers(Decision& d, Polity& p, u16 enemy_id, bool plea
     const std::string tally = strfmt("开战 %.1f 天，杀敌 %d，阵亡 %d，劫得粮食 %d。", days, w->kills, w->losses, w->loot);
     // Not again so soon after the last offer; and whoever started a war does not sue
     // for peace the same day unless it is going badly.
-    const bool too_soon = (w->last_offer > 0 && now_ - w->last_offer < kTicksPerDay) ||
+    // Each refusal makes the next envoy wait longer.
+    const Tick wait = kTicksPerDay * (Tick)(1 + std::min(3, w->refused));
+    const bool too_soon = (w->last_offer > 0 && now_ - w->last_offer < wait) ||
                           (w->attacker && now_ - w->since < kTicksPerDay && score > -3.0f);
     const int their_food = (int)std::floor(ctx_.society->public_food(enemy_id) / 0.3f);
     const int our_food = (int)std::floor(ctx_.society->public_food(p.id) / 0.3f);
@@ -369,7 +400,7 @@ void Decisions::add_peace_offers(Decision& d, Polity& p, u16 enemy_id, bool plea
         if (too_soon) {
             o.feasible = false;
             o.why_not = w->attacker && now_ - w->since < kTicksPerDay ? "刚刚宣战，岂能旋即求和"
-                                                                     : "刚提过议和，对方还在考虑或已拒绝，过一天再说";
+                                                                     : "刚提过议和，对方还在考虑或已拒绝，过些日子再说";
         }
         O.push_back(o);
     };
@@ -684,8 +715,17 @@ bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Cha
     }
     if (what == "reconcile") {
         Polity* op = ctx_.society->polity(other);
-        p.attitude_ref(other) = std::min(1.0f, p.attitude_to(other) + 0.25f);
-        if (op) op->attitude_ref(p.id) = std::min(1.0f, op->attitude_to(p.id) + 0.25f);
+        p.diplo_ref(other).envoy_at = now_;
+        const i32 sent = ctx_.society->send_tribute(p.id, other, kEnvoyGift, "赠礼修好", cause);
+        p.attitude_ref(other) = std::min(1.0f, p.attitude_to(other) + 0.1f);
+        if (op) {
+            // A warm ruler answers in kind; a cold or wronged one only a little.
+            const Diplo* theirs = op->diplo_of(p.id);
+            const float wrong = theirs ? std::min(1.0f, theirs->grievance) : 0.0f;
+            const float warmth = (0.05f + 0.25f * ctx_.society->cooperation(other)) * (1.0f - 0.7f * wrong) *
+                                 (sent > 0 ? 1.0f : 0.4f);
+            op->attitude_ref(p.id) = std::min(1.0f, op->attitude_to(p.id) + warmth);
+        }
         Event e;
         e.type = EventType::Info;
         e.severity = 3;

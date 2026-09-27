@@ -147,7 +147,8 @@ TEST("physics: fire spreads through wood and is quenched by water") {
     for (int z = 0; z < 8; ++z)
         for (int x = 0; x < 8; ++x) w.set(o + Vec3i{x, 1, z}, make_voxel(M.planks));
     sim.run(1);
-    sim.apply_admin({"ignite", Json::parse(strfmt("{\"pos\":[%d,%d,%d],\"radius\":0}", o.x + 4, o.y + 1, o.z + 4))});
+    // A small patch catches (a single spark may burn out before it spreads).
+    sim.apply_admin({"ignite", Json::parse(strfmt("{\"pos\":[%d,%d,%d],\"radius\":1}", o.x + 4, o.y + 1, o.z + 4))});
     int burning_peak = 0;
     for (int i = 0; i < 1500; ++i) {
         sim.step();

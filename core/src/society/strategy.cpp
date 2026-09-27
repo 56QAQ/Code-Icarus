@@ -17,9 +17,30 @@
 namespace icarus {
 
 namespace {
-// A newly founded polity builds up before it thinks of war (days).
-constexpr float kSettleDays = 4.0f;
+// A newly founded polity builds up before it thinks of war (days): its first season and
+// a little more.
+constexpr float kSettleDays = 10.0f;
+// Villages closer than this rub along a border (cubes between buildings).
+constexpr int kBorderReach = 160;
+
+const Json* ruler_drive(const SimContext& ctx, const Polity* p) {
+    const Character* r = p ? ctx.agents->get(p->ruler) : nullptr;
+    if (!r || !r->girl) return nullptr;
+    for (const Json& d : ctx.reg->doc("drives")["drives"].items())
+        if (d.str("key") == r->girl->drive) return &d;
+    return nullptr;
+}
 }  // namespace
+
+float Society::war_appetite(u16 id) const {
+    const Json* d = ruler_drive(ctx_, polity(id));
+    return d ? d->flt("war_appetite", 0.0f) : 0.0f;
+}
+
+float Society::cooperation(u16 id) const {
+    const Json* d = ruler_drive(ctx_, polity(id));
+    return d ? d->flt("cooperation", 0.5f) : 0.5f;
+}
 
 float Society::strength(u16 id) const {
     const Polity* p = polity(id);
@@ -84,6 +105,20 @@ Society::Assessment Society::assess(u16 us, u16 them) const {
     if (o->stats.population > p->stats.population * 1.3f && a.ratio < 1.2f) {
         a.motive += 0.15f;
         why.push_back("对方日益坐大");
+    }
+    // The ruler's own nature: some drives look for a fight, some for any way to avoid one.
+    const float appetite = war_appetite(us);
+    a.motive = std::max(0.0f, a.motive + appetite);
+    if (appetite >= 0.3f) why.push_back("统治者好战");
+    const Character* ruler = ctx_.agents->get(p->ruler);
+    const std::string drive = ruler && ruler->girl ? ruler->girl->drive : std::string();
+    if (drive == "envy" && (a.theirs > a.ours * 1.1f || o->stats.population > p->stats.population)) {
+        a.motive += 0.2f;
+        why.push_back("嫉妒对方的强盛");
+    }
+    if (drive == "gluttony" && o->stats.food_stock > std::max(40.0f, p->stats.food_stock * 1.3f)) {
+        a.motive += 0.25f;
+        why.push_back("觊觎对方的粮仓");
     }
     // Opportunity: their trouble.
     if (const Crisis* c = o->crisis(CrisisKind::Food); c && c->active) {
@@ -312,13 +347,18 @@ void Society::update_diplomacy(Polity& p) {
             }
             if (trespass > 0) d.grievance = std::min(2.0f, d.grievance + 0.03f * (float)std::min(trespass, 5));
             const int border = border_distance(p.id, o.id);
-            if (border < 110) d.grievance = std::min(2.0f, d.grievance + 0.04f * (1.0f - (float)border / 110.0f) + 0.01f);
+            if (border < kBorderReach)
+                d.grievance = std::min(2.0f, d.grievance + 0.05f * (1.0f - (float)border / (float)kBorderReach) + 0.01f);
         }
         // Old wrongs fade, slowly; a truce or an alliance soothes.
         d.grievance *= d.allied || d.truce_until > ctx_.now ? 0.9f : 0.97f;
         float& att = p.attitude_ref(o.id);
         att = clampv(att - 0.03f * d.grievance, -1.0f, 1.0f);
-        if (d.grievance < 0.1f && !p.war_with(o.id)) att += (0.0f - att) * 0.03f;  // hostility cools without cause
+        // Hostility cools without cause, but not below what the ruler's nature keeps up:
+        // a warlike ruler goes on distrusting strangers.
+        const float rest = -0.6f * std::max(0.0f, war_appetite(p.id));
+        if (d.grievance < 0.1f && !p.war_with(o.id) && att < rest) att += (rest - att) * 0.03f;
+        else if (d.grievance < 0.1f && !p.war_with(o.id) && att > 0.0f) att += (0.0f - att) * 0.01f;
         // An alliance does not survive open enmity.
         if (d.allied && (att < -0.2f || p.war_with(o.id))) end_alliance(p.id, o.id, "彼此失和", 0);
     }

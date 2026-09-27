@@ -274,6 +274,14 @@ u16 found_settlement(SimContext& ctx, const GameConfig& cfg, Rng& rng, const Sit
     for (const Json& d : reg.doc("drives")["drives"].items()) all_drives.push_back(d.str("key"));
     std::vector<std::string> drives;
     for (size_t k = (size_t)index * 3; k < cfg.girl_drives.size() && drives.size() < 3; ++k) drives.push_back(cfg.girl_drives[k]);
+    // Rival peoples are led by different natures: a builder, a schemer and a warrior
+    // (in an order that depends on the world).
+    if (drives.empty() && cfg.civs >= 3 && index < 3) {
+        static const char* kArchetypes[3][3] = {
+            {"hope", "gourmet", "light"}, {"envy", "gluttony", "despair"}, {"courage", "wrath", "wrath"}};
+        const int a = (int)((cfg.world.seed + (u64)index) % 3);
+        drives.push_back(kArchetypes[a][rng.below(3)]);
+    }
     while (drives.size() < 3) {
         const std::string d = all_drives[rng.below((u32)all_drives.size())];
         if (std::find(drives.begin(), drives.end(), d) == drives.end()) drives.push_back(d);

@@ -1304,7 +1304,7 @@ bool Agents::task_work(Character& c) {
             // it), butcher the carcass and bring meat and hide home.
             Fauna* fauna = ctx_.fauna;
             Animal* a = fauna ? fauna->get(j->project) : nullptr;
-            auto give_up = [&](const char* msg) {
+            auto give_up = [&](const std::string& msg) {
                 if (a && a->alive && (a->hunted_by & 0x80000000u)) a->hunted_by = kNoEntity;
                 if (a && a->alive && a->hunted_by == c.id) a->hunted_by = kNoEntity;
                 say(c, msg);
@@ -1341,6 +1341,13 @@ bool Agents::task_work(Character& c) {
                 } else {
                     if (now_ > t.until) return give_up("猎物跑远了，只好放弃");
                     const SpeciesDef& sp = fauna->spec(a->species);
+                    // Mauled by the quarry: back off before it finishes the job.
+                    const float hurt = 1.0f - (float)c.body.total_alive() / (float)std::max(1, c.body.total_voxels()) +
+                                       0.5f * c.body.bleeding;
+                    if (hurt > 0.2f && sp.temper != Temper::Shy) {
+                        add_danger(a->pos, 10.0f);
+                        return give_up(strfmt("被%s所伤，只好撤退", sp.name.c_str()));
+                    }
                     const ItemDef* wd = c.weapon != kNoItem ? &reg.item(c.weapon) : nullptr;
                     const float reach = wd ? std::max(1.5f, wd->range) : 1.4f;
                     const float d = std::sqrt(c.pos.dist_sq(a->pos));

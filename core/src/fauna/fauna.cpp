@@ -345,8 +345,9 @@ void Fauna::think(Animal& a, bool near) {
         if (a.attacker)
             if (const Character* at = ctx_.agents->get(a.attacker))
                 if (at->alive && at->pos.dist_sq(a.pos) < 14.0f * 14.0f && now_ < a.state_until + 200) c = at;
-        // A bear guards its ground in the wild, not among the houses (it keeps away from them).
-        if (!c && s.temper == Temper::Territorial && s.guard > 0) {
+        // A bear guards its ground in the wild, not among the houses (it keeps away from them),
+        // and having driven someone off with a swipe it lets them go for a good while.
+        if (!c && s.temper == Temper::Territorial && s.guard > 0 && (a.last_bite == 0 || now_ - a.last_bite > kTicksPerHour * 4)) {
             c = nearest_person(a.pos, s.guard);
             bool settled = false;
             if (c)

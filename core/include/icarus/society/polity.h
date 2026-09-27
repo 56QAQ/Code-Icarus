@@ -112,6 +112,7 @@ struct Diplo {
     Tick allied_since = 0;
     float grievance = 0;     // raids suffered, trespass on our land, dead kin (decays)
     Tick last_incident = 0;  // the last border incident noted
+    Tick envoy_at = 0;       // when we last sent them an envoy with gifts
 };
 
 // The army's current undertaking (at most one per polity).
@@ -126,6 +127,7 @@ struct Operation {
     EventId event = 0;
     bool engaged = false;    // a battle event has been recorded
     int loot = 0;            // units of food carried off (raids)
+    Tick held_since = 0;     // conquest: since when no defender has stood by their hall (0: contested)
 };
 
 // A trade pact between two polities at peace. Each side's carriers take what it can

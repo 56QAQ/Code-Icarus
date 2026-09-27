@@ -109,6 +109,10 @@ public:
     };
     float strength(u16 polity) const;
     Assessment assess(u16 us, u16 them) const;
+    // The ruling girl's drive traits (drives.json): how readily she seeks a fight, and how
+    // warmly she answers an envoy. 0 / 0.5 without a ruling girl.
+    float war_appetite(u16 polity) const;
+    float cooperation(u16 polity) const;
     // Daily: grievances along the borders, alliances that sour, tribute that falls due.
     void update_diplomacy(Polity& p);
     void set_truce(u16 a, u16 b, float days);

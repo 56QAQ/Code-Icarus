@@ -15,6 +15,11 @@
 
 namespace icarus {
 
+namespace {
+constexpr int kSiegeHours = 4;   // the ground around the enemy's hall held this long takes it
+constexpr int kAnnexBelow = 5;   // a people with no more grown folk than this is absorbed
+}  // namespace
+
 bool Society::at_war(u16 a, u16 b) const {
     const Polity* p = polity(a);
     return p && p->war_with(b) != nullptr;
@@ -265,8 +270,8 @@ void Society::update_wars(Polity& p) {
         op.active = false;
         return;
     }
-    // Broken army: too many lost, or nobody left.
-    if (serving == 0 || (op.party > 0 && op.lost * 2 >= op.party + 1)) {
+    // Broken army: a third fallen (the rest lose heart), or nobody left.
+    if (serving == 0 || (op.party > 0 && op.lost * 3 >= op.party + 1)) {
         if (op.phase < 3) {
             op.phase = 3;
             op.since = ctx_.now;
@@ -311,17 +316,49 @@ void Society::update_wars(Polity& p) {
             op.phase = 3;
             op.since = ctx_.now;
         } else if (op.aim == "conquest") {
-            // Taken when no defender stands near the seat any more.
+            // A siege: the hall falls once the attackers have held the ground around it,
+            // with no defender standing there, for some hours.
             int defenders = 0;
             for (const auto& cp : ctx_.agents->all())
                 if (cp && cp->alive && cp->polity == op.enemy && (cp->drafted || cp->is_girl()) &&
                     cp->foot.dist2(op.objective) < 20 * 20)
                     ++defenders;
-            if (defenders == 0) {
-                annex(p.id, op.enemy, op.event);
+            if (defenders > 0) op.held_since = 0;
+            else if (op.held_since == 0) op.held_since = ctx_.now;
+            if (op.held_since && ctx_.now - op.held_since >= kTicksPerHour * kSiegeHours) {
+                // A people with the strength left to rebuild bows to the victor and pays
+                // tribute; a broken one is absorbed.
+                const u16 enemy = op.enemy;
+                int adults = 0;
+                bool led = false;
+                for (const auto& cp : ctx_.agents->all()) {
+                    const Character* c = cp.get();
+                    if (!c || !c->alive || c->departed || c->polity != enemy) continue;
+                    if (c->is_girl()) led = true;
+                    else if (!ctx_.agents->is_child(*c)) ++adults;
+                }
+                const EventId siege = op.event;
                 op.active = false;
+                op.held_since = 0;
                 discharge(p.id);
+                if (adults <= kAnnexBelow || !led) {
+                    annex(p.id, enemy, siege);
+                } else {
+                    const EventId ev = make_peace(p.id, enemy,
+                                                  strfmt("订立城下之盟：「%s」兵临城下，「%s」被迫称臣纳贡",
+                                                         p.name.c_str(), polity(enemy) ? polity(enemy)->name.c_str() : "?"),
+                                                  siege);
+                    make_vassal(enemy, p.id, ev);
+                    send_tribute(enemy, p.id, 30, "战败赔款", ev);
+                    add_grievance(enemy, p.id, 0.6f);  // a humiliation not soon forgotten
+                }
                 return;
+            }
+            // A siege that cannot be made to hold is given up after a day.
+            if (ctx_.now - op.since > kTicksPerDay) {
+                op.phase = 3;
+                op.since = ctx_.now;
+                op.held_since = 0;
             }
         }
     }

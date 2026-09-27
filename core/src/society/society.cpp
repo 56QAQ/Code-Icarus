@@ -851,6 +851,14 @@ void Society::save(BinWriter& w) const {
         w.varu(p.outposts.size());
         for (const Vec3i& o : p.outposts) w.vec3i(o);
     }
+    // Strategy, version 3: envoys, sieges.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) {
+        const Polity& p = polities_[i];
+        w.varu(p.diplo.size());
+        for (const Diplo& d : p.diplo) w.u64v(d.envoy_at);
+        w.u64v(p.op.held_since);
+    }
     w.end_section(sec);
 }
 
@@ -1055,6 +1063,18 @@ void Society::load(BinReader& outer) {
                     const u64 no = r.varu();
                     p.outposts.clear();
                     for (u64 k = 0; k < no; ++k) p.outposts.push_back(r.vec3i());
+                }
+            }
+            if (!r.at_end()) {
+                const u64 np5 = r.varu();
+                for (size_t i = 1; i < (size_t)np5; ++i) {
+                    const u64 nd = r.varu();
+                    for (u64 k = 0; k < nd; ++k) {
+                        const Tick at = r.u64v();
+                        if (i < polities_.size() && k < polities_[i].diplo.size()) polities_[i].diplo[k].envoy_at = at;
+                    }
+                    const Tick held = r.u64v();
+                    if (i < polities_.size()) polities_[i].op.held_since = held;
                 }
             }
         }

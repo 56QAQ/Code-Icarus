@@ -211,6 +211,11 @@ void Agents::think(Character& c) {
         if (c.drafted) {
             float duty = 1.25f + (p->op.active ? 0.35f : 0.0f);
             add("从军", duty, p->op.active ? "军令在身：" + p->op.aim : "战时戒备");
+            // The badly wounded fall back out of the fight.
+            const float hurt = 1.0f - (float)c.body.total_alive() / (float)std::max(1, c.body.total_voxels()) +
+                               0.5f * c.body.bleeding;
+            if (hurt > 0.3f && nearest_enemy(c, 16.0f, true))
+                add("逃离危险", 1.6f + 2.5f * hurt, strfmt("伤势 %s，撤下战场", pct(std::min(1.0f, hurt))));
         } else {
             // Girls with combat magic and mana stand their ground (see 施法); others flee.
             bool can_fight = false;

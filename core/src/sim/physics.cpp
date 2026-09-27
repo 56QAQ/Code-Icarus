@@ -94,7 +94,8 @@ void Physics::on_changes(const std::vector<VoxelChange>& changes) {
 
 void Physics::step_evaporation() {
     // Sample random columns of active cells; exposed water surfaces lose a unit. The rate
-    // is proportional to exposed surface area, so lakes shrink slowly without inflow.
+    // is proportional to exposed surface area, so water above the land's natural water
+    // table (floods, puddles) dries up without inflow; lakes keep to their shores.
     if (evaporation_samples <= 0) return;
     const CoreMats& M = w_.reg().m();
     if (now_ % 50 == 0) {
@@ -138,7 +139,9 @@ void Physics::step_evaporation() {
                         w_.set(p, make_voxel(M.water, (u8)(vlevel(v) + 1)));
                         stats_.water_units_rain++;
                     }
-                } else {
+                } else if (y > w_.gen().column(x, z).water_top) {
+                    // Lakes are held at their water table by the ground water beneath them;
+                    // what stands above it (floods, puddles, a lake dammed higher) dries up.
                     int l = vlevel(v) - 1;
                     w_.set(p, l > 0 ? make_voxel(M.water, (u8)l) : make_voxel(M.air));
                     stats_.water_units_evaporated++;
