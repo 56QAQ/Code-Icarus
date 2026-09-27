@@ -117,6 +117,9 @@ public:
     // The ruling girl's drive traits (drives.json): how readily she seeks a fight, and how
     // warmly she answers an envoy. 0 / 0.5 without a ruling girl.
     float war_appetite(u16 polity) const;
+    // Days a polity spends building up before it will start a war (sooner for a ruler
+    // who looks for a fight).
+    float settle_days(u16 polity) const;
     float cooperation(u16 polity) const;
     // Daily: grievances along the borders, alliances that sour, tribute that falls due.
     void update_diplomacy(Polity& p);

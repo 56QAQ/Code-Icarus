@@ -32,6 +32,10 @@ const Json* ruler_drive(const SimContext& ctx, const Polity* p) {
 }
 }  // namespace
 
+float Society::settle_days(u16 id) const {
+    return kSettleDays + clampv(12.0f * (0.5f - war_appetite(id)), 0.0f, 9.0f);
+}
+
 float Society::war_appetite(u16 id) const {
     const Json* d = ruler_drive(ctx_, polity(id));
     return d ? d->flt("war_appetite", 0.0f) : 0.0f;
@@ -140,9 +144,10 @@ Society::Assessment Society::assess(u16 us, u16 them) const {
         if (const Store* s = ctx_.econ->store(sid))
             for (const ItemStack& st : s->items)
                 if (ctx_.reg->item(st.item).has_tag("weapon")) a.armed += st.count;
-    // Not yet: the first days of building up, or a truce.
+    // Not yet: the first days of building up, or a truce. A ruler who looks for a fight
+    // is done building up sooner; a peaceable one keeps at it a week longer.
     const Tick settle = (Tick)(kSettleDays * (float)kTicksPerDay);
-    a.settled = ctx_.now > p->founded + settle && ctx_.now > o->founded + settle;
+    a.settled = ctx_.now > p->founded + (Tick)(settle_days(us) * (float)kTicksPerDay) && ctx_.now > o->founded + settle;
     a.truce = dp && dp->truce_until > ctx_.now;
     if (a.ratio >= 1.5f) why.push_back(strfmt("我方兵力约为对方的 %.1f 倍", a.ratio));
     else if (a.ratio < 0.8f) why.push_back(strfmt("对方兵力约为我方的 %.1f 倍", 1.0f / std::max(0.05f, a.ratio)));

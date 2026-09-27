@@ -41,6 +41,15 @@ TEST("realms: three civilisations start apart, hostile, and busy building up") {
     // Nobody may go to war in the first days.
     sim.run(kTicksPerDay * 2);
     for (u16 a : ids) CHECK(soc.polity(a)->wars.empty());
+    // A wrathful ruler is done building up sooner than a hopeful one.
+    Character* r = sim.agents().get(soc.polity(ids[0])->ruler);
+    REQUIRE(r && r->girl);
+    r->girl->drive = "wrath";
+    const float wrath = soc.settle_days(ids[0]);
+    r->girl->drive = "hope";
+    const float hope = soc.settle_days(ids[0]);
+    CHECK(wrath >= 10.0f);
+    CHECK(hope > wrath + 5.0f);
 }
 
 TEST("realms: an army marches across the continent and fights at the enemy's hall") {

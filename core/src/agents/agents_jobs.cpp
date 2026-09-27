@@ -462,15 +462,17 @@ void Agents::generate_jobs() {
             if (cp && cp->alive && !cp->departed && cp->polity == pc.id) ++people;
         const bool band = ctx_.society->foraging_band(pc);
         if (pc.stats.food_days > (band ? 5.0f : 3.0f)) continue;
-        const int max_open = band ? std::max(4, people * 2 / 3) : 4;
-        const int max_r = band ? 90 : 60;
+        // Farmers whose larder is empty and whose people go hungry forage like a band.
+        const bool famine = band || (pc.stats.food_days < 0.5f && pc.stats.food_access < 0.9f);
+        const int max_open = famine ? std::max(4, people * 2 / 3) : 4;
+        const int max_r = famine ? 90 : 60;
         int open = 0;
         for (const Job& j : jobs.all())
             if (j.alive && j.type == JobType::Forage && j.polity == pc.id) ++open;
         // Look about at scattered spots, nearer ones more often (a pure hash of the time:
         // the same run always looks at the same places).
         std::vector<std::pair<i64, Vec3i>> found;
-        const int samples = band ? 220 : 90;
+        const int samples = famine ? 220 : 90;
         for (int i = 0; i < samples && open + (int)found.size() < max_open * 2; ++i) {
             const u64 h = hash3(0x0F0A6Eull + pc.id, (i32)(now_ / 50), i, 7);
             const float u = (float)(h & 0xFFFF) / 65535.0f, v = (float)((h >> 16) & 0xFFFF) / 65535.0f;

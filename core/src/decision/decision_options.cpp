@@ -490,12 +490,15 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
             near.push(seat->entrance.z);
             o.action.set("near", near);
         }
+        // Everyone sleeping on the ground presses harder than a few without a bed.
+        o.bias += beds == 0 ? 0.4f : 0.3f * (float)(residents - beds) / (float)std::max(1, residents);
         O.push_back(o);
     }
     // Expansion: once the home village has grown, a new one by distant water. It widens
     // the land but brings the borders of others closer.
+    // (Not while the home camp itself still sleeps in the open.)
     if (p.has_tech("farming") && now_ > p.founded + kTicksPerDay * 3 && p.outposts.size() < 3 && residents >= 16 &&
-        !home_def.empty()) {
+        !home_def.empty() && beds * 2 >= residents) {
         bool busy = false;
         for (const Project& pr : ctx_.society->projects())
             if (pr.alive && pr.status == 0 && pr.polity == p.id && pr.title.find("新村") != std::string::npos) busy = true;

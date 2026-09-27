@@ -364,9 +364,10 @@ bool Agents::task_eat(Character& c) {
         }
         StoreId s = find_food_store(c, true, false);
         if (s == kNoStore) {
-            // Nothing put by: pick something growing wild nearby and eat it on the spot.
+            // Nothing put by: pick something growing wild nearby and eat it on the spot
+            // (the starving walk further for it).
             Vec3i p;
-            if (wild_food_near(c.foot, 28, p)) {
+            if (wild_food_near(c.foot, c.needs.food < 0.25f ? 44 : 28, p)) {
                 t.target = p;
                 t.step = 5;
                 return true;
