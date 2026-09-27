@@ -26,6 +26,7 @@ const GEAR_COLORS := {
 	"iron": Color(0.62, 0.65, 0.7), "hide": Color(0.62, 0.52, 0.33), "leather": Color(0.42, 0.3, 0.18),
 	"string": Color(0.9, 0.88, 0.8), "flint": Color(0.33, 0.36, 0.42), "leaf": Color(0.36, 0.55, 0.24),
 	"leaf_light": Color(0.5, 0.68, 0.3), "fur": Color(0.84, 0.77, 0.62), "fur_dark": Color(0.44, 0.3, 0.19),
+	"burlap": Color(0.72, 0.6, 0.4),
 }
 
 const PART_HEAD := 0
@@ -140,6 +141,16 @@ func _create(c: Dictionary) -> Dictionary:
 	crate.visible = false
 	body.add_child(crate)
 	n["crate"] = crate
+	# Plunder: a soldier carrying food home slings a sack over his back.
+	var sack := Node3D.new()
+	sack.position = Vector3(0.05, 1.25, -0.3)
+	sack.rotation = Vector3(0.25, 0, 0.3)
+	sack.visible = false
+	body.add_child(sack)
+	_box(sack, Vector3(0.42, 0.46, 0.3), Vector3.ZERO, _gear_mat("burlap"))
+	_box(sack, Vector3(0.2, 0.1, 0.16), Vector3(0, 0.27, 0), _gear_mat("burlap"))
+	_box(sack, Vector3(0.24, 0.04, 0.2), Vector3(0, 0.22, 0), _gear_mat("string"))
+	n["sack"] = sack
 	n["cart"] = _make_cart(root)
 	return n
 
@@ -376,6 +387,7 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 		_attach_tool(n, String(c.get("tool", "")), shown_kind, place, prop)
 	var pulling: bool = c.get("cart", false) and c.get("carrying", false) and not lying and not c.get("drafted", false)
 	(n["crate"] as MeshInstance3D).visible = c.get("carrying", false) and not lying and not c.get("drafted", false) and not pulling
+	(n["sack"] as Node3D).visible = c.get("carrying", false) and not lying and c.get("drafted", false)
 	var cart: Node3D = n["cart"]
 	cart.visible = pulling
 	if pulling:

@@ -63,6 +63,10 @@ void Agents::strike(Character& attacker, Character& target, float power, const s
     }
 }
 
+bool Agents::raider_laden(const Character& c) const {
+    return carry_capacity(c) + 4.0f - carried_weight(c) < 0.6f;
+}
+
 bool Agents::task_fight(Character& c) {
     Task& t = c.task;
     Polity* p = ctx_.society->polity(c.polity);
@@ -78,7 +82,9 @@ bool Agents::task_fight(Character& c) {
     // Raiders are after the food and fight only soldiers in their way; conquerors and
     // defenders also face the enemy's magical girls.
     const bool raiding = op.active && op.aim == "raid";
-    Character* foe = nearest_enemy(c, op.active && op.phase == 3 ? 6.0f : 18.0f, true, raiding);
+    // Raiders at work in the enemy's village turn only on those who come at them.
+    const float look = op.active && op.phase == 3 ? 6.0f : (raiding && op.phase == 2 ? 9.0f : 18.0f);
+    Character* foe = nearest_enemy(c, look, true, raiding);
     // Kept on a leash: an army on campaign does not chase a fleeing enemy across the
     // countryside, only fights near its objective (or whoever is right upon it).
     if (foe && op.active && (op.phase == 1 || op.phase == 2)) {
@@ -110,7 +116,11 @@ bool Agents::task_fight(Character& c) {
                 t.until = now_ + (weapon && weapon->range > 3.0f ? 45 : 28);
                 float skill = c.skills[kCombat] - foe->skills[kCombat];
                 float hit = clampv(0.55f + 0.35f * skill + (c.fear > 0.6f ? -0.15f : 0.0f), 0.15f, 0.9f);
-                if (rng_.chance(hit)) {
+                const bool landed = rng_.chance(hit);
+                if (blow_fx_.size() >= 96) blow_fx_.erase(blow_fx_.begin());
+                blow_fx_.push_back({c.id, foe->id, c.pos + Vec3f(0.0f, 1.2f, 0.0f), foe->pos + Vec3f(0.0f, 1.0f, 0.0f),
+                                    weapon && weapon->range > 3.0f, landed});
+                if (landed) {
                     float power = weapon ? weapon->power : 0.03f;
                     // A magical girl's bare hands hit like a weapon.
                     if (c.is_girl()) power = std::max(power, 0.08f);
@@ -133,32 +143,64 @@ bool Agents::task_fight(Character& c) {
     Vec3i goal = c.foot;
     std::string what = "戒备";
     const Building* seat = ctx_.buildings->get(p->seat);
+    const Polity* en = op.active ? ctx_.society->polity(op.enemy) : nullptr;
+    const std::string en_name = en ? "「" + en->name + "」" : "敌人";
     if (op.active) {
         if (op.phase == 0 || op.phase == 3) {
             goal = op.rally;
-            what = op.phase == 0 ? "集结" : "撤回";
+            what = op.phase == 0 ? "集结" : (carried_weight(c) > 0.5f && op.aim == "raid" ? "扛着抢来的粮食撤回" : "撤回");
+        } else if (op.phase == 1) {
+            // March to the forming-up ground outside the enemy's village and wait there
+            // for the rest.
+            goal = op.stage;
+            what = c.foot.dist2(op.stage) < 6 * 6 ? "在" + en_name + "村外集结，等候后队" : "向" + en_name + "进军";
         } else {
             goal = op.objective;
             what = op.aim == "raid" ? "劫掠" : (op.aim == "conquest" ? "进攻" : "据守");
         }
-        // Raiders at the enemy storehouse carry off food.
-        if (op.phase == 2 && op.aim == "raid" && c.foot.dist2(op.objective) < 4 * 4) {
-            for (StoreId sid : ctx_.society->public_stores(op.enemy)) {
-                const Store* s = ctx_.econ->store(sid);
-                if (!s || s->pos.dist2(op.objective) > 3 * 3) continue;
-                std::vector<ItemStack> items = s->items;
-                for (const ItemStack& st : items) {
-                    if (ctx_.reg->item(st.item).nutrition <= 0) continue;
-                    float unit = std::max(0.1f, ctx_.reg->item(st.item).weight);
-                    i32 room = (i32)std::floor((carry_capacity(c) + 4.0f - carried_weight(c)) / unit);
-                    if (room > 0) {
-                        const i32 took = ctx_.econ->transfer(sid, c.inv, st.item, std::min(room, st.count));
-                        p->op.loot += took;
-                        if (War* w = p->war_with(op.enemy)) w->loot += took;
+        // Raiders go from store to store in the enemy's village and carry off food until
+        // they can carry no more.
+        if (op.phase == 2 && op.aim == "raid") {
+            // (Room for one more of the heaviest food, a leg of meat.)
+            const bool laden = raider_laden(c);
+            const Store* pick = nullptr;
+            StoreId pick_id = kNoStore;
+            if (!laden) {
+                i64 bd = 1LL << 60;
+                for (StoreId sid : ctx_.society->public_stores(op.enemy)) {
+                    const Store* s = ctx_.econ->store(sid);
+                    if (!s || s->pos.dist2(op.objective) > 45 * 45 || ctx_.society->food_in(sid) <= 0) continue;
+                    if (blacklisted(c, s->pos)) continue;
+                    const i64 d = s->pos.dist2(c.foot);
+                    if (d < bd) {
+                        bd = d;
+                        pick = s;
+                        pick_id = sid;
                     }
                 }
             }
-            say(c, "搬走敌人的粮食");
+            if (pick) {
+                goal = pick->pos;
+                what = "抢夺" + en_name + "的粮食";
+                if (c.foot.dist2(pick->pos) <= 3 * 3) {
+                    std::vector<ItemStack> items = pick->items;
+                    for (const ItemStack& st : items) {
+                        if (ctx_.reg->item(st.item).nutrition <= 0) continue;
+                        float unit = std::max(0.1f, ctx_.reg->item(st.item).weight);
+                        i32 room = (i32)std::floor((carry_capacity(c) + 4.0f - carried_weight(c)) / unit);
+                        if (room > 0) {
+                            const i32 took = ctx_.econ->transfer(pick_id, c.inv, st.item, std::min(room, st.count));
+                            p->op.loot += took;
+                            if (War* w = p->war_with(op.enemy)) w->loot += took;
+                        }
+                    }
+                    say(c, "搬走" + en_name + "的粮食");
+                    c.moving = false;
+                    return true;
+                }
+            } else {
+                what = laden ? "扛着抢来的粮食，等候撤退" : "在" + en_name + "村中搜寻粮食";
+            }
         }
         // Besiegers with nobody left to fight break into the enemy's buildings.
         if (op.phase == 2 && op.aim == "conquest" && c.foot.dist2(op.objective) < 12 * 12 && now_ >= t.until) {
@@ -194,6 +236,28 @@ bool Agents::task_fight(Character& c) {
             }
     } else if (seat) {
         goal = seat->entrance;
+    }
+    // Defenders go out to meet enemy soldiers who have come into their village.
+    if (seat && (!op.active || op.aim == "defend")) {
+        const Character* in = nullptr;
+        float bd = 1e30f;
+        const Vec3f hall((float)seat->entrance.x, (float)seat->entrance.y, (float)seat->entrance.z);
+        for (auto& op2 : chars_) {
+            const Character* o = op2.get();
+            if (!o || !o->alive || o->departed || !o->drafted || o->polity == c.polity || !p->war_with(o->polity)) continue;
+            if (o->pos.dist_sq(hall) > 60.0f * 60.0f) continue;
+            const float d = o->pos.dist_sq(c.pos);
+            if (d < bd) {
+                bd = d;
+                in = o;
+            }
+        }
+        if (in) {
+            // Re-plan only when the intruder has moved on.
+            if (t.target2.dist2(in->foot) > 4 * 4 || !c.path.valid()) t.target2 = in->foot;
+            goal = t.target2;
+            what = "迎击来犯之敌";
+        }
     }
     if (c.foot.dist2(goal) > 3 * 3) {
         Move m = move_to(c, goal, true);

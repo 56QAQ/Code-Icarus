@@ -87,9 +87,10 @@ float Agents::pick_spell(Character& c, SpellPick& out, std::string& why) {
     if (!c.is_girl() || c.body.fatal()) return 0;
     const GirlData& g = *c.girl;
     float best = 0;
-    if (const Json* sp = active_spell(*ctx_.reg, g, "heal")) {
+    int heal_idx = -1;
+    if (const Json* sp = active_spell(*ctx_.reg, g, "heal", &heal_idx)) {
         float cost = sp->flt("mana", 0.35f);
-        if (g.mana >= cost) {
+        if (g.mana >= cost && ready(g, *sp, heal_idx, now_)) {
             Character* target = nullptr;
             float worst = 0.06f;
             for (auto& op : chars_) {
@@ -111,9 +112,10 @@ float Agents::pick_spell(Character& c, SpellPick& out, std::string& why) {
             }
         }
     }
-    if (const Json* sp = active_spell(*ctx_.reg, g, "quench")) {
+    int quench_idx = -1;
+    if (const Json* sp = active_spell(*ctx_.reg, g, "quench", &quench_idx)) {
         float cost = sp->flt("mana", 0.45f);
-        if (g.mana >= cost && ctx_.physics->stats().fire_active > 0) {
+        if (g.mana >= cost && ready(g, *sp, quench_idx, now_) && ctx_.physics->stats().fire_active > 0) {
             Vec3i fire;
             i64 bd = 50LL * 50;
             bool found = false;
@@ -159,10 +161,12 @@ float Agents::pick_spell(Character& c, SpellPick& out, std::string& why) {
         const Combat kinds[] = {{"firebomb", 6, 1.9f}, {"strike", 3, 1.8f}, {"drain_strike", 5, 1.75f},
                                 {"ranged", 4, 1.7f},   {"terrify", 7, 1.5f}, {"drain_mana", 9, 1.4f}};
         for (const Combat& k : kinds) {
-            const Json* sp = active_spell(*ctx_.reg, g, k.effect);
+            int idx = -1;
+            const Json* sp = active_spell(*ctx_.reg, g, k.effect, &idx);
             if (!sp) continue;
             float cost = sp->flt("mana", 0.3f);
-            if (g.mana < cost) continue;
+            // (A spell still cooling down would only be wound up and then given up on.)
+            if (g.mana < cost || !ready(g, *sp, idx, now_)) continue;
             if (k.code == 9 && !foe->is_girl()) continue;
             float s = k.base + 0.3f * c.pers.aggression;
             if (s > best) {

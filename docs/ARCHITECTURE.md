@@ -217,10 +217,17 @@ growth depends on irrigation from real water nearby.
      loyalty; outcomes are reviewed later and remembered as experience.
 * **War** (`society/war.cpp`, `agents/agents_war.cpp`, `decision/decision_war.cpp`):
   wars are declared by rulers; armies are drafted able-bodied residents who arm
-  themselves from the stores and follow one operation at a time (muster, march, raid or
-  besiege the objective, return), with up to two magical girls with battle magic as
-  champions. Hits remove voxels from bodies, reduced by armour; the badly wounded fall
-  back and an army breaks at a third lost; raiders haul real food home. A hall held
+  themselves from the stores and follow one operation at a time (muster, march, form up
+  outside the enemy's village, raid or besiege the objective, return), with up to two
+  magical girls with battle magic as champions. Armies set out by day and wait on the
+  forming-up ground for their stragglers (through the night if need be) before they
+  charge together. A raid aims at the enemy store with the most food; raiders go from
+  store to store in the village until they can carry no more, then withdraw; defenders
+  go out to meet enemy soldiers who come within reach of their hall. Hits remove voxels
+  from bodies, reduced by armour; the badly wounded fall back and an army breaks at a
+  third lost; raiders haul real food home. The renderer shows each army under a banner
+  (who, how many, what it is doing) with a pin on its objective, arrows in flight and
+  sparks where blows land, and plunder as sacks on the raiders' backs. A hall held
   for hours without a defender falls: a people that can still stand capitulates as a
   tribute-paying vassal, a broken one is annexed.
 * **Strategy and diplomacy** (`society/strategy.cpp`): fighting strength, and an

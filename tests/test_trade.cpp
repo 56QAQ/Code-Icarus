@@ -177,6 +177,11 @@ TEST("trade: a hungry neighbour's ruler proposes trade; the other ruler decides 
     sim.economy().add(store_of(sim, nid), reg.find_item("copper"), 40, "admin_create");
     sim.society().polity(1)->attitude_ref(nid) = 0.3f;
     sim.society().polity(nid)->attitude_ref(1) = 0.3f;
+    // A ruler who cares for her people's bellies and gets on with others (a wrathful or
+    // envious one would rather keep to herself).
+    Character* nr = sim.agents().get(sim.society().polity(nid)->ruler);
+    REQUIRE(nr && nr->girl);
+    nr->girl->drive = "gourmet";
     const Decision* offer = nullptr;
     for (int h = 0; h < 24 * 4 && !offer; ++h) {
         sim.run(kTicksPerHour);

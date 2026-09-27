@@ -82,6 +82,48 @@ TEST("realms: an army marches across the continent and fights at the enemy's hal
     CHECK(fought);
 }
 
+TEST("realms: a raid forms up outside the enemy's village, charges together and carries off food") {
+    Simulation sim(test_registry());
+    sim.new_game(realms());
+    Society& soc = sim.society();
+    const auto ids = alive_polities(sim);
+    REQUIRE(ids.size() == 3);
+    const u16 a = ids[0], b = ids[1];
+    sim.decisions().mode = "remote";
+    sim.decisions().remote_budget_per_day = 1 << 20;
+    sim.decisions().remote_deadline = kTicksPerDay * 100;
+    // The raid aims at a store that holds food.
+    const EventId ev = soc.declare_war(a, b, "raid", 0, 0);
+    REQUIRE(ev != 0);
+    bool food_there = false;
+    for (StoreId sid : soc.public_stores(b))
+        if (const Store* s = sim.economy().store(sid); s && s->pos == soc.polity(a)->op.objective && soc.food_in(sid) > 0)
+            food_there = true;
+    CHECK(food_there);
+    soc.draft(a, 6, ev);
+    soc.polity(a)->op.party = soc.soldiers(a);
+    bool staged_first = false, charged = false, back = false;
+    for (int h = 0; h < 60 && !back; ++h) {
+        sim.run(kTicksPerHour);
+        const Polity* pa = soc.polity(a);
+        REQUIRE(pa);
+        if (pa->op.active && pa->op.phase == 2 && !charged) {
+            charged = true;
+            staged_first = pa->op.staged_since != 0;
+        }
+        if (charged && (!pa->op.active || pa->op.phase == 3)) back = true;
+    }
+    CHECK(charged);
+    CHECK(staged_first);
+    bool announced = false;
+    for (const Event& e : sim.chronicle().events())
+        if (e.polity == a && e.text.find("冲进了") != std::string::npos) announced = true;
+    CHECK(announced);
+    const War* w = soc.polity(a)->war_with(b);
+    REQUIRE(w);
+    CHECK(w->loot > 0);
+}
+
 TEST("realms: a truce follows peace, and allies are called to a war") {
     Simulation sim(test_registry());
     sim.new_game(realms());

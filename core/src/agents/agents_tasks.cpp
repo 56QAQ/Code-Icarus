@@ -522,7 +522,8 @@ bool Agents::task_drink(Character& c) {
     if (t.step == 2) {
         say(c, "喝水");
         if (now_ < t.until) return true;
-        // Drinking removes water from the world.
+        // Drinking removes water from the world: from beside her first, else from within
+        // arm's reach.
         Vec3i found{0, -1, 0};
         for (int dy = -2; dy <= 0 && found.y < 0; ++dy)
             for (int d = 0; d < 5 && found.y < 0; ++d) {
@@ -530,8 +531,22 @@ bool Agents::task_drink(Character& c) {
                 Voxel v = w.get(q);
                 if (vmat(v) == WATER && vlevel(v) >= 1) found = q;
             }
+        for (int dy = -2; dy <= 0 && found.y < 0; ++dy)
+            for (int dz = -2; dz <= 2 && found.y < 0; ++dz)
+                for (int dx = -2; dx <= 2 && found.y < 0; ++dx) {
+                    const Vec3i q = c.foot + Vec3i{dx, dy, dz};
+                    const Voxel v = w.get(q);
+                    if (vmat(v) == WATER && vlevel(v) >= 1) found = q;
+                }
         if (found.y < 0) {
+            // The shallows here are drunk dry: another spot on the shore.
             c.water_spot = {-1, -1, -1};
+            if (c.needs.water < 0.9f && t.fails < 2) {
+                blacklist(c, c.foot, kTicksPerHour);
+                ++t.fails;
+                t.step = 0;
+                return true;
+            }
             end_task(c, false);
             return false;
         }
@@ -541,7 +556,7 @@ bool Agents::task_drink(Character& c) {
         c.needs.water = std::min(1.0f, c.needs.water + 0.45f);
         day.drinks++;
         c.last_drank = now_;
-        if (c.needs.water < 0.85f && ++t.count < 4) {
+        if (c.needs.water < 0.95f && ++t.count < 5) {
             t.until = now_ + 30;
             return true;
         }

@@ -45,6 +45,8 @@ public:
     Array material_table() const;           // by material id: key, name, colour, kind flags
     PackedInt32Array take_fx();             // [kind, x, y, z, material] per broken / landed cube
     Array take_spells();                    // spells cast since the last call (effect, from, to, colours...)
+    Array take_blows();                     // blows and arrows in battle since the last call
+    Array armies() const;                   // armies in the field: where, how many, doing what
     PackedVector3Array fire_spots(int64_t max_count) const;  // burning cubes
     Array build_cell_mesh(const Vector3i& cell);
     Array build_lod_mesh(const Vector2i& column, int step);

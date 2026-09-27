@@ -3,13 +3,14 @@ extends Node3D
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N | --load FILE] [--layout classic|continent] [--scenario key]
 ##        [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}|break_bridge] [--council [id]] [--tech [key]] [--ui-scale f] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--tech [key]] [--ui-scale f] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--focus-army dist[,polity]] [--select id [--focus dist]]
 ##        [--focus-job job[,dist]] [--focus-animal species[,dist]]
 ##        [--hide-ui] [--frames N] [--late-admin type:{json} [--late-frames N] [--late-ticks N] [--late-run]]
 
 var renderer: WorldRenderer
 var fx: FxRenderer
 var spells: SpellRenderer
+var armies: ArmyBanners
 var village: VillageRenderer
 var chars: CharacterRenderer
 var animals: AnimalRenderer
@@ -58,6 +59,9 @@ func _ready() -> void:
 	tags.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui_layer.add_child(tags)
 	chars.overlay = tags
+	armies = ArmyBanners.new()
+	armies.overlay = tags
+	add_child(armies)
 	ui_layer.add_child(hud)
 	if _cli.has("hide-ui"):
 		ui_layer.visible = false
@@ -93,6 +97,7 @@ func _ready() -> void:
 	hud.selection.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 40.0))
 	hud.selection.character_requested.connect(func(id: int) -> void: _select_character(id))
 	hud.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 45.0))
+	armies.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p + Vector3(0, 1.0, 0), 45.0))
 	hud.character_requested.connect(func(id: int) -> void:
 		_select_character(id, get_viewport().get_visible_rect().size * 0.5)
 		rig.focus(chars.position_of(id), 40.0))
@@ -184,6 +189,15 @@ func _ready() -> void:
 		if n > 0:
 			var d := float(_cli["focus-soldiers"]) if String(_cli["focus-soldiers"]).is_valid_float() else 30.0
 			rig.focus(sum / n, d, true)
+	if _cli.has("focus-army"):
+		# Screenshot helper: look at the first army in the field (the one of the given
+		# polity if one is named), from the given distance.
+		var parts: PackedStringArray = String(_cli["focus-army"]).split(",")
+		var want := int(parts[1]) if parts.size() > 1 else 0
+		for a in Game.sim.armies():
+			if want == 0 or int(a["polity"]) == want:
+				rig.focus(Vector3(a["pos"]) + Vector3(0, 1.0, 0), float(parts[0]) if parts[0].is_valid_float() else 40.0, true)
+				break
 	if _cli.has("council"):
 		var cid := int(_cli["council"]) if String(_cli["council"]).is_valid_int() else 0
 		hud.toggle_council(cid)
@@ -519,6 +533,8 @@ func _on_world_ready() -> void:
 	renderer.setup(Game.sim, rig.camera)
 	fx.setup(Game.sim, rig.camera)
 	spells.setup(Game.sim, rig.camera)
+	armies.sim = Game.sim
+	armies.camera = rig.camera
 	village.setup(Game.sim, rig.camera)
 	chars.setup(Game.sim, rig.camera)
 	animals.focus = Vector3(v)

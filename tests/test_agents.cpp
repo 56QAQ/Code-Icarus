@@ -2,6 +2,7 @@
 #include <map>
 
 #include "icarus/economy/buildings.h"
+#include "icarus/sim/clock.h"
 #include "icarus/sim/simulation.h"
 #include "icarus/util/log.h"
 #include "test_framework.h"
@@ -263,4 +264,43 @@ TEST("agents: at night everyone sleeps on a cube of their own, at home when they
     }
     CHECK(sleeping > 10);
     CHECK(at_home * 10 >= sleeping * 7);
+}
+
+TEST("agents: someone at the water drinks her fill, and drinks before bed") {
+    Simulation sim(test_registry());
+    sim.new_game(village(3));
+    // Every resident parched: each one who reaches the water leaves it well watered
+    // (a sip quenches only half a thirst, so stopping after one would bring her back soon).
+    for (auto& cp : sim.agents().all())
+        if (cp && cp->alive && !cp->is_girl()) cp->needs.water = 0.05f;
+    int finished = 0, full = 0;
+    std::map<EntityId, bool> at_water;
+    for (int t = 0; t < kTicksPerHour * 3; ++t) {
+        sim.step();
+        for (auto& cp : sim.agents().all()) {
+            if (!cp || !cp->alive || cp->is_girl()) continue;
+            const bool drinking = cp->task.type == TaskType::Drink && cp->task.step == 2;
+            if (at_water[cp->id] && !drinking) {
+                ++finished;
+                if (cp->needs.water >= 0.9f) ++full;
+            }
+            at_water[cp->id] = drinking;
+        }
+    }
+    CHECK(finished >= 5);
+    CHECK_EQ(full, finished);
+    // After work, the half-thirsty drink before they go to sleep.
+    sim.run(kTicksPerDay - sim.now() % kTicksPerDay + kTicksPerHour * 17);
+    const Tick evening = sim.now();
+    for (auto& cp : sim.agents().all())
+        if (cp && cp->alive && !cp->is_girl()) cp->needs.water = std::min(cp->needs.water, 0.45f);
+    sim.run(kTicksPerHour * 6);
+    int asleep = 0, drank = 0;
+    for (auto& cp : sim.agents().all())
+        if (cp && cp->alive && !cp->is_girl() && cp->sleeping) {
+            ++asleep;
+            if (cp->last_drank >= evening) ++drank;
+        }
+    CHECK(asleep >= 5);
+    CHECK(drank * 10 >= asleep * 9);
 }

@@ -53,6 +53,9 @@ public:
     void damage(Character& c, float fraction, int part, const std::string& what, EventId cause);
     // What a character can carry: more with a cart.
     float carry_capacity(const Character& c) const;
+    float carried_weight(const Character& c) const;
+    // A raider who can carry no more food.
+    bool raider_laden(const Character& c) const;
     // The nearest cube within `radius` that residents can walk to from a settlement.
     bool nearest_walkable(const Vec3i& p, int radius, Vec3i& out) const;
     // A hazard residents will run from for a while (explosions, a god's wrath).
@@ -133,6 +136,17 @@ public:
     std::vector<SpellFx> take_spells() {
         std::vector<SpellFx> out;
         out.swap(spell_fx_);
+        return out;
+    }
+    // Blows and arrows in battle, for the renderer only (never read by the simulation).
+    struct BlowFx {
+        EntityId attacker = kNoEntity, target = kNoEntity;
+        Vec3f from, to;
+        bool ranged = false, hit = false;
+    };
+    std::vector<BlowFx> take_blows() {
+        std::vector<BlowFx> out;
+        out.swap(blow_fx_);
         return out;
     }
     // Strength factor of a character's blows right now (war cry, frenzy).
@@ -244,7 +258,6 @@ private:
     StoreId nearest_storage(u16 polity, const Vec3i& from, ItemId item_for_capacity);
     float danger_at(const Character& c) const;
     bool is_work_time(const Character& c) const;
-    float carried_weight(const Character& c) const;
     // Set down everything carried except what is worn or held as equipment.
     void drop_cargo(Character& c);
     void deposit_all(Character& c, StoreId to);
@@ -262,6 +275,7 @@ private:
     Tick now_ = 0;
     std::vector<std::pair<Vec3f, float>> dangers_;  // recent hazards (pos, radius)
     std::vector<SpellFx> spell_fx_;
+    std::vector<BlowFx> blow_fx_;
     // Path search nodes expanded this tick (long searches beyond the budget wait a tick).
     static constexpr u64 kPathTickBudget = 40000;
     u64 path_spent_ = 0;

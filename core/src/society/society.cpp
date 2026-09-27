@@ -877,6 +877,12 @@ void Society::save(BinWriter& w) const {
         for (const Diplo& d : p.diplo) w.u64v(d.envoy_at);
         w.u64v(p.op.held_since);
     }
+    // Version 4: where armies form up.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) {
+        w.vec3i(polities_[i].op.stage);
+        w.u64v(polities_[i].op.staged_since);
+    }
     w.end_section(sec);
 }
 
@@ -1093,6 +1099,17 @@ void Society::load(BinReader& outer) {
                     }
                     const Tick held = r.u64v();
                     if (i < polities_.size()) polities_[i].op.held_since = held;
+                }
+            }
+            if (!r.at_end()) {
+                const u64 np6 = r.varu();
+                for (size_t i = 1; i < (size_t)np6; ++i) {
+                    const Vec3i stage = r.vec3i();
+                    const Tick since = r.u64v();
+                    if (i < polities_.size()) {
+                        polities_[i].op.stage = stage;
+                        polities_[i].op.staged_since = since;
+                    }
                 }
             }
         }

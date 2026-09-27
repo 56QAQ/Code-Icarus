@@ -151,6 +151,9 @@ void Agents::end_task(Character& c, bool success) {
 
 void Agents::think(Character& c) {
     c.next_think = now_ + tune.think_interval + (Tick)(c.id % 7);
+    // Someone already at the water drinks her fill (a sip only quenches half a thirst);
+    // only danger pulls her away.
+    if (c.task.type == TaskType::Drink && c.task.step == 2 && danger_at(c) < 0.3f && !nearest_enemy(c, 14.0f, true)) return;
     const Polity* p = ctx_.society->polity(c.polity);
     const Policies pol = p ? p->policies : Policies{};
     const bool night = is_night(now_);
@@ -313,6 +316,17 @@ void Agents::think(Character& c) {
             o.why += "（正在进行）";
         }
     std::stable_sort(opts.begin(), opts.end(), [](const Consideration& a, const Consideration& b) { return a.score > b.score; });
+    // A drink before bed: a night's sleep leaves a third of a thirst.
+    if (opts.front().label == "睡觉" && c.task.type != TaskType::Sleep && c.needs.water < 0.6f)
+        for (size_t i = 1; i < opts.size(); ++i)
+            if (opts[i].label == "喝水") {
+                Consideration d = opts[i];
+                d.score = opts.front().score + 0.01f;
+                d.why += "，睡前先喝点水";
+                opts.erase(opts.begin() + (long)i);
+                opts.insert(opts.begin(), d);
+                break;
+            }
     c.trace.assign(opts.begin(), opts.begin() + (long)std::min<size_t>(5, opts.size()));
     const Consideration& best = opts.front();
     if (best.label == current && c.task.type != TaskType::None) return;

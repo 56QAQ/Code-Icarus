@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "icarus/agents/agents.h"
+#include "icarus/agents/nav.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/economy/farming.h"
 #include "icarus/sim/clock.h"
@@ -68,18 +69,21 @@ void Society::start_operation(u16 id, u16 enemy, const std::string& aim, EventId
     Polity* a = polity(id);
     Polity* d = polity(enemy);
     if (!a || !d) return;
-    // The army marches on the enemy seat; a raid aims at its nearest stockpile.
+    // The army marches on the enemy seat; a raid aims at the store with the most food
+    // (the nearer the better), wherever the enemy keeps it.
     const Building* home = ctx_.buildings->get(a->seat);
     const Building* target = ctx_.buildings->get(d->seat);
     Vec3i objective = target ? target->entrance : Vec3i{};
     if (aim == "raid") {
-        float bd = 1e30f;
+        float best = 0.0f;
         for (StoreId sid : public_stores(enemy)) {
             const Store* s = ctx_.econ->store(sid);
-            if (!s || s->kind != StoreKind::Stockpile) continue;
-            float dd = home ? (float)s->pos.dist2(home->entrance) : 0.0f;
-            if (dd < bd) {
-                bd = dd;
+            const int food = food_in(sid);
+            if (!s || food <= 0) continue;
+            const float dist = home ? std::sqrt((float)s->pos.dist2(home->entrance)) : 0.0f;
+            const float score = (float)std::min(food, 200) / (1.0f + dist / 150.0f);
+            if (score > best) {
+                best = score;
                 objective = s->pos;
             }
         }
@@ -92,10 +96,43 @@ void Society::start_operation(u16 id, u16 enemy, const std::string& aim, EventId
     a->op.aim = aim;
     a->op.rally = home ? home->entrance : objective;
     a->op.objective = objective;
+    a->op.stage = stage_point(a->op.rally, objective);
     a->op.phase = 0;
     a->op.since = ctx_.now;
     a->op.event = cause;
     enlist_champions(id, cause);
+}
+
+int Society::food_in(StoreId sid) const {
+    const Store* s = ctx_.econ->store(sid);
+    if (!s) return 0;
+    int n = 0;
+    for (const ItemStack& st : s->items)
+        if (ctx_.reg->item(st.item).nutrition > 0) n += st.count;
+    return n;
+}
+
+Vec3i Society::stage_point(const Vec3i& from, const Vec3i& objective) {
+    const float dx = (float)(from.x - objective.x), dz = (float)(from.z - objective.z);
+    const float len = std::sqrt(dx * dx + dz * dz);
+    if (len < 1.0f) return objective;
+    const float back = std::min(26.0f, len * 0.5f);
+    const int cx = objective.x + (int)std::lround(dx / len * back);
+    const int cz = objective.z + (int)std::lround(dz / len * back);
+    // Open, dry ground near that point, searched in rings.
+    for (int r = 0; r <= 8; ++r)
+        for (int oz = -r; oz <= r; ++oz)
+            for (int ox = -r; ox <= r; ++ox) {
+                if (std::max(std::abs(ox), std::abs(oz)) != r) continue;
+                const int x = cx + ox, z = cz + oz;
+                const int y = ctx_.world->surface_y(x, z);
+                if (y < 0 || std::abs(y + 1 - objective.y) > 12) continue;
+                const Vec3i p{x, y + 1, z};
+                if (ctx_.world->material(p).fluid || ctx_.world->material(p + Vec3i{0, -1, 0}).fluid) continue;
+                if (!ctx_.nav->standable(p)) continue;
+                return p;
+            }
+    return objective;
 }
 
 int Society::enlist_champions(u16 id, EventId cause) {
@@ -352,28 +389,66 @@ void Society::update_wars(Polity& p) {
         int gathered = 0;
         for (const auto& cp : ctx_.agents->all())
             if (cp && cp->alive && cp->polity == p.id && cp->drafted && cp->foot.dist2(op.rally) < 10 * 10) ++gathered;
-        if ((serving > 0 && gathered * 3 >= serving * 2) || ctx_.now - op.since > kTicksPerHour * 2) {
+        // An army does not set out into the night (half of it would fall asleep by the road).
+        if (!is_night(ctx_.now) && ((serving > 0 && gathered * 3 >= serving * 2) || ctx_.now - op.since > kTicksPerHour * 2)) {
             op.phase = 1;
             op.party = serving;
             op.lost = 0;
             op.since = ctx_.now;
         }
     }
-    // Arrival at the objective.
+    // The march ends outside the enemy's village: the army forms up there, and falls on
+    // the objective together once most have come in (or the stragglers are given up on).
     if (op.phase == 1) {
-        int there = 0;
+        int formed = 0;
         for (const auto& cp : ctx_.agents->all())
-            if (cp && cp->alive && cp->polity == p.id && cp->drafted && cp->foot.dist2(op.objective) < 16 * 16) ++there;
-        if (serving > 0 && there * 2 >= serving) {
+            if (cp && cp->alive && cp->polity == p.id && cp->drafted &&
+                (cp->foot.dist2(op.stage) < 14 * 14 || cp->foot.dist2(op.objective) < 16 * 16))
+                ++formed;
+        if (formed > 0 && op.staged_since == 0) op.staged_since = ctx_.now;
+        // Stragglers are waited for, through the night if need be.
+        const bool waited = op.staged_since && ctx_.now - op.staged_since > kTicksPerHour * 3 / 2 && !is_night(ctx_.now);
+        if (serving > 0 && (formed * 3 >= serving * 2 || waited)) {
             op.phase = 2;
             op.since = ctx_.now;
-        } else if (ctx_.now - op.since > kTicksPerDay / 2) {
+            if (op.aim != "defend") {
+                const Polity* en = polity(op.enemy);
+                Event e;
+                e.type = EventType::Battle;
+                e.severity = 4;
+                e.polity = p.id;
+                e.pos = op.objective;
+                e.causes[0] = op.event;
+                e.text = op.aim == "raid"
+                             ? strfmt("「%s」的劫掠队（%d 人）冲进了「%s」的村子", p.name.c_str(), formed, en ? en->name.c_str() : "?")
+                             : strfmt("「%s」的大军（%d 人）兵临「%s」的议事厅", p.name.c_str(), formed, en ? en->name.c_str() : "?");
+                op.event = ctx_.chron->emit(std::move(e));
+            }
+        } else if (ctx_.now - op.since > kTicksPerDay * 3 / 4) {
             op.phase = 3;  // could not get there
             op.since = ctx_.now;
         }
     }
     if (op.phase == 2) {
-        if (op.aim == "raid" && ctx_.now - op.since > kTicksPerHour) {
+        // A raid lasts until the raiders are laden or nothing is left to take nearby
+        // (after a first half hour), and at most two hours.
+        bool done = false;
+        if (op.aim == "raid" && ctx_.now - op.since > kTicksPerHour / 2) {
+            int food_left = 0;
+            for (StoreId sid : public_stores(op.enemy)) {
+                const Store* s = ctx_.econ->store(sid);
+                if (s && s->pos.dist2(op.objective) < 45 * 45) food_left += food_in(sid);
+            }
+            int present = 0, laden = 0;
+            for (const auto& cp : ctx_.agents->all()) {
+                const Character* c = cp.get();
+                if (!c || !c->alive || c->polity != p.id || !c->drafted || c->is_girl() || c->foot.dist2(op.objective) > 50 * 50) continue;
+                ++present;
+                if (ctx_.agents->raider_laden(*c)) ++laden;
+            }
+            done = food_left == 0 || present == 0 || laden * 3 >= present * 2;
+        }
+        if (op.aim == "raid" && (done || ctx_.now - op.since >= kTicksPerHour * 2)) {
             op.phase = 3;
             op.since = ctx_.now;
         } else if (op.aim == "conquest") {

@@ -2,10 +2,12 @@ class_name SpellRenderer
 extends Node3D
 ## Magic made visible. Every cast in the kernel's spell feed becomes a short effect in the
 ## caster's colours: the spell's name rising over her head, light streaming, bolts flying,
-## rings spreading over the ground, sparks, embers and motes. Pure presentation: reads the
-## feed, never changes the world.
+## rings spreading over the ground, sparks, embers and motes. Battle too: arrows in flight
+## and sparks where blows land or are parried. Pure presentation: reads the feeds, never
+## changes the world.
 
 const MAX_LIVE := 40
+const MAX_BLOW_DISTANCE := 130.0
 const MAX_DISTANCE := 220.0
 const GLOW := 1.9  # colour multiplier for rings, pillars and slashes (the scene's glow starts at 1.6)
 const SPARK := 1.35  # ...and for particles (alpha-blended, so they keep their hue in daylight)
@@ -30,6 +32,7 @@ func setup(s: IcarusSim, cam: Camera3D) -> void:
 		e["node"].queue_free()
 	_live.clear()
 	sim.take_spells()  # nothing from before the world was shown
+	sim.take_blows()
 
 
 func _process(delta: float) -> void:
@@ -43,6 +46,12 @@ func _process(delta: float) -> void:
 			continue
 		if _live.size() < MAX_LIVE:
 			_spawn(d)
+	# Battle: arrows in flight, sparks where blades meet or strike home.
+	for b in sim.take_blows():
+		var bd: Dictionary = b
+		if Vector3(bd["to"]).distance_to(cam) > MAX_BLOW_DISTANCE or _live.size() >= MAX_LIVE + 30:
+			continue
+		_blow(bd)
 	var keep: Array = []
 	for e in _live:
 		e["age"] += delta
@@ -151,6 +160,68 @@ func _spawn(d: Dictionary) -> void:
 
 
 # ------------------------------------------------------------------ building blocks
+
+# ------------------------------------------------------------------ battle
+
+func _blow(d: Dictionary) -> void:
+	var from: Vector3 = d["from"]
+	var to: Vector3 = d["to"]
+	var hit: bool = d.get("hit", false)
+	if d.get("ranged", false):
+		_arrow(from, to, hit)
+		return
+	var p := from.lerp(to, 0.6)
+	if hit:
+		_burst(p, Color(1.0, 0.72, 0.45), 10, 2.6, 160.0, Vector3(0, -7, 0), 0.3, 0.05, 0.12)
+		_burst(p, Color(0.55, 0.12, 0.1, 0.8), 6, 1.4, 120.0, Vector3(0, -6, 0), 0.35, 0.07, 0.1, false)
+	else:
+		# Parried: a bright clash of wood or metal.
+		_burst(p, Color(1.0, 0.95, 0.8), 8, 3.2, 180.0, Vector3(0, -8, 0), 0.22, 0.04, 0.05)
+
+
+## An arrow: a shaft that flies in an arc, turned along its flight, and a puff where it lands.
+func _arrow(a: Vector3, b: Vector3, hit: bool) -> void:
+	var shaft := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.035, 0.035, 0.75)
+	shaft.mesh = bm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.45, 0.32, 0.18)
+	shaft.material_override = mat
+	var fl := MeshInstance3D.new()
+	var fm := BoxMesh.new()
+	fm.size = Vector3(0.12, 0.02, 0.16)
+	fl.mesh = fm
+	var fmat := StandardMaterial3D.new()
+	fmat.albedo_color = Color(0.92, 0.9, 0.84)
+	fl.material_override = fmat
+	fl.position = Vector3(0, 0, -0.3)
+	shaft.add_child(fl)
+	add_child(shaft)
+	shaft.global_position = a
+	var dist := a.distance_to(b)
+	var flight := maxf(0.12, dist / 26.0)
+	var arc := clampf(dist * 0.08, 0.3, 2.5)
+	var end := b if hit else b + Vector3(randf_range(-1.2, 1.2), -1.0, randf_range(-1.2, 1.2))
+	var state := {"landed": false}
+	_track(shaft, flight + 0.5, func(t: float, _dt: float) -> void:
+		var age := t * (flight + 0.5)
+		var k := clampf(age / flight, 0.0, 1.0)
+		var pos := a.lerp(end, k) + Vector3(0, arc * 4.0 * k * (1.0 - k), 0)
+		var ahead := a.lerp(end, minf(1.0, k + 0.02)) + Vector3(0, arc * 4.0 * minf(1.0, k + 0.02) * (1.0 - minf(1.0, k + 0.02)), 0)
+		if not state["landed"]:
+			if ahead.distance_to(pos) > 0.001:
+				shaft.look_at_from_position(pos, ahead, Vector3.UP)
+			else:
+				shaft.global_position = pos
+		if k >= 1.0 and not state["landed"]:
+			state["landed"] = true
+			if hit:
+				_burst(end, Color(1.0, 0.75, 0.5), 8, 2.0, 150.0, Vector3(0, -6, 0), 0.3, 0.05, 0.1)
+				shaft.visible = false
+			else:
+				_burst(end, Color(0.55, 0.5, 0.42, 0.7), 8, 1.2, 60.0, Vector3(0, -2, 0), 0.5, 0.12, 0.1, false))
+
 
 func _track(node: Node3D, life: float, tick: Callable = Callable()) -> void:
 	_live.append({"node": node, "age": 0.0, "life": life, "tick": tick})

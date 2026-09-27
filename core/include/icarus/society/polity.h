@@ -128,6 +128,8 @@ struct Operation {
     bool engaged = false;    // a battle event has been recorded
     int loot = 0;            // units of food carried off (raids)
     Tick held_since = 0;     // conquest: since when no defender has stood by their hall (0: contested)
+    Vec3i stage;             // where the army forms up outside the enemy's village before the assault
+    Tick staged_since = 0;   // when the first soldiers reached it (0: nobody yet)
 };
 
 // A trade pact between two polities at peace. Each side's carriers take what it can

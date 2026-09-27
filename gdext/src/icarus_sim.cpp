@@ -44,6 +44,8 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("material_table"), &IcarusSim::material_table);
     ClassDB::bind_method(D_METHOD("take_fx"), &IcarusSim::take_fx);
     ClassDB::bind_method(D_METHOD("take_spells"), &IcarusSim::take_spells);
+    ClassDB::bind_method(D_METHOD("take_blows"), &IcarusSim::take_blows);
+    ClassDB::bind_method(D_METHOD("armies"), &IcarusSim::armies);
     ClassDB::bind_method(D_METHOD("girl_web"), &IcarusSim::girl_web);
     ClassDB::bind_method(D_METHOD("biography", "id"), &IcarusSim::biography);
     ClassDB::bind_method(D_METHOD("debates", "within_ticks"), &IcarusSim::debates);
@@ -1244,6 +1246,76 @@ Array IcarusSim::polities() const {
     if (!sim_) return out;
     for (const auto& p : sim_->society().polities())
         if (p.alive) out.push_back(polity_info(p.id));
+    return out;
+}
+
+Array IcarusSim::take_blows() {
+    Array out;
+    if (!sim_) return out;
+    for (const icarus::Agents::BlowFx& f : sim_->agents().take_blows()) {
+        Dictionary d;
+        d["from"] = Vector3(f.from.x, f.from.y, f.from.z);
+        d["to"] = Vector3(f.to.x, f.to.y, f.to.z);
+        d["ranged"] = f.ranged;
+        d["hit"] = f.hit;
+        out.push_back(d);
+    }
+    return out;
+}
+
+Array IcarusSim::armies() const {
+    Array out;
+    if (!sim_) return out;
+    const auto& soc = sim_->society();
+    for (const auto& p : soc.polities()) {
+        if (!p.alive || !p.op.active) continue;
+        const icarus::Operation& op = p.op;
+        std::vector<const icarus::Character*> men;
+        for (const auto& cp : sim_->agents().all())
+            if (cp && cp->alive && !cp->departed && cp->polity == p.id && cp->drafted) men.push_back(cp.get());
+        if (men.empty()) continue;
+        // The banner flies over the soldier with the most comrades around him.
+        const icarus::Character* mid = men.front();
+        int best = -1;
+        for (const icarus::Character* a : men) {
+            int near = 0;
+            for (const icarus::Character* b : men)
+                if (a->pos.dist_sq(b->pos) < 14.0f * 14.0f) ++near;
+            if (near > best) {
+                best = near;
+                mid = a;
+            }
+        }
+        const icarus::Polity* en = soc.polity(op.enemy);
+        const std::string enemy = en ? "「" + en->name + "」" : "敌人";
+        std::string what;
+        int formed = 0;
+        for (const icarus::Character* c : men)
+            if (c->foot.dist2(op.stage) < 14 * 14) ++formed;
+        if (op.aim == "defend") what = "守卫家园";
+        else if (op.phase == 0) what = "集结出征";
+        else if (op.phase == 1) what = formed > 0 ? icarus::strfmt("在%s村外集结（%d/%d）", enemy.c_str(), formed, (int)men.size())
+                                                   : "向" + enemy + "进军";
+        else if (op.phase == 2) what = op.aim == "raid" ? icarus::strfmt("劫掠%s · 抢得 %d 份粮食", enemy.c_str(), op.loot)
+                                                        : "围攻" + enemy + "的议事厅";
+        else what = op.aim == "raid" && op.loot > 0 ? icarus::strfmt("撤回 · 带回 %d 份粮食", op.loot) : "撤回";
+        Dictionary d;
+        d["polity"] = (int64_t)p.id;
+        d["name"] = to_gd(p.name);
+        d["color"] = col(p.color);
+        d["aim"] = to_gd(op.aim);
+        d["kind"] = String::utf8(op.aim == "raid" ? "劫掠队" : (op.aim == "conquest" ? "大军" : "守军"));
+        d["phase"] = (int64_t)op.phase;
+        d["status"] = to_gd(what);
+        d["count"] = (int64_t)men.size();
+        d["near"] = (int64_t)best;
+        d["lost"] = (int64_t)op.lost;
+        d["loot"] = (int64_t)op.loot;
+        d["pos"] = Vector3(mid->pos.x, mid->pos.y, mid->pos.z);
+        d["objective"] = Vector3((float)op.objective.x + 0.5f, (float)op.objective.y, (float)op.objective.z + 0.5f);
+        d["event"] = (int64_t)op.event;
+        out.push_back(d);
+    }
     return out;
 }
 

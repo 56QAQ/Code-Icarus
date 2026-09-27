@@ -90,6 +90,11 @@ public:
     EventId make_peace(u16 a, u16 b, const std::string& how, EventId cause);
     // A new undertaking of the army (raid / conquest) against an enemy already at war.
     void start_operation(u16 polity, u16 enemy, const std::string& aim, EventId cause);
+    // Food (units) a raid could carry off from one store.
+    int food_in(StoreId store) const;
+    // Where an army coming from `from` forms up before it falls on `objective`: open
+    // ground some way short of it on the road in.
+    Vec3i stage_point(const Vec3i& from, const Vec3i& objective);
     bool at_war(u16 a, u16 b) const;
     // Drafts up to n residents (strongest, most combative first); returns how many serve.
     int draft(u16 polity, int n, EventId cause);
