@@ -18,9 +18,10 @@ const Vec3i kDirs[4] = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
 }  // namespace
 
 bool Agents::trapped(const Character& c) const {
-    // Outside every settlement's walkable region (as of the last survey) and here now.
+    // Outside every settlement's walkable region (as of the last survey) and here now,
+    // and unable to get anywhere (being far out in open country is not being trapped).
     if (c.region != 0 || region_map_.empty() || region_map_.count(c.foot)) return false;
-    return c.needs.food < 0.8f || c.needs.water < 0.8f || !c.unreachable.empty();
+    return (c.needs.food < 0.8f || c.needs.water < 0.8f) && c.unreachable.size() >= 3;
 }
 
 bool Agents::task_escape(Character& c) {

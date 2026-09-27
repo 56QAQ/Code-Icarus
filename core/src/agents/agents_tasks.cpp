@@ -404,7 +404,7 @@ bool Agents::task_drink(Character& c) {
     const MatId WATER = ctx_.reg->m().water;
     if (t.step == 0) {
         Vec3i stand, water;
-        if (!find_water(c, stand, water)) {
+        if (!find_water(c, stand, water) && !wild_water_near(c.foot, 40, stand)) {
             day.thirsty_no_water++;
             say(c, "找不到水源");
             end_task(c, false);

@@ -51,6 +51,34 @@ bool Agents::wild_food_near(const Vec3i& from, int radius, Vec3i& out) {
     return false;
 }
 
+bool Agents::wild_water_near(const Vec3i& from, int radius, Vec3i& stand) {
+    // Any pool or stream within reach (away from the settlements' surveyed water).
+    const World& w = *ctx_.world;
+    const MatId WATER = ctx_.reg->m().water;
+    for (int r = 1; r <= radius; ++r) {
+        const int stride = r <= 12 ? 1 : 2;
+        for (int dz = -r; dz <= r; dz += stride)
+            for (int dx = -r; dx <= r; dx += (std::abs(dz) == r ? stride : 2 * r)) {
+                const int x = from.x + dx, z = from.z + dz;
+                const ColumnInfo col = w.gen().column(x, z);
+                if (!col.land && col.water_top < 0) continue;
+                for (int y = from.y + 3; y >= from.y - 6; --y) {
+                    const Voxel v = w.peek({x, y, z});
+                    if (vmat(v) == 0) continue;
+                    if (vmat(v) != WATER || vlevel(v) < 3) break;
+                    for (const Vec3i& s : {Vec3i{x + 1, y + 1, z}, Vec3i{x - 1, y + 1, z}, Vec3i{x, y + 1, z + 1},
+                                           Vec3i{x, y + 1, z - 1}, Vec3i{x, y, z}})
+                        if (ctx_.nav->standable(s)) {
+                            stand = s;
+                            return true;
+                        }
+                    break;
+                }
+            }
+    }
+    return false;
+}
+
 void Agents::generate_jobs() {
     const Registry& reg = *ctx_.reg;
     JobBoard& jobs = *ctx_.jobs;
