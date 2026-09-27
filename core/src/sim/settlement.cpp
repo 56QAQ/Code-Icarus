@@ -34,7 +34,7 @@ std::string pick_name(const Json& arr, Rng& rng, std::vector<std::string>& used)
 
 // Fell every tree whose trunk stands within radius of c (the whole tree goes: trunk and
 // the crown attached to it), so buildings are not placed into a forest.
-void clear_trees(World& w, const Registry& reg, const Vec3i& c, int radius, EventId ev) {
+void clear_trees(World& w, const Registry& reg, const Buildings& bld, const Vec3i& c, int radius, EventId ev) {
     for (int dz = -radius; dz <= radius; ++dz)
         for (int dx = -radius; dx <= radius; ++dx) {
             const int x = c.x + dx, z = c.z + dz;
@@ -43,6 +43,7 @@ void clear_trees(World& w, const Registry& reg, const Vec3i& c, int radius, Even
             for (int y = col.top - 2; y <= col.top + 16; ++y) {
                 const Vec3i p{x, y, z};
                 if (!reg.mat(w.mat(p)).trunk) continue;
+                if (bld.at(p)) break;  // a log wall, not a tree
                 std::deque<Vec3i> q{p};
                 std::set<Vec3i> seen{p};
                 int n = 0;
@@ -51,6 +52,7 @@ void clear_trees(World& w, const Registry& reg, const Vec3i& c, int radius, Even
                     q.pop_front();
                     const Material& m = reg.mat(w.mat(a));
                     if (!m.trunk && !m.foliage) continue;
+                    if (bld.at(a)) continue;  // never a building's logs or thatch
                     w.set(a, make_voxel(0), ev);
                     ++n;
                     for (int k = 0; k < 6; ++k) {
@@ -63,7 +65,7 @@ void clear_trees(World& w, const Registry& reg, const Vec3i& c, int radius, Even
             // Small plants in the way are trampled.
             const Vec3i up{x, col.top + 1, z};
             const Material& um = w.material(up);
-            if (w.mat(up) != 0 && !um.solid && !um.fluid) w.set(up, make_voxel(0), ev);
+            if (w.mat(up) != 0 && !um.solid && !um.fluid && !bld.at(up)) w.set(up, make_voxel(0), ev);
         }
 }
 
@@ -77,8 +79,11 @@ u32 place_building(SimContext& ctx, const std::string& key, int x, int z, const 
     if (std::fabs(dx) > std::fabs(dz)) rot = dx > 0 ? 3 : 1;
     else rot = dz > 0 ? 0 : 2;
     const int fw = (rot & 1) ? d->d : d->w, fd = (rot & 1) ? d->w : d->d;
-    clear_trees(w, *ctx.reg, Vec3i{x, 0, z}, std::max(fw, fd) / 2 + 3, ev);
-    const int ground = w.surface_y(x, z);
+    // Trees whose crowns would overhang it go too (a crown reaches ~4 from its trunk).
+    clear_trees(w, *ctx.reg, *ctx.buildings, Vec3i{x, 0, z}, std::max(fw, fd) / 2 + 6, ev);
+    // The ground as generated (never a leftover canopy or a boulder).
+    const ColumnInfo col = w.gen().column(x, z);
+    const int ground = col.land ? (int)col.top : w.surface_y(x, z);
     const Vec3i origin{x - fw / 2, ground + 1, z - fd / 2};
     return ctx.buildings->place_complete(key, origin, rot, pid, ev);
 }
@@ -150,10 +155,12 @@ u16 found_settlement(SimContext& ctx, const GameConfig& cfg, Rng& rng, const Sit
         const float ca = std::cos(a), sa = std::sin(a);
         return Vec3i{c.x + (int)std::lround((ux * ca - uz * sa) * r), 0, c.z + (int)std::lround((ux * sa + uz * ca) * r)};
     };
-    if (!village) clear_trees(w, reg, c, 7, ev);  // a clearing around the fire
+    if (!village) clear_trees(w, reg, *ctx.buildings, c, 7, ev);  // a clearing around the fire
     const u32 seat = place_building(ctx, village ? "hall" : "campfire", c.x, c.z, water, pid, ev);
     pol->seat = seat;
-    const Building* sb = ctx.buildings->get(seat);
+    // Looked up again whenever needed: placing more buildings may move it in memory.
+    auto sbp = [&]() { return ctx.buildings->get(seat); };
+    const Building* sb = sbp();
 
     std::vector<u32> homes;
     u32 store = 0, kitchen = 0;
@@ -177,6 +184,7 @@ u16 found_settlement(SimContext& ctx, const GameConfig& cfg, Rng& rng, const Sit
     homes.erase(std::remove(homes.begin(), homes.end(), 0u), homes.end());
 
     // What they start with.
+    sb = sbp();
     const StoreId stash = village ? (store ? ctx.buildings->get(store)->store : kNoStore) : (sb ? sb->store : kNoStore);
     auto give = [&](const char* item, int n) {
         const ItemId it = reg.find_item(item);
@@ -218,7 +226,25 @@ u16 found_settlement(SimContext& ctx, const GameConfig& cfg, Rng& rng, const Sit
 
     // Village fields: sown plots by the water, with a path to them.
     if (village) {
-        const u32 farm_id = ctx.farming->found(pid, pname + "的田地", water, 20, 40);
+        // By the site's lake, and by other water close by when that lake is small.
+        std::vector<u32> farm_ids;
+        int plots = 0;
+        std::vector<Vec3i> waters{water};
+        {
+            std::vector<std::pair<i64, Vec3i>> more;
+            for (const Vec3i& wv : w.gen().features().waters)
+                if (wv.y > 0 && wv.dist2(c) < 90 * 90 && wv.dist2(water) > 20 * 20) more.push_back({wv.dist2(c), wv});
+            std::sort(more.begin(), more.end());
+            for (const auto& [d, wv] : more) waters.push_back(wv);
+        }
+        for (size_t k = 0; k < waters.size() && plots < 36 && farm_ids.size() < 3; ++k) {
+            const u32 fid = ctx.farming->found(pid, pname + (k ? "的新田" : "的田地"), waters[k], 20, 40 - plots);
+            if (const Farm* f = ctx.farming->get(fid)) {
+                farm_ids.push_back(fid);
+                plots += (int)f->plots.size();
+            }
+        }
+        for (u32 farm_id : farm_ids)
         if (Farm* farm = ctx.farming->get(farm_id)) {
             const CoreMats& M = reg.m();
             for (Plot& p : farm->plots) {
@@ -231,11 +257,11 @@ u16 found_settlement(SimContext& ctx, const GameConfig& cfg, Rng& rng, const Sit
                     p.growth = (float)stage / 7.0f;
                 }
             }
-            path_line(ctx, sb->entrance, farm->plots.front().ground, ev);
+            path_line(ctx, sbp()->entrance, farm->plots.front().ground, ev);
         }
-        for (u32 h : homes) path_line(ctx, ctx.buildings->get(h)->entrance, sb->entrance, ev);
-        if (store) path_line(ctx, ctx.buildings->get(store)->entrance, sb->entrance, ev);
-        if (kitchen) path_line(ctx, ctx.buildings->get(kitchen)->entrance, sb->entrance, ev);
+        for (u32 h : homes) path_line(ctx, ctx.buildings->get(h)->entrance, sbp()->entrance, ev);
+        if (store) path_line(ctx, ctx.buildings->get(store)->entrance, sbp()->entrance, ev);
+        if (kitchen) path_line(ctx, ctx.buildings->get(kitchen)->entrance, sbp()->entrance, ev);
     }
 
     // People.
@@ -252,6 +278,7 @@ u16 found_settlement(SimContext& ctx, const GameConfig& cfg, Rng& rng, const Sit
         const std::string d = all_drives[rng.below((u32)all_drives.size())];
         if (std::find(drives.begin(), drives.end(), d) == drives.end()) drives.push_back(d);
     }
+    sb = sbp();
     const Vec3i gather = sb ? sb->inside : c;
     std::vector<EntityId> girls;
     for (size_t i = 0; i < 3; ++i) {

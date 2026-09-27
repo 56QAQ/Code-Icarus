@@ -148,8 +148,9 @@ void Agents::production_jobs() {
             }
         }
 
-        // Gathering: every half game hour, look for trees, stone and ore to take.
-        if (now_ % 600 != 0) continue;
+        // Gathering: every 2.4 game hours, look for trees, stone and ore to take (each
+        // polity at its own moment, so the surveys do not pile into one tick).
+        if ((now_ + (Tick)pc.id * 197) % 600 != 0) continue;
         const Building* seat = ctx_.buildings->get(pc.seat);
         if (!seat) continue;
         World& w = *ctx_.world;
@@ -185,6 +186,8 @@ void Agents::production_jobs() {
         for (int dz = -kGatherRadius; dz <= kGatherRadius; ++dz)
             for (int dx = -kGatherRadius; dx <= kGatherRadius; ++dx) {
                 if (dx * dx + dz * dz > kGatherRadius * kGatherRadius) continue;
+                // Near home every column; further out every other one (plenty to choose from).
+                if (dx * dx + dz * dz > 32 * 32 && ((dx | dz) & 1)) continue;
                 int x = c0.x + dx, z = c0.z + dz;
                 ColumnInfo col = w.gen().column(x, z);
                 if (!col.land) continue;

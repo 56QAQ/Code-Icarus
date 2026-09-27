@@ -223,6 +223,13 @@ void Decisions::girls_politics(Polity& p) {
         float d = 0.004f * compat + 0.003f * (g.persona.conformity - 0.5f) -
                   0.02f * g.persona.ambition * std::max(0.0f, my_support - support_ruler) -
                   0.004f * crisis * (1.0f - g.persona.conformity) + 0.002f * cp->affinity(p.ruler);
+        // Time heals most quarrels, and a foreign enemy draws the girls together.
+        d += 0.003f * (0.4f - g.loyalty);
+        for (const War& w : p.wars)
+            if (!w.attacker) {
+                d += 0.004f;
+                break;
+            }
         g.loyalty = clampv(g.loyalty + d, -1.0f, 1.0f);
         g.stance = g.loyalty > 0.4f ? "loyal" : (g.loyalty > 0.1f ? "critical" : (g.loyalty > -0.3f ? "defiant" : "rebel"));
         // Mana regenerates slowly.

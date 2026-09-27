@@ -189,10 +189,12 @@ Voxel World::peek(const Vec3i& p) const {
     if (!c.vox.empty()) return c.vox[li];
     // Dormant compressed cell: decode through a small cache.
     const size_t ci = cell_index(c.coord);
-    for (auto& e : peek_cache_)
-        if (e.cell == ci && e.version == c.version && !e.data.empty()) return e.data[li];
-    auto& e = peek_cache_[peek_cache_next_];
-    peek_cache_next_ = (peek_cache_next_ + 1) % peek_cache_.size();
+    const size_t set = (ci * 0x9E3779B1u >> 7) % kPeekSets;
+    PeekCacheEntry* ways = &peek_cache_[set * kPeekWays];
+    for (size_t k = 0; k < kPeekWays; ++k)
+        if (ways[k].cell == ci && ways[k].version == c.version && !ways[k].data.empty()) return ways[k].data[li];
+    auto& e = ways[peek_cache_next_[set]];
+    peek_cache_next_[set] = (u8)((peek_cache_next_[set] + 1) % kPeekWays);
     e.cell = ci;
     e.version = c.version;
     e.data.resize(kCellVol);

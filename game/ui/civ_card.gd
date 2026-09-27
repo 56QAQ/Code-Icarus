@@ -285,18 +285,59 @@ func _refresh_war(d: Dictionary) -> void:
 	var wars: Array = d.get("wars", [])
 	var pacts: Array = d.get("pacts", [])
 	var op: Dictionary = d.get("op", {})
-	var sig := var_to_str(wars) + var_to_str(op) + var_to_str(pacts)
+	var dip: Array = d.get("diplomacy", [])
+	var sig := var_to_str(wars) + var_to_str(op) + var_to_str(pacts) + var_to_str(dip)
 	if sig == _war_sig:
 		return
 	_war_sig = sig
 	for c in _war.get_children():
 		c.queue_free()
-	_war.visible = not wars.is_empty() or op.get("active", false) or not pacts.is_empty()
+	_war.visible = not wars.is_empty() or op.get("active", false) or not pacts.is_empty() or not dip.is_empty()
+	# Standing with each neighbour: one compact line (alliance / vassalage / truce /
+	# grievance), with relative strength.
+	var mine := float(d.get("strength", 1.0))
+	for x in dip:
+		var tags := PackedStringArray()
+		var tint := UITheme.TEXT_DIM
+		if x["allied"]:
+			tags.append("同盟")
+			tint = UITheme.GOOD
+		if x["vassal"]:
+			tags.append("我方附庸")
+			tint = UITheme.GOOD
+		if x["overlord"]:
+			tags.append("宗主")
+			tint = UITheme.WARN
+		if float(x["truce_days"]) > 0.0:
+			tags.append("停战 %.0f 天" % ceilf(float(x["truce_days"])))
+		if x["at_war"]:
+			tint = UITheme.BAD
+		elif float(x["grievance"]) > 0.3:
+			tags.append("积怨")
+			tint = UITheme.WARN
+		var att := float(x["attitude"])
+		var mood := "友好" if att > 0.3 else ("敌视" if att < -0.3 else "冷淡")
+		var ratio := mine / maxf(1.0, float(x["their_strength"]))
+		var line := "「%s」%s · 兵力比 %.1f%s" % [x["name"], mood, ratio, ("" if tags.is_empty() else " · " + " · ".join(tags))]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var dot := UIIcon.new("dot", 10)
+		dot.color = x["color"]
+		dot.custom_minimum_size = Vector2(12, 12)
+		row.add_child(dot)
+		row.add_child(UITheme.label(line, 12, tint))
+		row.tooltip_text = "关系 %+.2f，积怨 %.2f（边境摩擦、劫掠、阵亡会加深积怨；停战与结盟会缓和）" % [att, float(x["grievance"])]
+		_war.add_child(row)
 	var aims := {"raid": "劫掠", "conquest": "征服", "defend": "防御"}
 	for w in wars:
 		var what := ("向「%s」发动%s" % [w["enemy_name"], aims.get(w["aim"], "战争")]) if w["attacker"] else ("抵御「%s」的进攻" % w["enemy_name"])
-		_war.add_child(_relation("swords", UITheme.BAD, w["enemy_color"], "%s · 歼%d 损%d" % [what, w["kills"], w["losses"]],
-			"自 %s 起。点击查看宣战的因果链" % w["since"], w["event"]))
+		var tally := "%s · 歼%d 损%d" % [what, w["kills"], w["losses"]]
+		if int(w.get("loot", 0)) > 0:
+			tally += " · 劫粮%d" % int(w["loot"])
+		if int(w.get("razed", 0)) > 0:
+			tally += " · 毁屋%d" % int(w["razed"])
+		_war.add_child(_relation("swords", UITheme.BAD, w["enemy_color"], tally,
+			"自 %s 起。战况 %+.1f（杀敌、劫掠、毁屋减去阵亡）。点击查看宣战的因果链" % [w["since"], float(w.get("score", 0.0))], w["event"]))
 	for t in pacts:
 		var blocked: bool = t["blocked"]
 		var line := "与「%s」通商 · %s" % [t["partner_name"], "商路受阻" if blocked else "往来 %d 次" % t["trips"]]

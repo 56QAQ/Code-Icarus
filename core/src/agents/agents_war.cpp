@@ -42,10 +42,17 @@ void Agents::strike(Character& attacker, Character& target, float power, const s
     target.affinity_ref(attacker.id) = clampv(target.affinity(attacker.id) - 0.2f, -1.0f, 1.0f);
     if (was_alive && !target.alive) {
         if (ap)
-            if (War* w = ap->war_with(target.polity)) w->kills++;
+            if (War* w = ap->war_with(target.polity)) {
+                w->kills++;
+                w->active_at = now_;
+            }
         if (tp) {
-            if (War* w = tp->war_with(attacker.polity)) w->losses++;
+            if (War* w = tp->war_with(attacker.polity)) {
+                w->losses++;
+                w->active_at = now_;
+            }
             if (tp->op.active && target.drafted) tp->op.lost++;
+            ctx_.society->add_grievance(tp->id, attacker.polity, 0.05f);
         }
         attacker.skills[kCombat] = std::min(1.0f, attacker.skills[kCombat] + 0.03f);
     }
@@ -67,6 +74,14 @@ bool Agents::task_fight(Character& c) {
     // defenders also face the enemy's magical girls.
     const bool raiding = op.active && op.aim == "raid";
     Character* foe = nearest_enemy(c, op.active && op.phase == 3 ? 6.0f : 18.0f, true, raiding);
+    // Kept on a leash: an army on campaign does not chase a fleeing enemy across the
+    // countryside, only fights near its objective (or whoever is right upon it).
+    if (foe && op.active && (op.phase == 1 || op.phase == 2)) {
+        const Vec3f anchor((float)op.objective.x, (float)op.objective.y, (float)op.objective.z);
+        const bool near_objective = foe->pos.dist_sq(anchor) < 30.0f * 30.0f;
+        const bool upon_us = foe->pos.dist_sq(c.pos) < 6.0f * 6.0f;
+        if (!near_objective && !upon_us) foe = nullptr;
+    }
     if (foe) {
         if (!op.engaged && op.active) {
             Event e;
@@ -129,10 +144,40 @@ bool Agents::task_fight(Character& c) {
                     if (ctx_.reg->item(st.item).nutrition <= 0) continue;
                     float unit = std::max(0.1f, ctx_.reg->item(st.item).weight);
                     i32 room = (i32)std::floor((carry_capacity(c) + 4.0f - carried_weight(c)) / unit);
-                    if (room > 0) p->op.loot += ctx_.econ->transfer(sid, c.inv, st.item, std::min(room, st.count));
+                    if (room > 0) {
+                        const i32 took = ctx_.econ->transfer(sid, c.inv, st.item, std::min(room, st.count));
+                        p->op.loot += took;
+                        if (War* w = p->war_with(op.enemy)) w->loot += took;
+                    }
                 }
             }
             say(c, "搬走敌人的粮食");
+        }
+        // Besiegers with nobody left to fight break into the enemy's buildings.
+        if (op.phase == 2 && op.aim == "conquest" && c.foot.dist2(op.objective) < 12 * 12 && now_ >= t.until) {
+            Vec3i hit;
+            bool found = false;
+            for (int dy = 0; dy <= 2 && !found; ++dy)
+                for (int dz = -2; dz <= 2 && !found; ++dz)
+                    for (int dx = -2; dx <= 2 && !found; ++dx) {
+                        const Vec3i q = c.foot + Vec3i{dx, dy, dz};
+                        const u32 bid = ctx_.buildings->at(q);
+                        const Building* b = bid ? ctx_.buildings->get(bid) : nullptr;
+                        if (!b || b->polity != op.enemy || !ctx_.world->material(q).solid) continue;
+                        hit = q;
+                        found = true;
+                    }
+            if (found) {
+                t.until = now_ + (c.tool != kNoItem && ctx_.reg->item(c.tool).tool_kind == "hammer" ? 30 : 45);
+                c.yaw = std::atan2((float)hit.x + 0.5f - c.pos.x, (float)hit.z + 0.5f - c.pos.z);
+                ctx_.world->set(hit, make_voxel(0), p->op.event);
+                if (War* w = p->war_with(op.enemy)) w->razed++;
+                say(c, "攻打敌人的房屋");
+                return true;
+            }
+            // Nothing within reach: close in on the enemy's hall.
+            if (const Polity* en = ctx_.society->polity(op.enemy))
+                if (const Building* hall = ctx_.buildings->get(en->seat)) goal = hall->inside;
         }
         // Back home with plunder: into our own stores.
         if (op.phase == 3 && c.foot.dist2(op.rally) < 6 * 6)

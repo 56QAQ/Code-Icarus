@@ -91,10 +91,27 @@ struct Project {
 struct War {
     u16 enemy = 0;
     bool attacker = false;
-    std::string aim;         // raid / conquest (attacker), defend
+    std::string aim;         // raid / conquest (attacker), defend, ally (joined for an ally)
     Tick since = 0;
     EventId event = 0;       // declaration
     int kills = 0, losses = 0;
+    int loot = 0;            // food carried off from them
+    int razed = 0;           // cubes of their buildings broken
+    int refused = 0;         // our demands they turned down
+    Tick last_offer = 0;     // our last offer of peace
+    Tick active_at = 0;      // the last fighting, raiding or marching in this war
+    // How the war stands for us: blood, plunder and ruin.
+    float score() const { return (float)(kills - losses) + 0.1f * (float)loot + 0.15f * (float)razed; }
+};
+
+// How a polity stands with another beyond war and trade.
+struct Diplo {
+    u16 other = 0;
+    Tick truce_until = 0;    // no war may be declared on them before this
+    bool allied = false;     // each defends the other
+    Tick allied_since = 0;
+    float grievance = 0;     // raids suffered, trespass on our land, dead kin (decays)
+    Tick last_incident = 0;  // the last border incident noted
 };
 
 // The army's current undertaking (at most one per polity).
@@ -143,6 +160,10 @@ struct Polity {
     std::vector<War> wars;
     Operation op;
     std::vector<TradePact> pacts;
+    std::vector<Diplo> diplo;
+    u16 overlord = 0;         // a vassal pays tribute to its overlord and follows it to war
+    std::vector<Vec3i> outposts;  // new villages founded away from the seat
+    Tick tribute_next = 0;    // when the next tribute is due (vassals)
     std::vector<std::string> techs;
     std::vector<std::pair<std::string, float>> research;
     std::vector<Crisis> crises;
@@ -187,6 +208,22 @@ struct Polity {
         for (auto& t : pacts)
             if (t.partner == other) return &t;
         return nullptr;
+    }
+    Diplo& diplo_ref(u16 other) {
+        for (auto& d : diplo)
+            if (d.other == other) return d;
+        diplo.push_back(Diplo{});
+        diplo.back().other = other;
+        return diplo.back();
+    }
+    const Diplo* diplo_of(u16 other) const {
+        for (auto& d : diplo)
+            if (d.other == other) return &d;
+        return nullptr;
+    }
+    bool allied_with(u16 other) const {
+        const Diplo* d = diplo_of(other);
+        return d && d->allied;
     }
     float attitude_to(u16 other) const {
         for (auto& a : attitude)

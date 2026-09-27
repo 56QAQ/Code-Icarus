@@ -146,6 +146,9 @@ private:
     // Far from everyone animals walk on the generator's terrain heights (cheap, and
     // nobody sees them brush through a tree); near people they see every cube.
     mutable bool rough_ = false;
+    // Animals that threaten people this tick (pos, radius), built on first use in a tick.
+    mutable std::vector<std::pair<Vec3f, float>> threats_;
+    mutable Tick threats_at_ = ~0ull;
 };
 
 }  // namespace icarus

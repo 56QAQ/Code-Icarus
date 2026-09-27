@@ -177,8 +177,11 @@ private:
         u32 version = 0;
         std::vector<Voxel> data;
     };
-    mutable std::array<PeekCacheEntry, 8> peek_cache_;
-    mutable size_t peek_cache_next_ = 0;
+    // Decoded dormant cells for peek (up to 16 MB): 64 sets of 4 ways (a cell maps to one set), each
+    // set replacing round robin. Looking only: nothing here is simulation state.
+    static constexpr size_t kPeekSets = 64, kPeekWays = 4;
+    mutable std::array<PeekCacheEntry, kPeekSets * kPeekWays> peek_cache_;
+    mutable std::array<u8, kPeekSets> peek_cache_next_{};
 };
 
 }  // namespace icarus

@@ -490,6 +490,37 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         }
         O.push_back(o);
     }
+    // Expansion: once the home village has grown, a new one by distant water. It widens
+    // the land but brings the borders of others closer.
+    if (p.has_tech("farming") && now_ > p.founded + kTicksPerDay * 3 && p.outposts.size() < 3 && residents >= 16 &&
+        !home_def.empty()) {
+        bool busy = false;
+        for (const Project& pr : ctx_.society->projects())
+            if (pr.alive && pr.status == 0 && pr.polity == p.id && pr.title.find("新村") != std::string::npos) busy = true;
+        Vec3i center, water;
+        const Building* seat = ctx_.buildings->get(p.seat);
+        if (!busy && seat && ctx_.society->outpost_site(p.id, center, water)) {
+            static const char* dirs[] = {"东", "东南", "南", "西南", "西", "西北", "北", "东北"};
+            const float ang = std::atan2((float)(center.z - seat->entrance.z), (float)(center.x - seat->entrance.x));
+            const int oct = ((int)std::lround(ang / 0.7853982f) + 8) % 8;
+            const int dist = (int)std::sqrt((double)center.dist2(seat->entrance));
+            int plots = 0;
+            for (const Farm& f : ctx_.farming->all())
+                if (f.alive && f.polity == p.id) plots += (int)f.plots.size();
+            DecisionOption o = make("found_outpost", strfmt("在%s方约 %d 步外的水边开拓新村落", dirs[oct], dist),
+                                    "派人去远处建屋开田，扩大国土、养活更多的人；新村离别国更近，边境也会更紧张。",
+                                    {{kGrowth, 1.0f}, {kFoodSecurity, 0.4f}, {kSelfPower, 0.3f}, {kRisk, 0.2f}, {kFrugality, -0.3f}},
+                                    act("found_outpost"));
+            Json cj = Json::array(), wj = Json::array();
+            for (int v : {center.x, center.y, center.z}) cj.push(v);
+            for (int v : {water.x, water.y, water.z}) wj.push(v);
+            o.action.set("center", cj);
+            o.action.set("water", wj);
+            o.action.set("def", home_def);
+            o.bias += (beds < residents ? 0.2f : 0.0f) + (plots < residents * 2 ? 0.25f : 0.0f);
+            O.push_back(o);
+        }
+    }
     // Once people know how to farm: the first fields, sown with gathered wild grain.
     if (p.has_tech("farming")) {
         int plots = 0;
@@ -707,12 +738,24 @@ void Decisions::build_stance_options(Decision& d, Polity& p, Character& girl) {
                                 {{kSelfPower, 0.9f}, {kCooperation, -0.9f}, {kRisk, 0.7f}, {kOrder, -0.3f}, {kGrowth, 0.2f}, {kFairness, 0.2f}},
                                 act("secede"));
         o.facts.set("followers", followers);
-        if (followers < 4) {
+        int residents = 0;
+        for (auto& rp : ctx_.agents->all())
+            if (rp && rp->alive && !rp->departed && !rp->is_girl() && rp->polity == p.id) ++residents;
+        bool defending = false;
+        for (const War& w : p.wars)
+            if (!w.attacker) defending = true;
+        if (followers < std::max(4, residents / 4)) {
             o.feasible = false;
             o.why_not = "追随者太少";
-        } else if (g.loyalty > -0.25f) {
+        } else if (g.loyalty > -0.4f) {
             o.feasible = false;
             o.why_not = "她尚未与统治者决裂";
+        } else if (now_ < p.founded + kTicksPerDay * 4 || residents < 12) {
+            o.feasible = false;
+            o.why_not = "国家初立、人口尚少，分裂只会两败俱伤";
+        } else if (defending && g.loyalty > -0.7f) {
+            o.feasible = false;
+            o.why_not = "外敌当前，不宜内讧";
         }
         O.push_back(o);
     }
@@ -732,6 +775,12 @@ void Decisions::build_stance_options(Decision& d, Polity& p, Character& girl) {
         if (followers < 4 || chance < 0.25f) {
             o.feasible = false;
             o.why_not = "实力不足";
+        } else if (now_ < p.founded + kTicksPerDay * 3) {
+            o.feasible = false;
+            o.why_not = "国家初立，人心未定";
+        } else if (!p.reigns.empty() && now_ < p.reigns.back().from + kTicksPerDay * 3) {
+            o.feasible = false;
+            o.why_not = "新君初立，人心思定";
         } else if (g.loyalty > -0.3f) {
             o.feasible = false;
             o.why_not = "她还没有到要推翻统治者的地步";
@@ -1024,6 +1073,46 @@ void Decisions::execute(Decision& d) {
         } else {
             d.note = "找不到合适的建址";
         }
+    } else if (what == "found_outpost") {
+        const Json& cj = a["center"];
+        const Json& wj = a["water"];
+        const Vec3i center{cj[0].as_int(), cj[1].as_int(), cj[2].as_int()};
+        const Vec3i water{wj[0].as_int(), wj[1].as_int(), wj[2].as_int()};
+        Event e;
+        e.type = EventType::Construction;
+        e.severity = 4;
+        e.actor = g->id;
+        e.polity = p->id;
+        e.pos = center;
+        e.causes[0] = cause;
+        e.text = "「" + p->name + "」" + o.title;
+        const EventId ev = ctx_.chron->emit(std::move(e));
+        // Homes and a storehouse for the settlers, and fields by the water.
+        std::vector<std::string> defs{a.str("def"), a.str("def")};
+        if (p->has_tech("storage")) defs.push_back("storehouse");
+        int started = 0;
+        for (const std::string& def : defs) {
+            Vec3i origin;
+            u8 rot = 0;
+            if (!ctx_.buildings->find_site(def, center, 26, origin, rot)) continue;
+            Project pr;
+            pr.polity = p->id;
+            pr.kind = "construct";
+            pr.title = "新村：" + (ctx_.buildings->def(def) ? ctx_.buildings->def(def)->name : def);
+            pr.sponsor = g->id;
+            pr.cause = ev;
+            pr.decision = d.id;
+            pr.target = origin;
+            pr.priority = 1.1f;
+            const u32 pid = ctx_.society->add_project(pr);
+            const u32 bid = ctx_.buildings->start_site(def, origin, rot, p->id, pid);
+            if (Project* prp = ctx_.society->project(pid)) prp->building = bid;
+            if (!d.project) d.project = pid;
+            ++started;
+        }
+        const u32 fid = ctx_.farming->found(p->id, p->name + "新村的田地", water, 18, 24);
+        p->outposts.push_back(center);
+        if (!started && !fid) d.note = "找不到合适的建址";
     } else if (what == "expand_farm") {
         u32 f = polity_farm(ctx_, p->id);
         int n = ctx_.farming->expand(f, a.integer("n", 16));

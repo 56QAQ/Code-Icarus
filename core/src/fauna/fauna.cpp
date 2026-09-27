@@ -4,7 +4,9 @@
 #include <cmath>
 
 #include "icarus/agents/agents.h"
+#include "icarus/economy/buildings.h"
 #include "icarus/economy/economy.h"
+#include "icarus/society/society.h"
 #include "icarus/sim/chronicle.h"
 #include "icarus/sim/clock.h"
 #include "icarus/util/log.h"
@@ -343,11 +345,27 @@ void Fauna::think(Animal& a, bool near) {
         if (a.attacker)
             if (const Character* at = ctx_.agents->get(a.attacker))
                 if (at->alive && at->pos.dist_sq(a.pos) < 14.0f * 14.0f && now_ < a.state_until + 200) c = at;
-        if (!c && s.temper == Temper::Territorial && s.guard > 0) c = nearest_person(a.pos, s.guard);
-        // Starving wolves go for someone alone at night.
-        if (!c && s.temper == Temper::Predator && a.hunger > 1.2f && is_night(now_)) {
+        // A bear guards its ground in the wild, not among the houses (it keeps away from them).
+        if (!c && s.temper == Temper::Territorial && s.guard > 0) {
+            c = nearest_person(a.pos, s.guard);
+            bool settled = false;
+            if (c)
+                for (const Polity& pol : ctx_.society->polities())
+                    if (pol.alive)
+                        if (const Building* seat = ctx_.buildings->get(pol.seat); seat && seat->entrance.dist2(c->foot) < 45 * 45)
+                            settled = true;
+            if (settled) c = nullptr;
+        }
+        // Starving wolves go for someone alone at night, away from the fires and houses.
+        if (!c && s.temper == Temper::Predator && a.hunger > 1.6f && is_night(now_)) {
             const Character* p = nearest_person(a.pos, 20.0f);
-            if (p && !p->is_girl()) {
+            bool settled = false;
+            if (p)
+                for (const Polity& pol : ctx_.society->polities())
+                    if (pol.alive)
+                        if (const Building* seat = ctx_.buildings->get(pol.seat); seat && seat->entrance.dist2(p->foot) < 45 * 45)
+                            settled = true;
+            if (p && !p->is_girl() && !settled) {
                 bool alone = true;
                 for (const auto& cp : ctx_.agents->all())
                     if (cp && cp.get() != p && cp->alive && !cp->departed && cp->pos.dist_sq(p->pos) < 64.0f) alone = false;
@@ -667,17 +685,25 @@ u32 Fauna::find_prey(const Vec3i& from, int radius, bool dangerous_too) const {
 }
 
 float Fauna::threat_at(const Vec3f& p) const {
+    // The few animals that threaten anyone, listed once per tick.
+    if (threats_at_ != ctx_.now) {
+        threats_at_ = ctx_.now;
+        threats_.clear();
+        for (const Animal& a : animals_) {
+            if (!a.alive) continue;
+            const SpeciesDef& s = species_[a.species];
+            float radius = 0.0f;
+            if (a.state == AnimalState::Attack) radius = 10.0f;
+            else if (s.temper == Temper::Territorial) radius = s.guard + 3.0f;
+            else if (s.temper == Temper::Predator && a.state == AnimalState::Chase && a.target_char) radius = 14.0f;
+            if (radius > 0.0f) threats_.push_back({a.pos, radius});
+        }
+    }
     float worst = 0.0f;
-    for (const Animal& a : animals_) {
-        if (!a.alive) continue;
-        const SpeciesDef& s = species_[a.species];
-        float radius = 0.0f;
-        if (a.state == AnimalState::Attack) radius = 10.0f;
-        else if (s.temper == Temper::Territorial) radius = s.guard + 3.0f;
-        else if (s.temper == Temper::Predator && a.state == AnimalState::Chase && a.target_char) radius = 14.0f;
-        if (radius <= 0.0f) continue;
-        const float d = std::sqrt(a.pos.dist_sq(p));
-        if (d < radius) worst = std::max(worst, 1.0f - d / radius);
+    for (const auto& [at, radius] : threats_) {
+        const float d2 = at.dist_sq(p);
+        if (d2 >= radius * radius) continue;
+        worst = std::max(worst, 1.0f - std::sqrt(d2) / radius);
     }
     return worst;
 }

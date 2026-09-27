@@ -211,6 +211,7 @@ private:
     // Walkable regions flooded from settlement anchors. Rebuilt when event-driven terrain
     // changes happen (or daily after minor settling); saved so reloads stay deterministic.
     std::unordered_map<Vec3i, u16, Vec3iHash> region_map_;
+    std::vector<u8> region_open_;  // per region id: 1 if its flood was cut short (may reach further)
     std::vector<Vec3i> region_anchors_;
     Tick region_built_ = 0;
     void refresh_water_spots();

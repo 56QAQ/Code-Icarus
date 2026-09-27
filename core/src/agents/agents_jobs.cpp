@@ -530,7 +530,13 @@ void Agents::generate_jobs() {
                 if (j.alive && j.type == JobType::Hunt && j.polity == pc.id) ++open;
             const int max_open = std::max(1, people / 5);
             while (open < max_open) {
-                const u32 prey = ctx_.fauna->find_prey(home, 100, pc.has_tech("hunting_weapons"));
+                // Boars and bears only with proper spears or bows to hand.
+                int arms = 0;
+                for (StoreId sid : ctx_.society->public_stores(pc.id))
+                    if (const Store* st = ctx_.econ->store(sid))
+                        for (const ItemStack& is : st->items)
+                            if (reg.item(is.item).has_tag("hunting") && reg.item(is.item).power >= 0.07f) arms += is.count;
+                const u32 prey = ctx_.fauna->find_prey(home, 100, pc.has_tech("hunting_weapons") && arms >= 2);
                 Animal* a = ctx_.fauna->get(prey);
                 if (!a) break;
                 Job& j = add(JobType::Hunt, pc.id, a->foot, want_food ? 1.05f : 0.9f);

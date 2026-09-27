@@ -12,7 +12,7 @@
   "start_eras": {
     "wild": ["gathering", "fire"],
     "tribal": ["gathering", "fire", "stone_tools", "hunting", "shelter", "hide_working"],
-    "village": ["gathering", "fire", "stone_tools", "hunting", "shelter", "hide_working", "weaving", "farming", "thatching", "storage"]
+    "village": ["gathering", "fire", "stone_tools", "hunting", "shelter", "hide_working", "weaving", "farming", "thatching", "storage", "irrigation"]
   },
   "techs": [
     {"key": "gathering", "name": "采集", "era": 0, "cost": 0, "desc": "采集野果、蘑菇、野麦与草秆。"},

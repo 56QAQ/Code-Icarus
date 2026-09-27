@@ -1189,10 +1189,36 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
         t["since"] = to_gd(icarus::format_time_zh(w.since));
         t["kills"] = w.kills;
         t["losses"] = w.losses;
+        t["loot"] = w.loot;
+        t["razed"] = w.razed;
+        t["score"] = w.score();
         t["event"] = (int64_t)w.event;
         wars.push_back(t);
     }
     d["wars"] = wars;
+    // Standing with the others: strength, grievances, truces, alliances, vassals.
+    d["strength"] = soc.strength(p->id);
+    Array dip;
+    for (const auto& o : soc.polities()) {
+        if (!o.alive || o.id == p->id) continue;
+        Dictionary x;
+        x["other"] = o.id;
+        x["name"] = to_gd(o.name);
+        x["color"] = col(o.color);
+        x["attitude"] = p->attitude_to(o.id);
+        const icarus::Diplo* dd = p->diplo_of(o.id);
+        x["grievance"] = dd ? dd->grievance : 0.0f;
+        x["allied"] = dd && dd->allied;
+        const icarus::Tick now = sim_->now();
+        x["truce_days"] = dd && dd->truce_until > now ? (float)(dd->truce_until - now) / (float)icarus::kTicksPerDay : 0.0f;
+        x["overlord"] = p->overlord == o.id;   // we are their vassal
+        x["vassal"] = o.overlord == p->id;     // they are ours
+        x["at_war"] = p->war_with(o.id) != nullptr;
+        x["their_strength"] = soc.strength(o.id);
+        dip.push_back(x);
+    }
+    d["diplomacy"] = dip;
+    d["outposts"] = (int64_t)p->outposts.size();
     Array pacts;
     for (const auto& t : p->pacts) {
         Dictionary x;

@@ -42,7 +42,10 @@ public:
     int neighbors(const Vec3i& p, Vec3i* out, float* cost);
     // Breadth-first flood over walkable moves from seed, within an xz radius; labels every
     // reached position with id (positions already labelled are not revisited).
-    int flood(const Vec3i& seed, int radius, int max_nodes, std::unordered_map<Vec3i, u16, Vec3iHash>& label, u16 id);
+    // `open` is set when the flood was cut short (radius or node limit): places beyond it
+    // may still be reachable.
+    int flood(const Vec3i& seed, int radius, int max_nodes, std::unordered_map<Vec3i, u16, Vec3iHash>& label, u16 id,
+              bool* open = nullptr);
 
     // Called with the world change journal: flags changes that alter walkability
     // (solid/passable) so cached reachability can be reused while nothing changed.

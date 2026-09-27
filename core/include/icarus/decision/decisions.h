@@ -125,6 +125,8 @@ public:
     }
     // Levels a girl up for the experience she has (new spells come with levels).
     void level_ups(Character& g, EventId cause);
+    // Allies (and the overlord) of an attacked polity are asked to come to its aid.
+    void call_allies(u16 defender, u16 attacker, EventId cause);
 
     void save(BinWriter& w) const;
     void load(BinReader& r);
@@ -144,7 +146,15 @@ private:
     void build_diplomacy_options(Decision& d, Polity& p, Polity& other);
     void build_war_options(Decision& d, Polity& p, War& w);
     void build_defense_options(Decision& d, Polity& p, const Crisis& c);
-    void build_peace_options(Decision& d, Polity& p, u16 from);
+    void build_peace_options(Decision& d, Polity& p, u16 from, const Json& terms);
+    // Offers of peace on various terms (plain, reparations either way, submission).
+    void add_peace_offers(Decision& d, Polity& p, u16 enemy, bool pleading);
+    void build_alliance_options(Decision& d, Polity& p, u16 from);
+    void build_submission_options(Decision& d, Polity& p, u16 from);
+    void build_ally_call_options(Decision& d, Polity& p, u16 ally, u16 aggressor);
+    // Opens a decision for the ruler of `to` built by `build` (offers from abroad).
+    template <class F>
+    void offer_to(u16 to, EntityId petitioner, const std::string& kind, const std::string& topic, EventId cause, F build);
     void build_trade_offer_options(Decision& d, Polity& p, u16 from);
     bool execute_war(Decision& d, const DecisionOption& o, Polity& p, Character& g);
     void consider_foreign(Polity& p, Character& ruler);

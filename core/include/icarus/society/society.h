@@ -95,6 +95,35 @@ public:
     int draftable(u16 polity) const;  // residents fit to serve who are not yet soldiers
     // The winner absorbs the loser: people, fields, buildings and stores change hands.
     void annex(u16 winner, u16 loser, EventId cause, const std::string& how = "");
+
+    // Strategy (strategy.cpp): how strong a polity is in the field, and how a war on a
+    // neighbour looks from here.
+    struct Assessment {
+        float ours = 0, theirs = 0, ratio = 1;  // fighting strength (theirs with allies)
+        float motive = 0;       // grievance, hunger against their plenty, rivalry
+        float opportunity = 0;  // their famine, unrest, other wars
+        int armed = 0;          // weapons for our fighters
+        bool settled = true;    // both past the first days of building up
+        bool truce = false;     // a truce still holds
+        std::string why;        // in words, for the decision
+    };
+    float strength(u16 polity) const;
+    Assessment assess(u16 us, u16 them) const;
+    // Daily: grievances along the borders, alliances that sour, tribute that falls due.
+    void update_diplomacy(Polity& p);
+    void set_truce(u16 a, u16 b, float days);
+    void make_alliance(u16 a, u16 b, EventId cause);
+    void end_alliance(u16 a, u16 b, const std::string& why, EventId cause);
+    // Food carried from one polity's stores to another's (tribute, reparations); returns
+    // the units sent on their way.
+    i32 send_tribute(u16 from, u16 to, i32 food, const std::string& why, EventId cause);
+    void make_vassal(u16 vassal, u16 overlord, EventId cause);
+    void add_grievance(u16 who, u16 against, float amount);
+    // A place for a new village: water 45-140 cubes from the seat, clear of everyone's
+    // buildings. Returns false when there is none.
+    bool outpost_site(u16 polity, Vec3i& center, Vec3i& water) const;
+    // How close (cubes) the nearest buildings of two polities are.
+    int border_distance(u16 a, u16 b) const;
     // Trade.
     TradeBook trade_book(u16 polity) const;
     // Goods `from` would carry to `to` (an item it spares that the other wants, or one
@@ -110,7 +139,7 @@ public:
     void trade_road_blocked(u16 from, u16 to);
     // Aid: food `from` can spare for a hungry `to` (kNoItem if none), and its delivery.
     ItemId aid_food(u16 from, u16 to, i32* amount = nullptr) const;
-    void aid_delivered(u16 from, u16 to, ItemId item, i32 n, EntityId carrier, EventId cause);
+    void aid_delivered(u16 from, u16 to, ItemId item, i32 n, EntityId carrier, EventId cause, bool tribute = false);
     void refresh_passives(Polity& p);
     // Set once one polity holds the whole island after there had been several.
     EventId unification_event() const { return unification_; }

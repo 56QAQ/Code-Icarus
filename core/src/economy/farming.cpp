@@ -200,7 +200,7 @@ u32 Farming::found(u16 polity, const std::string& name, const Vec3i& near, int r
                 if (is_taken(g)) continue;
                 Plot probe;
                 probe.ground = g;
-                if (!check_irrigation(probe)) continue;
+                if (!check_irrigation(probe, irrigation_bonus ? irrigation_bonus(polity) : 0)) continue;
                 grounds.push_back(g);
                 taken.push_back(g);
             }
@@ -233,7 +233,7 @@ int Farming::expand(u32 farm_id, int n) {
             if (w_.material(g + Vec3i{0, 1, 0}).solid) continue;
             Plot probe;
             probe.ground = g;
-            if (!check_irrigation(probe)) continue;
+            if (!check_irrigation(probe, irrigation_bonus ? irrigation_bonus(f->polity) : 0)) continue;
             Plot p;
             p.ground = g;
             f->plots.push_back(p);

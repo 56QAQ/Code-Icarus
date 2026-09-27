@@ -481,7 +481,15 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
                         if (it->second == rf->second) same = true;
                         else other = true;
                     }
-            if (!same) budget = other ? 0 : 6000;
+            // Another survey region is truly out of reach only when both floods ran their
+            // course; the edge of a survey says nothing (settlements far apart).
+            if (!same) {
+                u16 gl = 0;
+                for (int dy = -3; dy <= 2 && !gl; ++dy)
+                    if (auto it = region_map_.find(goal + Vec3i{0, dy, 0}); it != region_map_.end()) gl = it->second;
+                auto open = [&](u16 id) { return id < region_open_.size() && region_open_[id]; };
+                budget = !other ? 6000 : (open(rf->second) && (gl == 0 || open(gl)) ? 60000 : 0);
+            }
         }
         if (budget == 0 || !nav.find_path(c.foot, goal, adjacent_ok, c.path, budget)) {
             blacklist(c, goal, kTicksPerHour * 3);
@@ -858,6 +866,7 @@ void Agents::save(BinWriter& w) const {
     // append fields, so older loaders read what they know.
     w.varu(kCharBlockVersion);
     w.varu(chars_.size());
+    // (region_open_ follows the character block, see below)
     for (size_t i = 1; i < chars_.size(); ++i) {
         const Character& c = *chars_[i];
         w.u16v(c.clothes);
@@ -870,6 +879,8 @@ void Agents::save(BinWriter& w) const {
         w.u64v(c.last_child);
         w.u64v(c.girl ? c.girl->awakened : 0);
     }
+    w.varu(region_open_.size());
+    for (u8 o : region_open_) w.u8v(o);
     w.end_section(sec);
 }
 
@@ -1094,6 +1105,17 @@ void Agents::load(BinReader& outer) {
                 if (ch.girl) ch.girl->awakened = aw;
             }
         }
+    }
+    region_open_.assign(1, 0);
+    if (!r.at_end()) {
+        region_open_.clear();
+        const u64 n = r.varu();
+        for (u64 k = 0; k < n; ++k) region_open_.push_back(r.u8v());
+    } else {
+        // Older saves: every survey region may reach beyond itself.
+        u16 top = 0;
+        for (const auto& [p, id] : region_map_) top = std::max(top, id);
+        region_open_.assign((size_t)top + 1, 1);
     }
 }
 

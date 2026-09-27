@@ -139,10 +139,32 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         }
         O.push_back(o);
     }
+    // War: only when it makes sense — a motive, the strength to win, no truce in the way,
+    // and both past their first days of building up.
+    const Society::Assessment as = ctx_.society->assess(p.id, other.id);
+    const bool bound = p.allied_with(other.id) || p.overlord == other.id || other.overlord == p.id;
+    // A reason to fight beyond old hostility: a grievance, their weakness, our hunger
+    // against their plenty, or overwhelming strength.
+    const Diplo* dg = p.diplo_of(other.id);
+    const bool casus = (dg && dg->grievance >= 0.25f) || as.opportunity >= 0.3f || as.ratio >= 2.2f ||
+                       (p.stats.food_days < 2.0f && other.stats.food_days > 4.0f);
+    auto why_not_war = [&](float min_ratio) -> std::string {
+        if (!as.settled) return "立国未稳，正是埋头发展的时候";
+        if (!casus) return "没有开战的理由，发展要紧";
+        if (as.truce) return "停战协定尚未到期";
+        if (p.allied_with(other.id)) return "两国结有盟约";
+        if (p.overlord == other.id || other.overlord == p.id) return "宗藩之间不得开战";
+        if (as.ratio < min_ratio) return strfmt("兵力不足（我方 %.0f，对方连同盟友 %.0f）", as.ours, as.theirs);
+        return "";
+    };
+    const std::string situation = as.why.empty() ? std::string() : "（" + as.why + "）";
+    // Staying at peace is what a people busy building up usually wants.
+    if (!as.settled || p.stats.food_days < 2.0f) O.front().bias += 0.25f;
     const int raiders = std::max(3, ours / 4);
     {
         DecisionOption o = make("raid", strfmt("发动劫掠（出动 %d 人）", raiders),
-                                strfmt("抢夺「%s」仓库里的粮食。我方可用武器 %d 件；对方居民 %d 人。", other.name.c_str(), weapons, theirs),
+                                strfmt("抢夺「%s」仓库里的粮食%s。我方可用武器 %d 件；对方居民 %d 人。", other.name.c_str(),
+                                       situation.c_str(), weapons, theirs),
                                 {{kFoodSecurity, 0.4f}, {kMilitary, 0.8f}, {kHarshness, 0.6f}, {kRisk, 0.6f}, {kSelfPower, 0.3f},
                                  {kWelfare, -0.3f}, {kCooperation, -0.8f}, {kFairness, -0.5f}},
                                 act("declare_war"));
@@ -150,7 +172,13 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         o.action.set("aim", "raid");
         o.action.set("soldiers", raiders);
         o.facts.set("weapons", weapons);
-        if (att > -0.2f) {
+        o.facts.set("strength_ratio", as.ratio);
+        o.bias += 0.5f * (as.motive + as.opportunity) + 0.3f * (as.ratio - 1.0f) - 0.35f;
+        const std::string no = why_not_war(0.9f);
+        if (!no.empty()) {
+            o.feasible = false;
+            o.why_not = no;
+        } else if (att > -0.2f) {
             o.feasible = false;
             o.why_not = "两国并无积怨，师出无名";
         } else if (ours < 6) {
@@ -162,20 +190,84 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
     const int army = std::max(4, ours / 3);
     {
         DecisionOption o = make("conquest", strfmt("发动征服战争（出动 %d 人）", army),
-                                strfmt("攻取「%s」的议事厅，将其人民与土地并入。对方居民 %d 人，我方 %d 人。", other.name.c_str(),
-                                       theirs, ours),
+                                strfmt("攻取「%s」的议事厅，将其人民与土地并入%s。对方居民 %d 人，我方 %d 人。", other.name.c_str(),
+                                       situation.c_str(), theirs, ours),
                                 {{kSelfPower, 0.9f}, {kMilitary, 0.9f}, {kRisk, 0.8f}, {kGrowth, 0.5f}, {kHarshness, 0.7f},
                                  {kCooperation, -1.0f}, {kWelfare, -0.4f}},
                                 act("declare_war"));
         o.action.set("other", (int)other.id);
         o.action.set("aim", "conquest");
         o.action.set("soldiers", army);
-        if (att > -0.4f) {
+        o.facts.set("strength_ratio", as.ratio);
+        o.bias += 0.5f * (as.motive + as.opportunity) + 0.3f * (as.ratio - 1.5f) - 0.5f;
+        const std::string no = why_not_war(1.4f);
+        if (!no.empty()) {
+            o.feasible = false;
+            o.why_not = no;
+        } else if (att > -0.4f) {
             o.feasible = false;
             o.why_not = "仇恨还不足以发动征服";
-        } else if (ours * 10 < theirs * 12) {
+        }
+        O.push_back(o);
+    }
+    // Submission: a much stronger neighbour may demand tribute without a fight.
+    if (!bound && other.overlord == 0 && p.overlord == 0) {
+        DecisionOption o = make("demand_submission", "勒令「" + other.name + "」称臣纳贡",
+                                strfmt("以兵威相逼（我方兵力约为对方的 %.1f 倍），令其定期纳贡。由对方决定。", as.ratio),
+                                {{kSelfPower, 1.0f}, {kMilitary, 0.5f}, {kGrowth, 0.4f}, {kHarshness, 0.5f}, {kCooperation, -0.5f},
+                                 {kRisk, 0.3f}},
+                                act("demand_submission"));
+        o.action.set("other", (int)other.id);
+        o.bias += 0.3f * (as.ratio - 2.5f);
+        if (!as.settled) {
             o.feasible = false;
-            o.why_not = "兵力不足以征服对方";
+            o.why_not = "立国未稳";
+        } else if (as.ratio < 2.2f) {
+            o.feasible = false;
+            o.why_not = "兵威还不足以令对方屈服";
+        }
+        O.push_back(o);
+    }
+    // Throwing off the yoke.
+    if (p.overlord == other.id) {
+        DecisionOption o = make("independence", "摆脱「" + other.name + "」，不再纳贡",
+                                strfmt("宣布自立。宗主必然震怒（我方兵力约为对方的 %.1f 倍）。", as.ratio),
+                                {{kSelfPower, 1.0f}, {kFairness, 0.3f}, {kRisk, 0.7f}, {kMilitary, 0.4f}, {kCooperation, -0.4f}},
+                                act("independence"));
+        o.action.set("other", (int)other.id);
+        o.bias += 0.4f * (as.ratio - 1.0f);
+        if (as.ratio < 0.9f) {
+            o.feasible = false;
+            o.why_not = "宗主太强，时机未到";
+        }
+        O.push_back(o);
+    }
+    // An alliance against a common threat: a third polity stronger than either, or an
+    // enemy we share.
+    if (!p.allied_with(other.id) && !bound) {
+        std::string threat;
+        const float mine = as.ours, theirs_s = ctx_.society->strength(other.id);
+        for (const Polity& t : ctx_.society->polities()) {
+            if (!t.alive || t.id == p.id || t.id == other.id) continue;
+            const bool shared_enemy = p.war_with(t.id) && other.war_with(t.id);
+            if (shared_enemy || ctx_.society->strength(t.id) > 0.9f * std::max(mine, theirs_s)) threat = t.name;
+        }
+        DecisionOption o = make("propose_alliance", "提议与「" + other.name + "」结盟",
+                                threat.empty() ? std::string("互为援手，一方遭到攻击时另一方出兵相助。")
+                                               : "共同对抗「" + threat + "」：一方遭到攻击时另一方出兵相助。",
+                                {{kCooperation, 1.0f}, {kMilitary, 0.3f}, {kRisk, -0.3f}, {kSelfPower, -0.2f}},
+                                act("propose_alliance"));
+        o.action.set("other", (int)other.id);
+        o.bias += threat.empty() ? -0.2f : 0.3f;
+        if (att < -0.1f) {
+            o.feasible = false;
+            o.why_not = "两国关系不睦";
+        } else if (threat.empty()) {
+            o.feasible = false;
+            o.why_not = "并无共同的威胁";
+        } else if (p.war_with(other.id)) {
+            o.feasible = false;
+            o.why_not = "正与对方交战";
         }
         O.push_back(o);
     }
@@ -242,14 +334,68 @@ void Decisions::build_war_options(Decision& d, Polity& p, War& w) {
         }
         O.push_back(c);
     }
-    DecisionOption o = make("offer_peace", "向「" + en + "」提出议和", "由对方的统治者决定是否接受。" + tally,
-                            {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kSelfPower, -0.3f}, {kMilitary, -0.5f}},
-                            act("offer_peace"));
-    o.action.set("other", (int)w.enemy);
-    o.bias += weary;  // war-weariness
-    o.facts.set("war_days", days);
-    o.facts.set("losses", w.losses);
-    O.push_back(o);
+    (void)weary;
+    add_peace_offers(d, p, w.enemy, false);
+}
+
+void Decisions::add_peace_offers(Decision& d, Polity& p, u16 enemy_id, bool pleading) {
+    auto& O = d.options;
+    Polity* enemy = ctx_.society->polity(enemy_id);
+    const War* w = p.war_with(enemy_id);
+    if (!enemy || !w) return;
+    const std::string en = enemy->name;
+    const float days = (float)(now_ - w->since) / (float)kTicksPerDay;
+    const float weary = war_weariness(p, *w, now_);
+    const float score = w->score();
+    const Society::Assessment as = ctx_.society->assess(p.id, enemy_id);
+    const std::string tally = strfmt("开战 %.1f 天，杀敌 %d，阵亡 %d，劫得粮食 %d。", days, w->kills, w->losses, w->loot);
+    // Not again so soon after the last offer; and whoever started a war does not sue
+    // for peace the same day unless it is going badly.
+    const bool too_soon = (w->last_offer > 0 && now_ - w->last_offer < kTicksPerDay) ||
+                          (w->attacker && now_ - w->since < kTicksPerDay && score > -3.0f);
+    const int their_food = (int)std::floor(ctx_.society->public_food(enemy_id) / 0.3f);
+    const int our_food = (int)std::floor(ctx_.society->public_food(p.id) / 0.3f);
+    auto offer = [&](const char* key, const std::string& title, const std::string& desc, std::initializer_list<decision_util::F> f,
+                     int payer, int food, bool vassal, float bias) {
+        DecisionOption o = make(key, title, desc + tally, f, act("offer_peace"));
+        o.action.set("other", (int)enemy_id);
+        o.action.set("payer", payer);
+        o.action.set("food", food);
+        o.action.set("vassal", vassal);
+        o.bias += bias;
+        o.facts.set("war_days", days);
+        o.facts.set("war_score", score);
+        o.facts.set("losses", w->losses);
+        if (too_soon) {
+            o.feasible = false;
+            o.why_not = w->attacker && now_ - w->since < kTicksPerDay ? "刚刚宣战，岂能旋即求和"
+                                                                     : "刚提过议和，对方还在考虑或已拒绝，过一天再说";
+        }
+        O.push_back(o);
+    };
+    offer("offer_peace", "向「" + en + "」" + (pleading ? "求和" : "提出议和"), "停战，各自退兵。由对方决定。",
+          {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kSelfPower, -0.3f}, {kMilitary, -0.5f}}, 0, 0, false,
+          weary + 0.15f * (float)w->refused);
+    // Winning: they pay for it (less, after they have turned demands down).
+    const float refused = (float)w->refused;
+    if ((score >= 2.0f || as.ratio >= 1.6f) && their_food >= 10) {
+        const int n = std::clamp((int)(their_food * (0.2f - 0.04f * std::min(3.0f, refused))) + (int)(score * 2.0f), 8, 40);
+        offer("peace_reparations", strfmt("要求「%s」赔粮×%d 后停战", en.c_str(), n), "胜者开出条件。由对方决定。",
+              {{kSelfPower, 0.6f}, {kFoodSecurity, 0.5f}, {kMilitary, 0.2f}, {kCooperation, 0.3f}, {kRisk, -0.3f}},
+              (int)enemy_id, n, false, weary * 0.8f + 0.1f * score - 0.25f * refused);
+    }
+    if (score >= 5.0f && as.ratio >= 1.8f && enemy->overlord == 0 && p.overlord == 0) {
+        offer("peace_submission", "要求「" + en + "」称臣纳贡", "对方成为我们的附庸，定期纳贡。由对方决定。",
+              {{kSelfPower, 1.0f}, {kGrowth, 0.4f}, {kMilitary, 0.3f}, {kHarshness, 0.4f}, {kRisk, -0.2f}},
+              (int)enemy_id, 0, true, weary * 0.6f + 0.08f * score);
+    }
+    // Losing: buy the peace.
+    if ((score <= -2.0f || as.ratio < 0.7f || pleading) && our_food >= 10) {
+        const int n = std::clamp((int)(our_food * 0.25f) + (int)(-score * 2.0f), 8, 60);
+        offer("peace_pay", strfmt("献粮×%d 向「%s」求和", n, en.c_str()), "割舍一部分存粮换取停战。由对方决定。",
+              {{kWelfare, 0.5f}, {kRisk, -0.7f}, {kCooperation, 0.5f}, {kSelfPower, -0.6f}, {kFoodSecurity, -0.4f}},
+              (int)p.id, n, false, weary + (score < 0 ? -0.05f * score : 0.0f));
+    }
 }
 
 void Decisions::build_defense_options(Decision& d, Polity& p, const Crisis& c) {
@@ -294,33 +440,147 @@ void Decisions::build_defense_options(Decision& d, Polity& p, const Crisis& c) {
         }
         O.push_back(o);
     }
-    {
-        DecisionOption o = make("sue_for_peace", "向「" + en + "」求和", "请求停战，由对方决定。",
-                                {{kCooperation, 0.7f}, {kWelfare, 0.6f}, {kRisk, -0.6f}, {kSelfPower, -0.5f}, {kMilitary, -0.4f}},
-                                act("offer_peace"));
-        o.action.set("other", (int)w->enemy);
-        O.push_back(o);
-    }
+    add_peace_offers(d, p, w->enemy, true);
 }
 
-void Decisions::build_peace_options(Decision& d, Polity& p, u16 from) {
+void Decisions::build_peace_options(Decision& d, Polity& p, u16 from, const Json& terms) {
     auto& O = d.options;
     Polity* other = ctx_.society->polity(from);
     const std::string on = other ? other->name : "?";
     d.petition = Json::object();
     d.petition.set("other", (int)from);
-    DecisionOption a = make("accept_peace", "接受「" + on + "」的议和", "停战，士兵回家。",
-                            {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kMilitary, -0.4f}}, act("peace_accept"));
+    const int payer = terms.integer("payer", 0), food = terms.integer("food", 0);
+    const bool vassal = terms.boolean("vassal", false);
+    std::string what = "停战，士兵回家。";
+    float stake = 0.0f;  // what the terms cost us (negative: what they bring us)
+    if (vassal) {
+        what = "条件：我们向「" + on + "」称臣纳贡，成为其附庸。";
+        stake = 0.8f;
+    } else if (payer == p.id && food > 0) {
+        what = strfmt("条件：我们交出粮食×%d。", food);
+        stake = 0.25f + 0.5f * std::min(1.0f, (float)food * 0.3f / std::max(1.0f, ctx_.society->public_food(p.id)));
+    } else if (payer == from && food > 0) {
+        what = strfmt("对方愿交出粮食×%d。", food);
+        stake = -0.3f;
+    }
+    DecisionOption a = make("accept_peace", "接受「" + on + "」的议和", what,
+                            {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kMilitary, -0.4f},
+                             {kSelfPower, -std::max(0.0f, stake)}},
+                            act("peace_accept"));
     a.action.set("other", (int)from);
+    a.action.set("payer", payer);
+    a.action.set("food", food);
+    a.action.set("vassal", vassal);
     if (const War* w = p.war_with(from)) {
-        a.bias += war_weariness(p, *w, now_);
+        const Society::Assessment as = ctx_.society->assess(p.id, from);
+        a.bias += war_weariness(p, *w, now_) - stake;
+        // Losing badly makes hard terms easier to swallow; winning makes them galling.
+        a.bias += std::clamp(-0.06f * w->score(), -0.4f, 0.5f) + (as.ratio < 0.7f ? 0.3f : 0.0f);
+        // Whoever just started a war wants something out of it first.
+        if (w->attacker && now_ - w->since < kTicksPerDay) a.bias -= payer == from && food > 0 ? 0.2f : 0.7f;
         a.facts.set("war_days", (float)(now_ - w->since) / (float)kTicksPerDay);
         a.facts.set("losses", w->losses);
+        a.facts.set("war_score", w->score());
     }
     O.push_back(a);
     DecisionOption r = make("refuse_peace", "拒绝议和", "战争继续。",
-                            {{kMilitary, 0.6f}, {kSelfPower, 0.5f}, {kRisk, 0.4f}, {kCooperation, -0.6f}}, act("wait"));
+                            {{kMilitary, 0.6f}, {kSelfPower, 0.5f}, {kRisk, 0.4f}, {kCooperation, -0.6f}}, act("peace_refuse"));
+    r.action.set("other", (int)from);
     O.push_back(r);
+}
+
+void Decisions::build_alliance_options(Decision& d, Polity& p, u16 from) {
+    auto& O = d.options;
+    Polity* other = ctx_.society->polity(from);
+    const std::string on = other ? other->name : "?";
+    d.petition = Json::object();
+    d.petition.set("other", (int)from);
+    DecisionOption a = make("accept_alliance", "与「" + on + "」结盟", "互为援手：一方遭到攻击，另一方出兵相助。",
+                            {{kCooperation, 1.0f}, {kMilitary, 0.3f}, {kRisk, -0.4f}, {kSelfPower, -0.2f}},
+                            act("alliance_accept"));
+    a.action.set("other", (int)from);
+    a.bias += 0.3f * p.attitude_to(from);
+    O.push_back(a);
+    O.push_back(make("refuse_alliance", "婉拒结盟", "不愿被别国的战事牵连。",
+                     {{kSelfPower, 0.4f}, {kRisk, -0.2f}, {kFrugality, 0.3f}, {kCooperation, -0.4f}}, act("wait")));
+}
+
+void Decisions::build_submission_options(Decision& d, Polity& p, u16 from) {
+    auto& O = d.options;
+    Polity* other = ctx_.society->polity(from);
+    const std::string on = other ? other->name : "?";
+    d.petition = Json::object();
+    d.petition.set("other", (int)from);
+    const Society::Assessment as = ctx_.society->assess(p.id, from);
+    DecisionOption a = make("submit", "向「" + on + "」称臣纳贡", strfmt("对方兵力约为我方的 %.1f 倍。免于兵祸，但要定期纳贡。", 1.0f / std::max(0.05f, as.ratio)),
+                            {{kRisk, -0.8f}, {kWelfare, 0.3f}, {kSelfPower, -1.0f}, {kFoodSecurity, -0.3f}}, act("submit"));
+    a.action.set("other", (int)from);
+    a.bias += as.ratio < 0.4f ? 0.4f : 0.0f;
+    O.push_back(a);
+    O.push_back(make("defy", "严词拒绝", "宁可一战，也不屈膝。",
+                     {{kSelfPower, 0.8f}, {kMilitary, 0.5f}, {kRisk, 0.6f}, {kFairness, 0.3f}}, act("defy")));
+    O.back().action.set("other", (int)from);
+}
+
+void Decisions::build_ally_call_options(Decision& d, Polity& p, u16 ally, u16 aggressor) {
+    auto& O = d.options;
+    Polity* al = ctx_.society->polity(ally);
+    Polity* ag = ctx_.society->polity(aggressor);
+    if (!al || !ag) return;
+    d.petition = Json::object();
+    d.petition.set("other", (int)aggressor);
+    d.petition.set("ally", (int)ally);
+    const bool lord = al->overlord == p.id;
+    DecisionOption a = make("honour_alliance", strfmt("%s：对「%s」宣战", lord ? "保护附庸" : "履行盟约", ag->name.c_str()),
+                            strfmt("「%s」遭到「%s」攻击，按约出兵相助。", al->name.c_str(), ag->name.c_str()),
+                            {{kCooperation, 0.8f}, {kMilitary, 0.7f}, {kFairness, 0.5f}, {kRisk, 0.5f}},
+                            act("declare_war"));
+    a.action.set("other", (int)aggressor);
+    a.action.set("aim", "raid");
+    a.action.set("soldiers", std::max(3, residents_of(ctx_, p.id) / 4));
+    a.bias += 0.3f;  // an oath is an oath
+    if (ctx_.society->at_war(p.id, aggressor)) {
+        a.feasible = false;
+        a.why_not = "已与对方交战";
+    }
+    O.push_back(a);
+    DecisionOption b = make("abandon_ally", "袖手旁观", lord ? "任由附庸自生自灭。" : "背弃盟约，不卷入战事。",
+                            {{kRisk, -0.6f}, {kFrugality, 0.4f}, {kCooperation, -0.8f}, {kFairness, -0.4f}}, act("abandon_ally"));
+    b.action.set("other", (int)ally);
+    O.push_back(b);
+}
+
+template <class F>
+void Decisions::offer_to(u16 to, EntityId petitioner, const std::string& kind, const std::string& topic, EventId cause, F build) {
+    Polity* op = ctx_.society->polity(to);
+    Character* ruler = op ? ctx_.agents->get(op->ruler) : nullptr;
+    if (!op || !ruler || !ruler->alive) return;
+    Decision pd;
+    pd.girl = ruler->id;
+    pd.polity = op->id;
+    pd.kind = kind;
+    pd.topic = topic;
+    pd.cause = cause;
+    pd.petitioner = petitioner;
+    build(pd, *op);
+    if (pd.options.empty()) return;
+    pd.situation = describe_situation(*op, *ruler, pd.topic);
+    open(std::move(pd));
+}
+
+void Decisions::call_allies(u16 defender, u16 attacker, EventId cause) {
+    const Polity* d = ctx_.society->polity(defender);
+    if (!d) return;
+    std::vector<u16> helpers;
+    for (const Diplo& x : d->diplo)
+        if (x.allied && x.other != attacker) helpers.push_back(x.other);
+    if (d->overlord && d->overlord != attacker) helpers.push_back(d->overlord);
+    for (u16 h : helpers) {
+        const Polity* hp = ctx_.society->polity(h);
+        if (!hp || ctx_.society->at_war(h, attacker)) continue;
+        offer_to(h, 0, "ally_call", "盟友「" + d->name + "」遭到攻击", cause,
+                 [&](Decision& pd, Polity& hpol) { build_ally_call_options(pd, hpol, defender, attacker); });
+    }
 }
 
 void Decisions::build_trade_offer_options(Decision& d, Polity& p, u16 from) {
@@ -359,8 +619,67 @@ bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Cha
     const u16 other = (u16)a.integer("other", d.petition.integer("other", 0));
     if (what == "declare_war") {
         EventId ev = ctx_.society->declare_war(p.id, other, a.str("aim", "raid"), g.id, cause);
+        if (!ev) return true;
         ctx_.society->draft(p.id, a.integer("soldiers", 4), ev);
         if (Polity* pp = ctx_.society->polity(p.id)) pp->op.party = ctx_.society->soldiers(p.id);
+        call_allies(other, p.id, ev);
+        return true;
+    }
+    if (what == "demand_submission") {
+        offer_to(other, g.id, "submission_demand", "「" + p.name + "」勒令称臣", cause,
+                 [&](Decision& pd, Polity& op) { build_submission_options(pd, op, p.id); });
+        return true;
+    }
+    if (what == "submit") {
+        ctx_.society->make_vassal(p.id, other, cause);
+        return true;
+    }
+    if (what == "defy") {
+        ctx_.society->add_grievance(other, p.id, 0.4f);
+        if (Polity* op = ctx_.society->polity(other)) op->attitude_ref(p.id) = std::min(op->attitude_to(p.id), -0.5f);
+        Event e;
+        e.type = EventType::Info;
+        e.severity = 4;
+        e.actor = g.id;
+        e.polity = p.id;
+        e.causes[0] = cause;
+        e.text = strfmt("「%s」拒绝向「%s」称臣", p.name.c_str(), ctx_.society->polity(other) ? ctx_.society->polity(other)->name.c_str() : "?");
+        ctx_.chron->emit(std::move(e));
+        return true;
+    }
+    if (what == "independence") {
+        p.overlord = 0;
+        ctx_.society->add_grievance(other, p.id, 0.8f);
+        if (Polity* op = ctx_.society->polity(other)) {
+            op->attitude_ref(p.id) = std::min(op->attitude_to(p.id), -0.6f);
+            op->diplo_ref(p.id).truce_until = now_;  // the truce of vassalage is over
+        }
+        p.diplo_ref(other).truce_until = now_;
+        Event e;
+        e.type = EventType::Secession;
+        e.severity = 5;
+        e.actor = g.id;
+        e.polity = p.id;
+        e.causes[0] = cause;
+        e.text = strfmt("「%s」宣布摆脱「%s」，不再纳贡", p.name.c_str(),
+                        ctx_.society->polity(other) ? ctx_.society->polity(other)->name.c_str() : "?");
+        ctx_.chron->emit(std::move(e));
+        return true;
+    }
+    if (what == "propose_alliance") {
+        offer_to(other, g.id, "alliance_offer", "「" + p.name + "」提议结盟", cause,
+                 [&](Decision& pd, Polity& op) { build_alliance_options(pd, op, p.id); });
+        return true;
+    }
+    if (what == "alliance_accept") {
+        ctx_.society->make_alliance(other, p.id, cause);
+        return true;
+    }
+    if (what == "abandon_ally") {
+        ctx_.society->add_grievance(other, p.id, 0.5f);
+        if (Polity* op = ctx_.society->polity(other)) op->attitude_ref(p.id) = std::min(op->attitude_to(p.id), -0.3f);
+        if (Polity* op = ctx_.society->polity(other); op && op->overlord == p.id) op->overlord = 0;  // a lord who abandons loses the vassal
+        ctx_.society->end_alliance(p.id, other, g.name + "背弃了盟约", cause);
         return true;
     }
     if (what == "reconcile") {
@@ -413,24 +732,31 @@ bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Cha
         return true;
     }
     if (what == "offer_peace") {
-        Polity* op = ctx_.society->polity(other);
-        Character* ruler = op ? ctx_.agents->get(op->ruler) : nullptr;
-        if (op && ruler && ruler->alive) {
-            Decision pd;
-            pd.girl = ruler->id;
-            pd.polity = op->id;
-            pd.kind = "peace_offer";
-            pd.topic = "「" + p.name + "」提出议和";
-            pd.cause = cause;
-            pd.petitioner = g.id;
-            build_peace_options(pd, *op, p.id);
-            pd.situation = describe_situation(*op, *ruler, pd.topic);
-            open(std::move(pd));
-        }
+        if (War* w = p.war_with(other)) w->last_offer = now_;
+        Json terms = Json::object();
+        terms.set("payer", a.integer("payer", 0));
+        terms.set("food", a.integer("food", 0));
+        terms.set("vassal", a.boolean("vassal", false));
+        offer_to(other, g.id, "peace_offer", "「" + p.name + "」提出议和", cause,
+                 [&](Decision& pd, Polity& op) { build_peace_options(pd, op, p.id, terms); });
+        return true;
+    }
+    if (what == "peace_refuse") {
+        if (Polity* op = ctx_.society->polity(other))
+            if (War* w = op->war_with(p.id)) w->refused++;
         return true;
     }
     if (what == "peace_accept") {
-        ctx_.society->make_peace(p.id, other, "议和停战", cause);
+        const int payer = a.integer("payer", 0), food = a.integer("food", 0);
+        const bool vassal = a.boolean("vassal", false);
+        std::string how = "议和停战";
+        if (vassal) how = "议和：「" + p.name + "」称臣纳贡";
+        else if (payer && food > 0)
+            how = strfmt("议和：「%s」交出粮食×%d", ctx_.society->polity((u16)payer) ? ctx_.society->polity((u16)payer)->name.c_str() : "?", food);
+        const EventId ev = ctx_.society->make_peace(p.id, other, how, cause);
+        if (vassal) ctx_.society->make_vassal(p.id, other, ev);
+        else if (payer && food > 0)
+            ctx_.society->send_tribute((u16)payer, payer == p.id ? other : p.id, food, "交付议和赔粮", ev);
         return true;
     }
     if (what == "propose_trade") {

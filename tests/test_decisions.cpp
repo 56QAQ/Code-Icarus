@@ -170,7 +170,7 @@ TEST("politics: secession splits people and fields and conserves every item") {
     const Registry& reg = test_registry();
     Simulation sim(reg);
     sim.new_game(village(1));
-    sim.run(kTicksPerHour * 2);
+    sim.run(kTicksPerDay * 4);  // a young polity does not split
     Polity* p = sim.society().polity(1);
     REQUIRE(p != nullptr);
     // A disaffected, popular girl.

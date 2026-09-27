@@ -129,12 +129,17 @@ void Agents::refresh_water_spots() {
         nav.major_dirty = nav.minor_dirty = false;
         region_map_.clear();
         region_map_.reserve(1 << 16);
+        region_open_.assign(1, 0);
         u16 next = 1;
         for (const Vec3i& a : anchors) {
             Vec3i st = a;
             if (!nav.standable(st) && !nav.find_standable_near(a, st, 3)) continue;
             if (region_map_.count(st)) continue;
-            if (nav.flood(st, R + 30, 90000, region_map_, next) > 0 && next < 65535) ++next;
+            bool open = false;
+            if (nav.flood(st, R + 30, 90000, region_map_, next, &open) > 0 && next < 65535) {
+                region_open_.push_back(open ? 1 : 0);
+                ++next;
+            }
         }
     }
     const auto& label = region_map_;
@@ -1146,7 +1151,7 @@ bool Agents::task_work(Character& c) {
             const u16 partner = (u16)j->project;
             const Polity* home = ctx_.society->polity(c.polity);
             const Polity* other = ctx_.society->polity(partner);
-            const bool aid = j->plot == 1;
+            const bool aid = j->plot == 1 || j->plot == 2;  // 1 aid, 2 tribute: nothing comes back
             if (!home || !other || (!aid && !home->pact_with(partner)) || ctx_.society->at_war(c.polity, partner)) {
                 ctx_.econ->release(j->from, c.id);
                 ctx_.jobs->complete(t.job);
@@ -1203,7 +1208,7 @@ bool Agents::task_work(Character& c) {
                         return true;
                     }
                 }
-                say(c, (aid ? "押送援粮前往「" : "带着货物前往「") + other->name + "」");
+                say(c, (j->plot == 2 ? "押送贡粮前往「" : aid ? "押送援粮前往「" : "带着货物前往「") + other->name + "」");
                 Move m = move_to(c, d->pos, true);
                 if (m == Move::Failed) {
                     // The road there is cut: the caravan turns back with its load.
@@ -1216,7 +1221,7 @@ bool Agents::task_work(Character& c) {
                 if (m != Move::Arrived) return true;
                 if (aid) {
                     const i32 given = ctx_.econ->transfer(c.inv, j->to, j->item, t.count);
-                    ctx_.society->aid_delivered(c.polity, partner, j->item, given, c.id, j->cause);
+                    ctx_.society->aid_delivered(c.polity, partner, j->item, given, c.id, j->cause, j->plot == 2);
                     say(c, strfmt("把%s×%d送到了「%s」", reg.item(j->item).name.c_str(), given, other->name.c_str()));
                     ctx_.jobs->complete(t.job);
                     t.job = 0;

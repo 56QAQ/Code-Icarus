@@ -32,7 +32,7 @@
      "biomes": {"taiga": 0.00025, "snowfield": 0.0003, "highland": 0.0001},
      "yield": {"meat": 3, "hide": 2, "bone": 1}, "colors": ["#7d7a76", "#c9c4bb", "#3b3936"], "look": ["pointed_ears", "bushy_tail", "snout"]},
     {"key": "bear", "name": "熊", "size": [1.9, 1.5, 0.9], "speed": 0.15, "run": 0.45, "stamina": 300, "hp": 2.2,
-     "temper": "territorial", "guard": 5, "flee": 0, "attack": 0.14, "prey": ["deer", "boar", "goat"], "herd": [1, 1],
+     "temper": "territorial", "guard": 4, "flee": 0, "attack": 0.09, "prey": ["deer", "boar", "goat"], "herd": [1, 1],
      "lifespan_days": 300, "litter": [1, 2], "breed_days": 40,
      "biomes": {"taiga": 0.00008, "forest": 0.00004},
      "yield": {"meat": 12, "hide": 4, "bone": 3}, "colors": ["#5a3e2b", "#7a5a40", "#2b1d14"], "look": ["round_ears", "snout", "stub_tail"]}

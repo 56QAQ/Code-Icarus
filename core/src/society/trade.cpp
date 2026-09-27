@@ -318,10 +318,22 @@ ItemId Society::aid_food(u16 from, u16 to, i32* amount) const {
     return kNoItem;
 }
 
-void Society::aid_delivered(u16 from, u16 to, ItemId item, i32 n, EntityId carrier, EventId cause) {
+void Society::aid_delivered(u16 from, u16 to, ItemId item, i32 n, EntityId carrier, EventId cause, bool tribute) {
     Polity* pa = polity(from);
     Polity* pb = polity(to);
     if (!pa || !pb || n <= 0) return;
+    if (tribute) {
+        Event e;
+        e.type = EventType::Trade;
+        e.severity = 2;
+        e.actor = carrier;
+        e.polity = from;
+        e.causes[0] = cause;
+        e.text = strfmt("「%s」的贡粮送抵「%s」：%s×%d", pa->name.c_str(), pb->name.c_str(), ctx_.reg->item(item).name.c_str(), n);
+        e.data.set("other", (int)to);
+        ctx_.chron->emit(std::move(e));
+        return;
+    }
     if (float& att = pb->attitude_ref(from); att < 0.8f) att = std::min(0.8f, att + 0.06f);
     Event e;
     e.type = EventType::Trade;

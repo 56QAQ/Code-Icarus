@@ -259,6 +259,36 @@ int cmd_meshbench(const Args& a) {
 }
 
 // Debug: where is water flowing after a run? Lists cells with the most non-full water.
+// Around each settlement site: a height map relative to the lake surface
+// (. water, digits = cubes above the water, # much higher, ~ not land).
+int cmd_sites(const Args& a) {
+    Registry reg;
+    reg.load_from_dir(a.data);
+    WorldConfig wc = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
+    World w(reg);
+    w.init(wc);
+    const IslandFeatures& f = w.gen().features();
+    for (const Site& st : f.sites) {
+        std::printf("site center %s water %s farms %s\n", st.center.str().c_str(), st.water.str().c_str(), st.farms.str().c_str());
+        for (int dz = -22; dz <= 22; ++dz) {
+            std::string row;
+            for (int dx = -30; dx <= 30; ++dx) {
+                const int x = st.water.x + dx, z = st.water.z + dz;
+                const ColumnInfo col = w.gen().column(x, z);
+                if (!col.land) { row += '~'; continue; }
+                const int top = w.surface_y(x, z);
+                const MatId m = vmat(w.peek({x, top, z}));
+                if (m == reg.m().water) { row += '.'; continue; }
+                const int d = top - st.water.y;
+                if (d >= 0 && d <= 1 && !reg.mat(m).fertile) { row += reg.mat(m).key == "snow" ? 's' : 'x'; continue; }
+                row += d < 0 ? '-' : (d > 9 ? '#' : (char)('0' + d));
+            }
+            std::printf("  %s\n", row.c_str());
+        }
+    }
+    return 0;
+}
+
 int cmd_waterdump(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
@@ -359,6 +389,10 @@ int cmd_run(const Args& a) {
             }
         }
         const auto& pr = sim.profile();
+        if (a.verbose && pr.total_us > 40000.0)
+            std::printf("  spike tick %llu (%s): %.0fus phys %.0f ag %.0f soc %.0f dec %.0f fauna %.0f\n",
+                        (unsigned long long)(sim.now() - 1), format_time_zh(sim.now() - 1).c_str(), pr.total_us,
+                        pr.physics_us, pr.agents_us, pr.society_us, pr.decisions_us, pr.fauna_us);
         max_us = std::max(max_us, pr.total_us);
         sum_us += pr.total_us;
         sum_phys += pr.physics_us;
@@ -614,6 +648,7 @@ int main(int argc, char** argv) {
         if (a.cmd == "map") return cmd_map(a);
         if (a.cmd == "meshbench") return cmd_meshbench(a);
         if (a.cmd == "waterdump") return cmd_waterdump(a);
+        if (a.cmd == "sites") return cmd_sites(a);
         if (a.cmd == "run") return cmd_run(a);
         if (a.cmd == "experiment") return cmd_experiment(a);
     } catch (const std::exception& e) {

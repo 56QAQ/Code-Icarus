@@ -244,6 +244,8 @@ void Society::check_unification() {
 
 void Society::daily(Tick now) {
     trade_daily();
+    for (auto& p : polities_)
+        if (p.alive) update_diplomacy(p);
     ctx_.econ->spoil(rng_, [this](u16 polity) { return 1.0f - std::min(0.9f, passive(polity, "preserve")); });
     ctx_.agents->day = {};
     (void)now;
@@ -475,12 +477,14 @@ void Society::update_support(Polity& p) {
                 if (water && water->active) d -= 0.02f * water->severity;
                 d += 0.01f * pol.wage * c.pers.ambition;
             } else {
-                d += 0.004f * (float)g->girl->level;
+                // The other girls are known for what they do; renown fades without it
+                // (it settles around 0.15 per level for one in office, half that without).
+                d += 0.0015f * (float)g->girl->level * (g->girl->role != "none" ? 1.0f : 0.5f);
             }
             // Personal memories about this girl.
             for (const Memory& m : c.memories)
                 if (m.subject == g->id && ctx_.now - m.tick < kTicksPerHour) d += m.valence * 0.3f;
-            s = clampv(s * 0.998f + d, -1.0f, 1.0f);
+            s = clampv(s * (g->id == p.ruler ? 0.998f : 0.99f) + d, -1.0f, 1.0f);
         }
     }
 }
@@ -821,6 +825,32 @@ void Society::save(BinWriter& w) const {
             save_goods(t.in_today);
         }
     }
+    // Strategy (added in version 2): truces, alliances, grievances, vassals, war tallies.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) {
+        const Polity& p = polities_[i];
+        w.varu(p.diplo.size());
+        for (const Diplo& d : p.diplo) {
+            w.u16v(d.other);
+            w.u64v(d.truce_until);
+            w.boolean(d.allied);
+            w.u64v(d.allied_since);
+            w.f32(d.grievance);
+            w.u64v(d.last_incident);
+        }
+        w.u16v(p.overlord);
+        w.u64v(p.tribute_next);
+        w.varu(p.wars.size());
+        for (const War& wr : p.wars) {
+            w.vari(wr.loot);
+            w.vari(wr.razed);
+            w.u64v(wr.last_offer);
+            w.u64v(wr.active_at);
+            w.vari(wr.refused);
+        }
+        w.varu(p.outposts.size());
+        for (const Vec3i& o : p.outposts) w.vec3i(o);
+    }
     w.end_section(sec);
 }
 
@@ -990,6 +1020,43 @@ void Society::load(BinReader& outer) {
                     if (i < polities_.size()) polities_[i].pacts.push_back(std::move(t));
                 }
             }
+            if (!r.at_end()) {
+                const u64 np4 = r.varu();
+                for (size_t i = 1; i < (size_t)np4; ++i) {
+                    Polity dummy;
+                    Polity& p = i < polities_.size() ? polities_[i] : dummy;
+                    const u64 nd = r.varu();
+                    p.diplo.clear();
+                    for (u64 k = 0; k < nd; ++k) {
+                        Diplo d;
+                        d.other = r.u16v();
+                        d.truce_until = r.u64v();
+                        d.allied = r.boolean();
+                        d.allied_since = r.u64v();
+                        d.grievance = r.f32();
+                        d.last_incident = r.u64v();
+                        p.diplo.push_back(d);
+                    }
+                    p.overlord = r.u16v();
+                    p.tribute_next = r.u64v();
+                    const u64 nw = r.varu();
+                    for (u64 k = 0; k < nw; ++k) {
+                        const int loot = (int)r.vari(), razed = (int)r.vari();
+                        const Tick last = r.u64v(), active = r.u64v();
+                        const int refused = (int)r.vari();
+                        if (k < p.wars.size()) {
+                            p.wars[k].loot = loot;
+                            p.wars[k].razed = razed;
+                            p.wars[k].last_offer = last;
+                            p.wars[k].active_at = active;
+                            p.wars[k].refused = refused;
+                        }
+                    }
+                    const u64 no = r.varu();
+                    p.outposts.clear();
+                    for (u64 k = 0; k < no; ++k) p.outposts.push_back(r.vec3i());
+                }
+            }
         }
     }
 }
@@ -1002,6 +1069,9 @@ u64 Society::hash() const {
         h = hash_combine(h, (u64)(p.stats.food_stock * 10.0f));
         h = hash_combine(h, (u64)(p.policies.ration * 1000.0f));
         for (const TradePact& t : p.pacts) h = hash_combine(h, ((u64)t.partner << 32) ^ (u64)t.trips ^ ((u64)t.blocked << 16));
+        for (const Diplo& d : p.diplo)
+            h = hash_combine(h, ((u64)d.other << 48) ^ d.truce_until ^ ((u64)d.allied << 40) ^ (u64)(d.grievance * 1000.0f));
+        h = hash_combine(h, ((u64)p.overlord << 32) ^ p.tribute_next);
     }
     return h;
 }

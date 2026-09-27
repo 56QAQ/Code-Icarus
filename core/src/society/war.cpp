@@ -41,6 +41,7 @@ EventId Society::declare_war(u16 attacker, u16 defender, const std::string& aim,
     wa.attacker = true;
     wa.aim = aim;
     wa.since = ctx_.now;
+    wa.active_at = ctx_.now;
     wa.event = ev;
     a->wars.push_back(wa);
     War wd;
@@ -48,10 +49,12 @@ EventId Society::declare_war(u16 attacker, u16 defender, const std::string& aim,
     wd.attacker = false;
     wd.aim = "defend";
     wd.since = ctx_.now;
+    wd.active_at = ctx_.now;
     wd.event = ev;
     d->wars.push_back(wd);
     a->attitude_ref(defender) = std::min(a->attitude_to(defender), -0.6f);
     d->attitude_ref(attacker) = std::min(d->attitude_to(attacker), -0.8f);
+    add_grievance(defender, attacker, 0.5f);
     start_operation(attacker, defender, aim, ev);
     return ev;
 }
@@ -76,6 +79,8 @@ void Society::start_operation(u16 id, u16 enemy, const std::string& aim, EventId
             }
         }
     }
+    for (Polity* x : {a, d})
+        if (War* w = x->war_with(x == a ? enemy : id)) w->active_at = ctx_.now;
     a->op = Operation{};
     a->op.active = true;
     a->op.enemy = enemy;
@@ -102,6 +107,10 @@ EventId Society::make_peace(u16 a, u16 b, const std::string& how, EventId cause)
     discharge(b);
     pa->attitude_ref(b) = std::max(pa->attitude_to(b), -0.3f);
     pb->attitude_ref(a) = std::max(pb->attitude_to(a), -0.3f);
+    // A truce: no new war between them for a while, and the worst of it is let go.
+    set_truce(a, b, 8.0f);
+    pa->diplo_ref(b).grievance *= 0.5f;
+    pb->diplo_ref(a).grievance *= 0.5f;
     Event e;
     e.type = EventType::Peace;
     e.severity = 4;
@@ -218,6 +227,17 @@ void Society::update_wars(Polity& p) {
         }
     }
     p.wars.erase(std::remove_if(p.wars.begin(), p.wars.end(), [](const War& w) { return w.enemy == 0; }), p.wars.end());
+    // A war nobody fights any more fizzles out: after four quiet days both sides let it
+    // lie (no army out on either side, nobody killed).
+    for (const War& w : p.wars) {
+        const Polity* en = polity(w.enemy);
+        const War* back = en ? en->war_with(p.id) : nullptr;
+        const Tick quiet = std::max(w.active_at, back ? back->active_at : (Tick)0);
+        if (!p.op.active && en && !en->op.active && ctx_.now > quiet + kTicksPerDay * 4) {
+            make_peace(p.id, w.enemy, "的战事渐渐平息，双方默契停战", w.event);
+            return;  // the list changed
+        }
+    }
     // War-weariness at home: after the first day the peaceable tire of the war and of
     // the ruler who keeps it going, faster when there is hunger.
     Tick oldest = ctx_.now;
@@ -277,7 +297,7 @@ void Society::update_wars(Polity& p) {
     if (op.phase == 1) {
         int there = 0;
         for (const auto& cp : ctx_.agents->all())
-            if (cp && cp->alive && cp->polity == p.id && cp->drafted && cp->foot.dist2(op.objective) < 8 * 8) ++there;
+            if (cp && cp->alive && cp->polity == p.id && cp->drafted && cp->foot.dist2(op.objective) < 16 * 16) ++there;
         if (serving > 0 && there * 2 >= serving) {
             op.phase = 2;
             op.since = ctx_.now;
