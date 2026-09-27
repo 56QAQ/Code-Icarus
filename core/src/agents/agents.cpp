@@ -492,12 +492,12 @@ void Agents::blacklist(Character& c, const Vec3i& p, Tick duration) {
     if (c.unreachable.size() > 32) c.unreachable.erase(c.unreachable.begin());
 }
 
-Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, int reach_up) {
+Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, int reach_up, int reach_xz) {
     auto arrived = [&]() {
         if (c.foot == goal) return true;
         if (!adjacent_ok) return false;
-        return std::abs(c.foot.x - goal.x) <= 1 && std::abs(c.foot.z - goal.z) <= 1 && c.foot.y - goal.y <= 2 &&
-               goal.y - c.foot.y <= reach_up;
+        return std::abs(c.foot.x - goal.x) <= reach_xz && std::abs(c.foot.z - goal.z) <= reach_xz &&
+               c.foot.y - goal.y <= 2 && goal.y - c.foot.y <= reach_up;
     };
     if (arrived()) {
         c.moving = false;
@@ -512,7 +512,7 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
         int budget = 40000;
         if (auto rf = region_map_.find(c.foot); rf != region_map_.end()) {
             bool same = false, other = false;
-            const int r = adjacent_ok ? 1 : 0;
+            const int r = adjacent_ok ? reach_xz : 0;
             for (int dy = adjacent_ok ? -reach_up : 0; dy <= (adjacent_ok ? 2 : 0) && !same; ++dy)
                 for (int dz = -r; dz <= r && !same; ++dz)
                     for (int dx = -r; dx <= r && !same; ++dx) {
@@ -538,7 +538,7 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
             return Move::Moving;
         }
         const u64 expanded = nav.stats.expansions;
-        const bool found = budget > 0 && nav.find_path(c.foot, goal, adjacent_ok, c.path, budget, reach_up);
+        const bool found = budget > 0 && nav.find_path(c.foot, goal, adjacent_ok, c.path, budget, reach_up, reach_xz);
         path_spent_ += nav.stats.expansions - expanded;
         if (!found) {
             blacklist(c, goal, kTicksPerHour * 3);

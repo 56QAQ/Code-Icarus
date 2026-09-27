@@ -236,7 +236,7 @@ private:
     void defect(Character& c, u16 to, EventId cause);
     // movement
     enum class Move { Moving, Arrived, Failed };
-    Move move_to(Character& c, const Vec3i& goal, bool adjacent_ok, int reach_up = 3);
+    Move move_to(Character& c, const Vec3i& goal, bool adjacent_ok, int reach_up = 3, int reach_xz = 1);
     void place_at(Character& c, const Vec3i& foot);
     bool blacklisted(Character& c, const Vec3i& p);
     void blacklist(Character& c, const Vec3i& p, Tick duration);

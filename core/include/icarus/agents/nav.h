@@ -37,11 +37,11 @@ public:
     // Finds the nearest standable position at or below/above p within dy range.
     bool find_standable_near(const Vec3i& p, Vec3i& out, int radius = 2);
 
-    // A* from start to goal. If adjacent_ok, any standable cube within distance 1 (xz),
-    // at most 2 above the goal and at most reach_up below it counts as arrival (for
-    // working on a cube; builders reach higher, as if from a ladder).
+    // A* from start to goal. If adjacent_ok, any standable cube within reach_xz (xz), at
+    // most 2 above the goal and at most reach_up below it counts as arrival (for working
+    // on a cube; builders reach further, as if from a ladder).
     bool find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Path& out, int max_expansions = 40000,
-                   int reach_up = 3);
+                   int reach_up = 3, int reach_xz = 1);
 
     // Walkable neighbours of a standable position with their move costs (max 8).
     int neighbors(const Vec3i& p, Vec3i* out, float* cost);

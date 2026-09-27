@@ -121,7 +121,7 @@ void Decisions::gate_construction(Decision& d) const {
         if (!o.feasible) continue;
         const std::string what = o.action.str("do");
         if (what != "build" && what != "found_outpost") continue;
-        if (unfinished >= 3) {
+        if (unfinished >= 2) {
             o.feasible = false;
             o.why_not = strfmt("还有 %d 处工地尚未完工", unfinished);
             continue;

@@ -195,19 +195,11 @@ void Agents::generate_jobs() {
         }
     }
 
-    // Construction sites, those nearest completion first: scarce materials finish one
-    // building rather than being spread over all of them.
-    std::vector<std::pair<i64, u32>> sites;
+    // Construction sites, the one begun first served first: what was started gets
+    // finished before scarce materials go to the next.
     for (const Building& bc : ctx_.buildings->all()) {
         if (!bc.alive || bc.complete) continue;
-        i64 left = 0;
-        for (auto& [item, count] : ctx_.buildings->remaining_cost(bc)) left += count;
-        sites.push_back({left, bc.id});
-    }
-    std::sort(sites.begin(), sites.end());
-    for (const auto& [left, site_id] : sites) {
-        (void)left;
-        Building* b = ctx_.buildings->get(site_id);
+        Building* b = ctx_.buildings->get(bc.id);
         const Project* pr = b->project ? ctx_.society->project(b->project) : nullptr;
         if (b->project && (!pr || pr->status != 0)) continue;
         float prio = pr ? pr->priority : 1.0f;

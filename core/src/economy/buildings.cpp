@@ -412,39 +412,81 @@ bool Buildings::find_site(const std::string& key, const Vec3i& near, int radius,
     const BuildingDef* d = def(key);
     if (!d) return false;
     const Registry& reg = *reg_;
-    // Spiral search for a footprint whose ground is flat (+-1), dry, unbuilt and clear of trees.
+    constexpr int kGap = 2;  // free cubes kept between buildings
+    // What stands already: each building's whole plan (a campfire's ring too), with its
+    // doorstep, as a box on the ground.
+    struct Box {
+        int x0, z0, x1, z1;
+    };
+    std::vector<Box> taken;
+    std::vector<Vec3i> doorsteps;
+    for (const Building& b : list_) {
+        if (!b.alive || b.is_bridge || b.plan_pos.empty()) continue;
+        Box bx{b.plan_pos[0].x, b.plan_pos[0].z, b.plan_pos[0].x, b.plan_pos[0].z};
+        for (const Vec3i& p : b.plan_pos) {
+            bx.x0 = std::min(bx.x0, p.x);
+            bx.z0 = std::min(bx.z0, p.z);
+            bx.x1 = std::max(bx.x1, p.x);
+            bx.z1 = std::max(bx.z1, p.z);
+        }
+        taken.push_back(bx);
+        doorsteps.push_back(b.entrance);
+    }
+    auto flat_dry = [&](int x, int z, int gy) {
+        const int y = w_.surface_y(x, z);
+        if (std::abs(y - gy) > 1) return false;
+        const Material& tm = reg.mat(w_.mat({x, y, z}));
+        if (tm.fluid || w_.mat({x, y, z}) == reg.m().farmland || tm.trunk || tm.foliage || w_.mat({x, y, z}) == reg.m().planks)
+            return false;
+        // Dry ground: a shallow lake's sandy bed is no place for a floor.
+        for (int k = 1; k <= 2; ++k)
+            if (reg.mat(w_.mat({x, y + k, z})).fluid) return false;
+        return true;
+    };
+    // Spiral search for a footprint on flat, dry, unbuilt ground clear of trees, with room
+    // around it and open, level ground before its door.
     for (int r = 4; r <= radius; r += 2) {
         for (int i = 0; i < 16; ++i) {
-            float a = (float)i / 16.0f * 6.2831853f + (float)r * 0.37f;
-            int cx = near.x + (int)std::lround(std::cos(a) * (float)r);
-            int cz = near.z + (int)std::lround(std::sin(a) * (float)r);
-            int x0 = cx - d->w / 2, z0 = cz - d->d / 2;
-            int gy = w_.surface_y(cx, cz);
-            bool ok = gy > 0;
-            for (int z = z0 - 1; z <= z0 + d->d && ok; ++z)
-                for (int x = x0 - 1; x <= x0 + d->w && ok; ++x) {
-                    int y = w_.surface_y(x, z);
-                    if (std::abs(y - gy) > 1) ok = false;
-                    MatId top = w_.mat({x, y, z});
-                    const Material& tm = reg.mat(top);
-                    if (tm.fluid || top == reg.m().farmland || tm.trunk || tm.foliage || top == reg.m().planks)
-                        ok = false;
-                    // Dry ground: a shallow lake's sandy bed is no place for a floor.
-                    for (int k = 1; k <= 2 && ok; ++k)
-                        if (reg.mat(w_.mat({x, y + k, z})).fluid) ok = false;
+            const float a = (float)i / 16.0f * 6.2831853f + (float)r * 0.37f;
+            const int cx = near.x + (int)std::lround(std::cos(a) * (float)r);
+            const int cz = near.z + (int)std::lround(std::sin(a) * (float)r);
+            const int gy = w_.surface_y(cx, cz);
+            if (gy <= 0) continue;
+            // Face the requested point.
+            const float dx = (float)(near.x - cx), dz = (float)(near.z - cz);
+            u8 rt = std::fabs(dx) > std::fabs(dz) ? (dx > 0 ? 3 : 1) : (dz > 0 ? 0 : 2);
+            const int fw = (rt & 1) ? d->d : d->w, fd = (rt & 1) ? d->w : d->d;  // world footprint
+            const int x0 = cx - fw / 2, z0 = cz - fd / 2;
+            bool ok = true;
+            for (int z = z0 - 1; z <= z0 + fd && ok; ++z)
+                for (int x = x0 - 1; x <= x0 + fw && ok; ++x) {
+                    if (!flat_dry(x, z, gy)) ok = false;
+                    const int y = w_.surface_y(x, z);
                     for (int k = 0; k <= 4 && ok; ++k)
                         if (at({x, y + k, z})) ok = false;
                 }
-            if (!ok) continue;
-            origin = {x0, gy + 1, z0};
-            // Face the requested point.
-            float dx = (float)(near.x - cx), dz = (float)(near.z - cz);
-            if (std::fabs(dx) > std::fabs(dz)) rot = dx > 0 ? 3 : 1;
-            else rot = dz > 0 ? 0 : 2;
-            if (rot & 1) {
-                origin.x = cx - d->d / 2;
-                origin.z = cz - d->w / 2;
+            for (size_t t = 0; t < taken.size() && ok; ++t) {
+                const Box& bx = taken[t];
+                if (x0 - kGap <= bx.x1 && bx.x0 <= x0 + fw - 1 + kGap && z0 - kGap <= bx.z1 && bx.z0 <= z0 + fd - 1 + kGap)
+                    ok = false;
             }
+            if (!ok) continue;
+            const Vec3i o{x0, gy + 1, z0};
+            // The way in: the doorstep and two cubes beyond it, open and level, blocking
+            // no other building's door.
+            const int door_x = d->door_local.x >= 0 ? d->door_local.x : d->w / 2;
+            for (int k = 0; k < 3 && ok; ++k) {
+                const Vec3i p = to_world(*d, o, rt, {door_x, 0, d->d + k});
+                if (!flat_dry(p.x, p.z, gy)) ok = false;
+                const int y = w_.surface_y(p.x, p.z);
+                for (int h = 0; h <= 3 && ok; ++h)
+                    if (at({p.x, y + h, p.z})) ok = false;
+            }
+            for (const Vec3i& ds : doorsteps)
+                if (ds.x >= x0 - 1 && ds.x <= x0 + fw && ds.z >= z0 - 1 && ds.z <= z0 + fd) ok = false;
+            if (!ok) continue;
+            origin = o;
+            rot = rt;
             return true;
         }
     }
