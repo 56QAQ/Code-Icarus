@@ -25,9 +25,10 @@ simulation depends on the camera, frame rate or scene tree.
 |---|---|---|
 | cube | 1 world unit ≈ 0.5 m | terrain/building resolution |
 | cell (地格) | 32×32×32 cubes | generation/storage/scheduling unit |
-| world | 32×8×32 cells = 1024×256×1024 cubes | main island r≈112 + 4 islets |
+| world | 32×8×32 cells = 1024×256×1024 cubes | classic: main island r≈112 + 4 islets; continent: r≈330 with biomes |
 | body voxel | 1/8 cube | characters are ~3 cubes (1.5 m) tall |
 | tick | 1/20 s at 1x | 6000 ticks per day (5 min at 1x) |
+| season / year | 8 days / 4 seasons | a life runs at 0.75 years per day (`data/life.json`) |
 
 ## 3. World (core/world)
 
@@ -46,12 +47,20 @@ simulation depends on the camera, frame rate or scene tree.
   drains the journal each tick and dispatches it to physics, buildings, navigation.
 * Save files store only non-pristine cells (the world's *changes*) plus cell metadata;
   pristine cells are regenerated from the seed. Generation is a pure function.
+* **Layouts**: `Classic` (the first version's island) and `Continent`
+  (`worldgen_continent.cpp`): an irregular coast, a mountain range, lakes, rivers from
+  springs, ravines and islets; biomes from temperature × moisture × height (grassland,
+  broadleaf and conifer forest, snowy highland, red desert, marsh, lakeshore, rock);
+  wild resources (fruit trees, wild grain, mushrooms, reeds, herbs, flint nodules, peat,
+  ores) and a *site* per civilisation (a plateau by a lake, in different biomes).
 
 ## 4. Matter (core/sim/physics)
 
 * **Water**: integer units (15 per cube), conserved. Falls, then spreads to lower
   neighbours, prefers edges with drops (waterfalls). Leaves the world below y=0 (the
-  abyss under the floating island). Only shallow puddles evaporate. Springs are explicit
+  abyss under the floating island). Evaporation only takes water standing above the
+  generated water table (floods, puddles); lakes keep to their shores, rain tops them
+  up. Springs are explicit
   sources (1 unit / N ticks); destroying the spring cube emits `WaterSourceLost`.
 * **Fire**: burning flag on flammable cubes; spreads by material flammability (upwards
   faster); water quenches (consuming water); burnt cubes become `burn_to` material.
@@ -71,6 +80,13 @@ simulation has touched, saplings take root on open grass (not against buildings)
 grow into real trees after three days; berry bushes re-sprout at the edge of the woods.
 Untouched parts of the island are left as generated and cost nothing. Its random
 stream and state are saved (older saves load with an empty ecology).
+
+**Fauna** (`fauna/fauna.cpp`, `data/animals.json`): deterministic, saved animals by
+biome (rabbits, deer, boar, goats, wolves, bears, fish, birds) that graze, flock, flee,
+hunt, breed within a cap and grow old. Far from people they move in large steps (LOD).
+Hunters stalk and strike them; carcasses are butchered into meat, hide and bone in the
+ledger. Wolves only prey on lone people at night when starving and far from buildings;
+bears and boars strike once at whoever comes too close or struck them, then break off.
 
 ## 5. Chronicle (core/sim/chronicle)
 
@@ -103,13 +119,39 @@ events) and a decision trace (the scored options behind the current activity).
   projects; kitchens; crafting on demand (recipes in `data/recipes.json`, produced at a
   public store and logged in the ledger); foraging under scarcity.
 * **Navigation**: A* over standable cube positions (8-way, climb 1–2 with headroom,
-  drop 3). A flood fill labels **walkable regions** around settlement anchors; the
-  region map is rebuilt when event-driven terrain changes happen (or daily after
-  settling matter) and is saved, so water search skips unreachable spots and saves stay
-  deterministic. Someone outside every region (fallen into the ravine) plans and cuts a
+  drop 3). A flood fill labels **walkable regions** around settlement anchors (a flat
+  open-addressing table, `region_map.h`); the survey is redone after building work at
+  most every six hours (daily after settling matter), not when a new anchor lies in
+  ground already surveyed, and is saved, so water search skips unreachable spots and
+  saves stay deterministic. Regions flag whether their flood was cut short (`open`):
+  another survey region is out of reach only when both floods ran their course. Long
+  searches share a per-tick budget of expanded nodes; beyond it they wait a tick. Someone outside every region (fallen into the ravine) plans and cuts a
   45° staircase out of the rock (`agents_escape.cpp`).
 * **Magic on her own initiative** (`agents_magic.cpp`): healing the injured nearby,
-  quenching fires. Strategic spells go through decisions (below).
+  quenching fires, battle magic (enemy magical girls first: a told **duel**), and the
+  rituals — a war cry (the fighters around her fearless and stronger for two hours),
+  frenzy, discord (in the enemy's ranks, or at home against the ruler), withering the
+  enemy's crops, devouring their walls for mana. Long rituals keep cooldowns. Strategic
+  spells go through decisions (below). Every cast enters a presentation-only **spell
+  feed** (effect, caster, target, colours) that Godot turns into visible magic.
+* **Life** (`agents_life.cpp`, `data/life.json`): ages, partnerships between fond
+  housemates, births when fed, housed and content, children who play and grow up to
+  work, elders who slow down and die of old age, mourning. A people with too few
+  magical girls sees one awaken among its women (her drive answers what the people have
+  been through), taken in hand by the most experienced girl; a people that loses its
+  last girl sees one awaken at once.
+* **Drama** (`agents_drama.cpp`): ties between girls (`Bond`: friend, rival, mentor /
+  student, nemesis) grow from shared drives, campaigns, a girl turned against her
+  ruler, a newly awakened student, a friend felled by an enemy girl. What a girl lives
+  through adds to her *trauma* (a friend lost, famine, her people cut down, an army
+  broken, a people forced to bow, punishment) or her *solace* (kindness, levels,
+  triumphs, friendship); past a threshold a bright drive falls (hope→despair,
+  courage→wrath, light→envy, gourmet→gluttony) or a dark one rises, recolouring her
+  costume, with the experiences behind it as the event's causes.
+* **Equipment** (`agents_equipment.cpp`): typed tools (axe, pick, hoe, hammer, sickle,
+  knife) in flint/stone, copper and iron with wear; the right tool speeds the work (bare
+  hands are slow), workers swap tools at stores; clothes (leaf wrap, fur cloak, linen)
+  keep off cold and wet; weapons and armour for hunters and soldiers.
 * **Migration** (`agents_migrate.cpp`): grievance (resentment of the ruler, hunger, low
   mood) times the pull of another polity (better fed, a favoured ruler, friends there;
   less so an enemy), damped by conformity and caution. Migrants walk to the other seat
@@ -160,8 +202,21 @@ growth depends on irrigation from real water nearby.
 * **War** (`society/war.cpp`, `agents/agents_war.cpp`, `decision/decision_war.cpp`):
   wars are declared by rulers; armies are drafted able-bodied residents who arm
   themselves from the stores and follow one operation at a time (muster, march, raid or
-  take the objective, return). Hits remove voxels from bodies, reduced by armour;
-  raiders haul real food home; conquest annexes people, land and stores.
+  besiege the objective, return), with up to two magical girls with battle magic as
+  champions. Hits remove voxels from bodies, reduced by armour; the badly wounded fall
+  back and an army breaks at a third lost; raiders haul real food home. A hall held
+  for hours without a defender falls: a people that can still stand capitulates as a
+  tribute-paying vassal, a broken one is annexed.
+* **Strategy and diplomacy** (`society/strategy.cpp`): fighting strength, and an
+  *assessment* of each neighbour (motive: grievance, hostility, hunger against their
+  plenty, the ruler's drive — war appetite, envy of the stronger, gluttony for a full
+  granary; opportunity: their famine, unrest, other wars; the strength ratio with
+  allies; the first season of building up; truces). Grievances pile up from trespass
+  and borders within reach, fade slowly, and harden attitudes. Rulers decide: raids,
+  conquest, demands for submission, alliances against a stronger third, envoys with
+  real gifts, peace with reparations or vassalage; wars that drag on, a starving or
+  bled people, weigh toward peace. Vassals pay tribute every few days and may throw off
+  the yoke. Growing villages found new ones by distant water (outposts).
 * **Trade** (`society/trade.cpp`, the `Trade` job in `agents_tasks.cpp`): each polity's
   *trade book* lists what it can spare (food beyond five days of eating, building
   materials beyond what construction still needs, tools and arms beyond one for everyone
@@ -211,19 +266,33 @@ meteors.
   distance covered, each job has its motion and tool, magical girls carry twin tails, a
   flared skirt and a floating emblem.
 * **Effects** (`scripts/fx_renderer.gd`) read the kernel's presentation-only feed of
-  broken and landed cubes (chips, dust), its fire list (flames, smoke) and the weather
-  (rain); the sky, clouds and light follow the hour. The UI is built in code (`ui/ui_theme.gd`) as floating cards over the world —
+  broken and landed cubes (chips, dust), its fire list (flames, smoke) and the weather:
+  rain falls as streaks that splash where they land, rings water surfaces with ripples
+  and gathers in mirror-dark puddles; the sky, clouds and light follow the hour.
+* **Spells** (`scripts/spell_renderer.gd`) turn the spell feed into short effects in
+  the caster's colours: the spell's name over her, light streaming, bolts and fireballs
+  in flight, slashes, rings over the ground, pillars of light, embers and motes.
+* **Villages** (`scripts/village_renderer.gd`): goods on the ground and in storehouse
+  yards are drawn by kind (logs, sacks, baskets, ore, jars, tool racks...), and the
+  things of daily life stand around each building (woodpiles, jars, barrels, hearth and
+  pot, workbench, banners and braziers at the hall). Presentation only. The UI is built in code (`ui/ui_theme.gd`) as floating cards over the world —
 time pill, civilisation card with polity switcher, tool dock, toasts, contextual
-selection card with tabs — plus centred overlays: **议事录** (decisions), **编年史**
-(history with a causal-chain graph), **科技** (the tech tree) and the round's ending
-card. No permanent side panels.
+selection card with tabs (a girl's card adds her ties, drive history and **传记**, her
+life's great moments) — plus centred overlays: **议事录** (decisions), **编年史**
+(history with a causal-chain graph), **科技** (the tech tree), **羁绊** (the girls as a
+web: peoples as clusters, followings as circle size, ties as lines) and the round's
+ending card. For a few hours after a council decision the girls' name tags say what
+each argued for. No permanent side panels.
 
 ## 10. Validation
 
 `icarus_cli experiment` runs the same scenario and shocks on many seeds and reports how
 each civilisation responded and ended (recovered / declined / split / coup / war /
 reunified), with the forest left standing. Reports
-live in `docs/experiments/`.
+live in `docs/experiments/`. `icarus_cli run --layout continent --scenario three_realms`
+(or `--scenario wild`) with `--events -v` streams a whole year; `--load` continues from
+a save, and slow ticks are reported with the path searching and flooding they did. The
+second version's acceptance runs are summarised in `docs/V2_PLAN.md`.
 
 ## 11. Determinism
 
