@@ -3,7 +3,7 @@ extends Node3D
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N | --load FILE] [--layout classic|continent] [--scenario key]
 ##        [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}|break_bridge] [--council [id]] [--tech [key]] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--tech [key]] [--ui-scale f] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
 ##        [--focus-job job[,dist]] [--focus-animal species[,dist]]
 ##        [--hide-ui] [--frames N] [--late-admin type:{json} [--late-frames N] [--late-ticks N] [--late-run]]
 
@@ -31,6 +31,8 @@ var _cli := {}
 
 func _ready() -> void:
 	_cli = _parse_cli()
+	if _cli.has("ui-scale"):
+		Game.apply_ui_scale(clampf(float(_cli["ui-scale"]), 0.5, 2.0))
 	_build_environment()
 	rig = CameraRig.new()
 	add_child(rig)

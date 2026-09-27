@@ -626,10 +626,27 @@ func show_ending() -> void:
 func _build_toasts() -> void:
 	_toasts = VBoxContainer.new()
 	_toasts.size_flags_horizontal = Control.SIZE_SHRINK_END
-	_toasts.custom_minimum_size = Vector2(320, 0)
 	_toasts.add_theme_constant_override("separation", 6)
 	_toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_top_right.add_child(_toasts)
+	# Narrower toasts when the cards beside them grow or the window shrinks.
+	_top_left.minimum_size_changed.connect(_fit_toasts)
+	_top_center.minimum_size_changed.connect(_fit_toasts)
+	get_viewport().size_changed.connect(_fit_toasts)
+
+
+## Toast text width: 300, or what is left beside the time pill in a narrow layout.
+func _toast_width() -> float:
+	var free := get_viewport_rect().size.x - 28.0 - _top_left.get_combined_minimum_size().x - _top_center.get_combined_minimum_size().x
+	return clampf(free - 32.0, 200.0, 300.0)
+
+
+func _fit_toasts() -> void:
+	var w := _toast_width()
+	for card in _toasts.get_children():
+		var text: Control = card.get_child(0).get_child(1)
+		if not is_equal_approx(text.custom_minimum_size.x, w):
+			text.custom_minimum_size.x = w
 
 
 func _on_event(ev: Dictionary) -> void:
@@ -651,7 +668,7 @@ func _on_event(ev: Dictionary) -> void:
 	v.add_child(UITheme.label(ev.get("time", ""), 11, UITheme.TEXT_FAINT))
 	var l := UITheme.label(ev.get("text", ""), 14)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size = Vector2(300, 0)
+	l.custom_minimum_size = Vector2(_toast_width(), 0)
 	v.add_child(l)
 	var data = ev.get("data", {})
 	card.mouse_filter = Control.MOUSE_FILTER_STOP

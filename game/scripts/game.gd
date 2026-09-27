@@ -32,6 +32,61 @@ var _rules_loaded := false
 func _ready() -> void:
 	sim = IcarusSim.new()
 	_rules_loaded = _load_rules()
+	get_window().size_changed.connect(_fit_ui)
+	apply_ui_scale(load_ui_scale())
+
+
+# --- Interface size -----------------------------------------------------------------
+# The interface is laid out for a 1600×900 window and grows with the window (project
+# setting: stretch mode canvas_items; the 3D view always renders at full resolution).
+# The player's own preference multiplies that, and is kept in user://settings.cfg.
+
+const SETTINGS_PATH := "user://settings.cfg"
+const UI_SCALES := [0.8, 0.9, 1.0, 1.1, 1.25]
+
+
+func load_ui_scale() -> float:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) != OK:
+		return 1.0
+	return clampf(float(cfg.get_value("display", "ui_scale", 1.0)), 0.5, 2.0)
+
+
+## The smallest size the interface is drawn at, relative to its 1600×900 design, so text
+## stays legible in a small window.
+const UI_MIN_EFFECTIVE := 0.85
+## The layout needs at least 1280×720 logical pixels (1600×900 / 1.25); larger factors
+## would make the cards overlap.
+const UI_MAX_FACTOR := 1.25
+var _ui_pref := 1.0
+
+
+func apply_ui_scale(scale: float, remember := false) -> void:
+	_ui_pref = scale
+	_fit_ui()
+	if remember:
+		var cfg := ConfigFile.new()
+		cfg.load(SETTINGS_PATH)
+		cfg.set_value("display", "ui_scale", scale)
+		cfg.save(SETTINGS_PATH)
+
+
+## The player's chosen interface size (1.0 = fitted to the window).
+func ui_scale() -> float:
+	return _ui_pref
+
+
+func _fit_ui() -> void:
+	var win := get_window()
+	var base := Vector2(ProjectSettings.get_setting("display/window/size/viewport_width", 1600),
+		ProjectSettings.get_setting("display/window/size/viewport_height", 900))
+	var fitted := minf(float(win.size.x) / base.x, float(win.size.y) / base.y)
+	var f := _ui_pref
+	if fitted > 0.0 and fitted * f < UI_MIN_EFFECTIVE:
+		f = UI_MIN_EFFECTIVE / fitted
+	f = minf(f, UI_MAX_FACTOR)
+	if not is_equal_approx(win.content_scale_factor, f):
+		win.content_scale_factor = f
 
 
 func _load_rules() -> bool:

@@ -7,6 +7,7 @@ extends PanelContainer
 signal closed
 
 var _col: VBoxContainer
+var _scroll: ScrollContainer
 var _seed_edit: LineEdit
 ## New-world options: [config value, label, tooltip].
 const LAYOUTS := [
@@ -49,9 +50,17 @@ func _ready() -> void:
 	add_theme_stylebox_override("panel", sb)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	custom_minimum_size = Vector2(580, 0)
+	# The menu scrolls when it is taller than the screen (a small window, a large
+	# interface size, or the help unfolded).
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(_scroll)
 	_col = VBoxContainer.new()
 	_col.add_theme_constant_override("separation", 12)
-	add_child(_col)
+	_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.add_child(_col)
+	_col.minimum_size_changed.connect(_fit_height)
+	get_viewport().size_changed.connect(_fit_height)
 
 	# Title.
 	var head := HBoxContainer.new()
@@ -152,6 +161,27 @@ func _ready() -> void:
 			_status.text = "无法写入设置文件（游戏目录可能只读）"
 			_status.add_theme_color_override("font_color", UITheme.BAD))
 	gfx.add_child(sw)
+	# Interface size: fitted to the window, times the player's preference.
+	var ui := HBoxContainer.new()
+	ui.add_theme_constant_override("separation", 4)
+	_col.add_child(ui)
+	var ul := UITheme.label("界面大小", 12, UITheme.TEXT_DIM)
+	ul.custom_minimum_size = Vector2(72, 0)
+	ul.tooltip_text = "界面随窗口大小自动缩放；在此基础上可以再放大或缩小。立即生效。"
+	ui.add_child(ul)
+	var group := ButtonGroup.new()
+	for f in Game.UI_SCALES:
+		var b := _button("%d%%" % roundi(float(f) * 100.0), UITheme.TEXT_DIM)
+		b.toggle_mode = true
+		b.button_group = group
+		b.add_theme_color_override("font_pressed_color", UITheme.ACCENT)
+		b.add_theme_stylebox_override("pressed", UITheme.flat(Color(UITheme.ACCENT, 0.18), 8, 12, 5))
+		b.button_pressed = is_equal_approx(float(f), Game.ui_scale())
+		var value := float(f)
+		b.toggled.connect(func(on: bool) -> void:
+			if on:
+				Game.apply_ui_scale(value, true))
+		ui.add_child(b)
 
 	var foot := HBoxContainer.new()
 	_col.add_child(foot)
@@ -161,6 +191,14 @@ func _ready() -> void:
 	var quit := _button("退出游戏", UITheme.TEXT_DIM)
 	quit.pressed.connect(func() -> void: get_tree().quit())
 	foot.add_child(quit)
+
+
+## As tall as the content, but never taller than the screen.
+func _fit_height() -> void:
+	var margins := get_theme_stylebox("panel").get_minimum_size().y
+	var room := get_viewport_rect().size.y - 32.0 - margins
+	_scroll.custom_minimum_size.y = minf(_col.get_combined_minimum_size().y, maxf(200.0, room))
+	reset_size()
 
 
 func open() -> void:

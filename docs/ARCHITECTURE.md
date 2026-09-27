@@ -299,6 +299,13 @@ life's great moments) — plus centred overlays: **议事录** (decisions), **�
 web: peoples as clusters, followings as circle size, ties as lines) and the round's
 ending card. For a few hours after a council decision the girls' name tags say what
 each argued for. No permanent side panels.
+* **Interface size**: the UI is laid out for 1600×900 and scales with the window
+  (stretch mode `canvas_items`, aspect `expand`), so a 4K screen draws it 2.4× larger
+  with crisp text, while the 3D view always renders at full resolution. The world
+  menu's 「界面大小」 (80–125%, kept in `user://settings.cfg`) multiplies that; the
+  factor never drops below 0.85 of the design size (legible in small windows) and never
+  above 1.25 (the layout needs 1280×720 logical pixels). Tall cards scroll and toasts
+  narrow to the room beside the time pill.
 
 ## 10. Validation
 

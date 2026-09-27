@@ -40,6 +40,7 @@ Linux 容器可先运行 `tools/setup_env.sh` 安装 Godot、SCons 与无头渲�
 | C | 编年史：按类别筛选历史，并查看任一事件的因果链图 |
 | T | 科技树：四个时代的科技、前置关系、当前研究与解锁内容（新时代的科技要先掌握上一时代至少一半的科技）；可「降下启示」 |
 | Esc / 顶栏齿轮 | 关闭浮层 / 回到观察工具；无可关闭时打开「世界」菜单：用种子开辟新的空岛、保存到存档槽、读取存档（每个游戏日自动存档一次） |
+| 界面大小（世界菜单·画面） | 界面随窗口分辨率等比缩放（4K 下同样清晰）；可再选 80%–125%，立即生效并记住 |
 
 魔法少女的人物卡有「关系」（她的羁绊）、「魔法」（源动力的来历、心之重负与慰藉）与「传记」（一生的大事，可逐条追溯）。议事之后的几个小时里，魔法少女头顶的名牌会显示她们各自的主张与统治者的裁决。
 
@@ -67,6 +68,7 @@ build/tools/cli/icarus_cli run --load out/r.sav --days 2 -v      # 从存档继�
 tools/acceptance.sh out/acceptance 3                            # 第二版本验收：三国 8 局 + 蛮荒 6 局，各一年，输出汇总表
 build/tools/cli/icarus_cli experiment --seeds 1-8 --days 7 --admin 30:kill_spring --report out.md
 tools/screenshot.sh out.png --ticks 1500 --council   # 无头渲染一帧游戏画面
+RES=3840x2160 tools/screenshot.sh out.png --ui-scale 1.1   # 指定分辨率与界面大小
 tools/screenshot.sh out.png --layout continent --scenario three_realms --web   # 羁绊图（--spell-demo heal,rally 可演示法术）
 godot --path game --script res://tests/render_test.gd -- --seed 1 --hide-ui  # 本机 GPU 多视角黑面回归（需要显示环境）
 ```
