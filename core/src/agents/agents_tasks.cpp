@@ -1553,7 +1553,8 @@ bool Agents::task_work(Character& c) {
             }
             if (t.step == 1) {
                 say(c, "前往工地");
-                Move m = move_to(c, j->pos, true);
+                // Roofs are laid from a ladder: up to seven cubes above the builder's feet.
+                Move m = move_to(c, j->pos, true, 7);
                 if (m == Move::Failed) return fail("到不了施工位置");
                 if (m != Move::Arrived) return true;
                 MatId cur = w.mat(j->pos);

@@ -175,7 +175,7 @@ Nav::Node* Nav::slot(u64 key, bool create) {
     return nullptr;  // table congested; treat as unreachable
 }
 
-bool Nav::find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Path& out, int max_expansions) {
+bool Nav::find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Path& out, int max_expansions, int reach_up) {
     out.clear();
     stats.searches++;
     ++gen_;
@@ -186,7 +186,7 @@ bool Nav::find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Pat
     auto is_goal = [&](const Vec3i& p) {
         if (p == goal) return true;
         if (!adjacent_ok) return false;
-        return std::abs(p.x - goal.x) <= 1 && std::abs(p.z - goal.z) <= 1 && p.y - goal.y <= 2 && goal.y - p.y <= 3;
+        return std::abs(p.x - goal.x) <= 1 && std::abs(p.z - goal.z) <= 1 && p.y - goal.y <= 2 && goal.y - p.y <= reach_up;
     };
     struct QE {
         float f;

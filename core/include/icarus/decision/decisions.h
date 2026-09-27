@@ -137,6 +137,9 @@ private:
     void girls_politics(Polity& p);
     void consider(Polity& p);
     u32 open(Decision d);
+    // New building work waits while several sites stand unfinished, and a building whose
+    // materials cannot be made yet is not begun (its site would only hoard what others need).
+    void gate_construction(Decision& d) const;
     void build_crisis_options(Decision& d, Polity& p, const Crisis& c, Character& girl);
     void build_governance_options(Decision& d, Polity& p, Character& girl);
     void build_stance_options(Decision& d, Polity& p, Character& girl);

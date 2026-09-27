@@ -194,8 +194,9 @@ private:
     void think(Character& c);
     float work_score(Character& c, const Job& j, std::string& why);
     u32 best_job(Character& c, float& score, std::string& why);
-    // Jobs in hand per polity and category (build, gather), counted afresh each tick
-    // someone looks for work: building and gathering keep a share of the hands.
+    // Jobs in hand per polity: construction (build, carry to sites) and gathering (cut
+    // wood, quarry), counted afresh each tick someone looks for work; both keep a share
+    // of the hands.
     Tick crew_tick_ = ~Tick(0);
     std::vector<std::array<u16, 2>> crew_;
     void count_crews();
@@ -235,7 +236,7 @@ private:
     void defect(Character& c, u16 to, EventId cause);
     // movement
     enum class Move { Moving, Arrived, Failed };
-    Move move_to(Character& c, const Vec3i& goal, bool adjacent_ok);
+    Move move_to(Character& c, const Vec3i& goal, bool adjacent_ok, int reach_up = 3);
     void place_at(Character& c, const Vec3i& foot);
     bool blacklisted(Character& c, const Vec3i& p);
     void blacklist(Character& c, const Vec3i& p, Tick duration);

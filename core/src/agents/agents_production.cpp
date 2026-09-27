@@ -126,9 +126,18 @@ void Agents::production_jobs() {
             }
             want.swap(next);
         }
+        // Materials building sites still wait for are not crafted into other things
+        // (only into what the sites need, such as planks).
+        std::map<ItemId, i64> site_hold;
+        for (const Building& b : ctx_.buildings->all())
+            if (b.alive && !b.complete && b.polity == pc.id)
+                for (auto& [it, n] : ctx_.buildings->remaining_cost(b)) site_hold[it] += n;
         // Craft jobs: at a store holding the inputs, up to two open per recipe.
         for (auto& [ri, nb] : batches) {
             const Json& r = recipes[(size_t)ri];
+            bool for_sites = false;
+            for (const auto& [k, v] : r["outputs"].members())
+                if (site_hold.count(reg.find_item(k))) for_sites = true;
             int open = 0;
             for (const Job& j : jobs.all())
                 if (j.alive && j.type == JobType::Craft && j.polity == pc.id && j.plot == (u32)ri) ++open;
@@ -137,8 +146,15 @@ void Agents::production_jobs() {
                 const Store* st = econ.store(sid);
                 if (!st || st->kind != StoreKind::Stockpile) continue;
                 int can = std::min(nb, r.integer("batch", 1));
-                for (const auto& [k, v] : r["inputs"].members())
-                    can = std::min(can, econ.available(sid, reg.find_item(k)) / std::max(1, v.as_int()));
+                for (const auto& [k, v] : r["inputs"].members()) {
+                    const ItemId in = reg.find_item(k);
+                    i64 have = econ.available(sid, in);
+                    if (!for_sites) {
+                        auto held = site_hold.find(in);
+                        if (held != site_hold.end()) have -= held->second;
+                    }
+                    can = std::min<i64>(can, std::max<i64>(0, have) / std::max(1, v.as_int()));
+                }
                 if (can <= 0) continue;
                 Job& j = add(JobType::Craft, pc.id, st->pos, 1.15f);
                 j.from = sid;

@@ -95,7 +95,49 @@ void Decisions::whisper_value(EntityId girl, int feature, float delta, EventId c
     value_whispers_[girl] = ValueWhisper{feature, delta, now_, cause};
 }
 
+void Decisions::gate_construction(Decision& d) const {
+    const Polity* p = ctx_.society->polity(d.polity);
+    if (!p) return;
+    int unfinished = 0;
+    for (const Building& b : ctx_.buildings->all())
+        if (b.alive && !b.complete && b.polity == p->id && b.project)
+            if (const Project* pr = ctx_.society->project(b.project); pr && pr->alive && pr->status == 0) ++unfinished;
+    const Json& recipes = ctx_.reg->doc("recipes")["recipes"];
+    auto makeable = [&](ItemId it) {
+        const std::string key = ctx_.reg->item(it).key;
+        bool made_by_recipe = false;
+        for (const Json& r : recipes.items())
+            for (const auto& [out, n] : r["outputs"].members())
+                if (out == key) {
+                    made_by_recipe = true;
+                    if (r.str("tech").empty() || p->has_tech(r.str("tech"))) return true;
+                }
+        if (!made_by_recipe) return true;  // gathered, mined or cut
+        for (StoreId sid : ctx_.society->public_stores(p->id))
+            if (ctx_.econ->available(sid, it) > 0) return true;  // some put by
+        return false;
+    };
+    for (DecisionOption& o : d.options) {
+        if (!o.feasible) continue;
+        const std::string what = o.action.str("do");
+        if (what != "build" && what != "found_outpost") continue;
+        if (unfinished >= 3) {
+            o.feasible = false;
+            o.why_not = strfmt("还有 %d 处工地尚未完工", unfinished);
+            continue;
+        }
+        if (const BuildingDef* bd = ctx_.buildings->def(o.action.str("def")))
+            for (const auto& [it, n] : bd->cost)
+                if (!makeable(it)) {
+                    o.feasible = false;
+                    o.why_not = "还造不出" + ctx_.reg->item(it).name;
+                    break;
+                }
+    }
+}
+
 u32 Decisions::open(Decision d) {
+    gate_construction(d);
     d.id = (u32)list_.size();
     d.created = now_;
     d.status = DecisionStatus::Pending;

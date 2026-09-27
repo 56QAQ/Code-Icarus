@@ -320,3 +320,35 @@ TEST("eras: light goods reach a building site, and a thatched shelter gets its r
     }
     CHECK(built);
 }
+
+TEST("eras: builders lay a hut's roof from a ladder, and the hut is finished") {
+    Simulation sim(test_registry());
+    GameConfig cfg = start("tribal", 6);
+    sim.new_game(cfg);
+    Polity& p = band(sim);
+    for (const char* k : {"thatching", "carpentry"}) p.techs.push_back(k);
+    const Building* seat = sim.buildings().get(p.seat);
+    REQUIRE(seat != nullptr);
+    Economy& econ = sim.economy();
+    for (auto [k, n] : {std::pair<const char*, int>{"wood", 60}, {"planks", 40}, {"fiber", 50}})
+        econ.add(seat->store, test_registry().find_item(k), n, "test");
+    Vec3i origin;
+    u8 rot = 0;
+    REQUIRE(sim.buildings().find_site("hut", seat->entrance, 40, origin, rot));
+    Project pr;
+    pr.polity = p.id;
+    pr.kind = "construct";
+    pr.title = "兴建茅屋";
+    pr.priority = 2.0f;
+    pr.target = origin;
+    const u32 pid = sim.society().add_project(pr);
+    const u32 bid = sim.buildings().start_site("hut", origin, rot, p.id, pid);
+    if (Project* prp = sim.society().project(pid)) prp->building = bid;
+    bool built = false;
+    for (int h = 0; h < 24 * 4 && !built; ++h) {
+        sim.run(kTicksPerHour);
+        const Building* b = sim.buildings().get(bid);
+        built = b && b->functional;
+    }
+    CHECK(built);
+}

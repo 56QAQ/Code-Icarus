@@ -492,12 +492,12 @@ void Agents::blacklist(Character& c, const Vec3i& p, Tick duration) {
     if (c.unreachable.size() > 32) c.unreachable.erase(c.unreachable.begin());
 }
 
-Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) {
+Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, int reach_up) {
     auto arrived = [&]() {
         if (c.foot == goal) return true;
         if (!adjacent_ok) return false;
         return std::abs(c.foot.x - goal.x) <= 1 && std::abs(c.foot.z - goal.z) <= 1 && c.foot.y - goal.y <= 2 &&
-               goal.y - c.foot.y <= 3;
+               goal.y - c.foot.y <= reach_up;
     };
     if (arrived()) {
         c.moving = false;
@@ -513,7 +513,7 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
         if (auto rf = region_map_.find(c.foot); rf != region_map_.end()) {
             bool same = false, other = false;
             const int r = adjacent_ok ? 1 : 0;
-            for (int dy = adjacent_ok ? -3 : 0; dy <= (adjacent_ok ? 2 : 0) && !same; ++dy)
+            for (int dy = adjacent_ok ? -reach_up : 0; dy <= (adjacent_ok ? 2 : 0) && !same; ++dy)
                 for (int dz = -r; dz <= r && !same; ++dz)
                     for (int dx = -r; dx <= r && !same; ++dx) {
                         auto it = region_map_.find(goal + Vec3i{dx, dy, dz});
@@ -525,7 +525,7 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
             // course; the edge of a survey says nothing (settlements far apart).
             if (!same) {
                 u16 gl = 0;
-                for (int dy = -3; dy <= 2 && !gl; ++dy)
+                for (int dy = -reach_up; dy <= 2 && !gl; ++dy)
                     if (auto it = region_map_.find(goal + Vec3i{0, dy, 0}); it != region_map_.end()) gl = it->second;
                 auto open = [&](u16 id) { return id < region_open_.size() && region_open_[id]; };
                 budget = !other ? 6000 : (open(rf->second) && (gl == 0 || open(gl)) ? 60000 : 0);
@@ -538,7 +538,7 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
             return Move::Moving;
         }
         const u64 expanded = nav.stats.expansions;
-        const bool found = budget > 0 && nav.find_path(c.foot, goal, adjacent_ok, c.path, budget);
+        const bool found = budget > 0 && nav.find_path(c.foot, goal, adjacent_ok, c.path, budget, reach_up);
         path_spent_ += nav.stats.expansions - expanded;
         if (!found) {
             blacklist(c, goal, kTicksPerHour * 3);

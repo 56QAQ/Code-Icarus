@@ -156,7 +156,7 @@ void Ecology::daily(Tick now, const Buildings& buildings) {
         for (const Picked& f : picked_) {
             const Material& pm = reg_->mat(f.plant);
             const bool fruit = pm.foliage;
-            if (now - f.when < kTicksPerDay * (fruit ? 4 : 5)) {
+            if (now - f.when < kTicksPerDay * (fruit ? 3 : 4)) {
                 keep.push_back(f);
                 continue;
             }

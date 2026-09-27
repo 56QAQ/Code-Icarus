@@ -64,12 +64,18 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     }
     // Building and gathering keep a share of the hands while people are fed: otherwise
     // food work, always the most urgent, would take everyone and nothing would be built.
-    if (p && (cat == "build" || cat == "gather")) {
+    // (Construction is building and carrying to sites; gathering is cutting wood and
+    // quarrying. Crafting, digging and hauling piles have their own pull.)
+    const int crew = (j.type == JobType::Build || j.type == JobType::HaulToSite) ? 0
+                     : (j.type == JobType::Chop || j.type == JobType::Mine)       ? 1
+                                                                                  : -1;
+    if (p && crew >= 0) {
         const bool band = ctx_.society->foraging_band(*p);
-        const bool fed = p->stats.food_days >= (band ? 1.0f : 1.5f) && p->stats.food_access >= 0.9f;
+        // (A band lives from day to day: everyone eating is its sign of plenty.)
+        const bool fed = band ? p->stats.food_access >= 0.95f : (p->stats.food_days >= 1.5f && p->stats.food_access >= 0.9f);
         if (fed && c.polity < crew_.size() && is_work_time(c)) {
             const float hands = (float)std::max(4, p->stats.population);
-            const float share = (float)crew_[c.polity][cat == "build" ? 0 : 1] / hands;
+            const float share = (float)crew_[c.polity][(size_t)crew] / hands;
             const float kWant = band ? 0.1f : 0.15f;
             if (share < kWant) score += 0.6f * (kWant - share) / kWant * clampv(1.0f - dist / 150.0f, 0.2f, 1.0f);
         }
@@ -90,9 +96,8 @@ void Agents::count_crews() {
     crew_.assign(ctx_.society->polities().size() + 1, {0, 0});
     for (const Job& j : ctx_.jobs->all()) {
         if (!j.alive || j.claimed_by == kNoEntity || j.polity >= crew_.size()) continue;
-        const std::string cat = job_category(j.type);
-        if (cat == "build") crew_[j.polity][0]++;
-        else if (cat == "gather") crew_[j.polity][1]++;
+        if (j.type == JobType::Build || j.type == JobType::HaulToSite) crew_[j.polity][0]++;
+        else if (j.type == JobType::Chop || j.type == JobType::Mine) crew_[j.polity][1]++;
     }
 }
 
