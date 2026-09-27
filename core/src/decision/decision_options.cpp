@@ -945,7 +945,8 @@ void Decisions::level_ups(Character& g, EventId cause) {
         le.causes[0] = cause;
         le.text = learned.empty() ? strfmt("%s升到了 %d 级", g.name.c_str(), gd.level)
                                   : strfmt("%s升到了 %d 级，领悟了「%s」", g.name.c_str(), gd.level, learned.c_str());
-        ctx_.chron->emit(std::move(le));
+        const EventId lev = ctx_.chron->emit(std::move(le));
+        ctx_.agents->mark_girl(g.id, 0.0f, 0.12f, learned.empty() ? 0 : lev);  // growing into her power
     }
 }
 
@@ -1379,6 +1380,7 @@ void Decisions::execute(Decision& d) {
             if (what == "petition_punish") {
                 pet->girl->grudge = g->id;
                 pet->girl->role = "none";
+                ctx_.agents->mark_girl(pet->id, 0.3f, 0.0f, d.decision_event);  // humiliated by her own ruler
                 for (Character* r : residents())
                     if (r->support_for(d.petitioner) > 0.2f) r->support_ref(g->id) = clampv(r->support_for(g->id) - 0.1f, -1.0f, 1.0f);
             }

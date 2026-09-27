@@ -10,6 +10,7 @@ extends Node3D
 var renderer: WorldRenderer
 var fx: FxRenderer
 var spells: SpellRenderer
+var village: VillageRenderer
 var chars: CharacterRenderer
 var animals: AnimalRenderer
 var rig: CameraRig
@@ -39,6 +40,8 @@ func _ready() -> void:
 	add_child(fx)
 	spells = SpellRenderer.new()
 	add_child(spells)
+	village = VillageRenderer.new()
+	add_child(village)
 	chars = CharacterRenderer.new()
 	add_child(chars)
 	animals = AnimalRenderer.new()
@@ -513,6 +516,7 @@ func _on_world_ready() -> void:
 	renderer.setup(Game.sim, rig.camera)
 	fx.setup(Game.sim, rig.camera)
 	spells.setup(Game.sim, rig.camera)
+	village.setup(Game.sim, rig.camera)
 	chars.setup(Game.sim, rig.camera)
 	animals.focus = Vector3(v)
 	animals.setup(Game.sim, rig.camera)

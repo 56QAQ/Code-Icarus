@@ -338,9 +338,13 @@ void Society::update_wars(Polity& p) {
                          ? strfmt("「%s」的守军伤亡惨重，溃散了（损失 %d 人）", title(p.id).c_str(), op.lost)
                          : strfmt("「%s」的军队伤亡惨重，撤退了（损失 %d 人）", title(p.id).c_str(), op.lost);
             const EventId ev = ctx_.chron->emit(std::move(e));
-            // The magical girls who led them carry the defeat.
-            for (const auto& cp : ctx_.agents->all())
-                if (cp && cp->alive && cp->girl && cp->drafted && cp->polity == p.id) ctx_.agents->mark_girl(cp->id, 0.25f, 0.0f, ev);
+            // The magical girls who led them carry the defeat; those who broke them, the triumph.
+            for (const auto& cp : ctx_.agents->all()) {
+                if (!cp || !cp->alive || !cp->girl) continue;
+                if (cp->drafted && cp->polity == p.id) ctx_.agents->mark_girl(cp->id, 0.25f, 0.0f, ev);
+                else if (cp->polity == op.enemy && (cp->drafted || cp->id == (polity(op.enemy) ? polity(op.enemy)->ruler : 0)))
+                    ctx_.agents->mark_girl(cp->id, 0.0f, 0.2f, ev);
+            }
         }
     }
     // Muster → march once most soldiers have gathered (or after two hours).

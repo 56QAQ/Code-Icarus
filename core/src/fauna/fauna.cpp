@@ -550,8 +550,12 @@ void Fauna::move(Animal& a, float dt) {
                     // Having struck back, a bear or boar lets the intruder go (unless struck
                     // again); a wolf keeps at it a while.
                     if (s.temper == Temper::Territorial || s.temper == Temper::Defensive) {
-                        a.state_until = now_ + 30;
+                        a.state = AnimalState::Idle;
+                        a.state_until = now_;
+                        a.target = 0;
+                        a.target_char = false;
                         a.attacker = kNoEntity;
+                        a.goal = a.foot;
                     }
                     if (!c->alive && s.temper == Temper::Predator) {
                         a.state = AnimalState::Eat;

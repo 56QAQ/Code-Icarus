@@ -51,6 +51,10 @@ void Agents::strike(Character& attacker, Character& target, float power, const s
                 w->losses++;
                 w->active_at = now_;
             }
+            // Every one of her people cut down weighs on the magical girls; the ruler most.
+            for (auto& cp : chars_)
+                if (cp && cp->alive && cp->girl && cp->polity == tp->id)
+                    mark_girl(cp->id, cp->id == tp->ruler ? 0.06f : 0.04f, 0.0f, 0);
             if (tp->op.active && target.drafted) tp->op.lost++;
             ctx_.society->add_grievance(tp->id, attacker.polity, 0.05f);
         }

@@ -62,6 +62,7 @@ public:
     Dictionary animal_info(int64_t id) const;
     Array character_body(int64_t id) const; // 6 parts: {mesh, pivot}
     Dictionary character_info(int64_t id) const;
+    Array goods_of(const icarus::Store& s) const;  // (not bound) item keys and counts, most first
     Dictionary girl_web() const;                 // magical girls and the ties between them, with their followings
     Array biography(int64_t id) const;           // the great moments of a magical girl's life
     Array debates(int64_t within_ticks) const;   // recent council decisions with the girls' proposals

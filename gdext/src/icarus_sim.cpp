@@ -1563,6 +1563,22 @@ Array IcarusSim::tech_tree(int64_t polity) const {
     return out;
 }
 
+// What a store holds, most first (item keys and counts, at most five kinds).
+Array IcarusSim::goods_of(const icarus::Store& s) const {
+    std::vector<std::pair<int, icarus::ItemId>> v;
+    for (const auto& st : s.items)
+        if (st.count > 0) v.push_back({st.count, st.item});
+    std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
+    Array out;
+    for (size_t i = 0; i < v.size() && i < 5; ++i) {
+        Dictionary t;
+        t["key"] = to_gd(reg_->item(v[i].second).key);
+        t["count"] = v[i].first;
+        out.push_back(t);
+    }
+    return out;
+}
+
 Array IcarusSim::piles() const {
     Array out;
     if (!sim_) return out;
@@ -1573,6 +1589,7 @@ Array IcarusSim::piles() const {
         int n = 0;
         for (auto& st : s.items) n += st.count;
         d["count"] = n;
+        d["items"] = goods_of(s);
         out.push_back(d);
     }
     return out;
@@ -1612,10 +1629,27 @@ Array IcarusSim::buildings() const {
         Dictionary d;
         d["id"] = (int64_t)b.id;
         d["name"] = to_gd(b.name);
+        d["def"] = to_gd(b.def);
         d["pos"] = to_gd(b.entrance);
+        d["inside"] = to_gd(b.inside);
         d["functional"] = b.functional;
         d["complete"] = b.complete;
         d["integrity"] = b.integrity;
+        d["bridge"] = b.is_bridge;
+        d["polity"] = (int)b.polity;
+        if (const icarus::Polity* p = sim_->society().polity(b.polity)) d["color"] = col(p->color);
+        d["residents"] = (int64_t)b.residents.size();
+        // Its footprint (for things set around it).
+        if (!b.plan_pos.empty()) {
+            icarus::Vec3i lo = b.plan_pos.front(), hi = lo;
+            for (const icarus::Vec3i& q : b.plan_pos) {
+                lo = {std::min(lo.x, q.x), std::min(lo.y, q.y), std::min(lo.z, q.z)};
+                hi = {std::max(hi.x, q.x), std::max(hi.y, q.y), std::max(hi.z, q.z)};
+            }
+            d["min"] = to_gd(lo);
+            d["max"] = to_gd(hi);
+        }
+        if (const icarus::Store* st = sim_->economy().store(b.store)) d["goods"] = goods_of(*st);
         out.push_back(d);
     }
     return out;

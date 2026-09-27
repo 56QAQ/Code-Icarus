@@ -18,7 +18,6 @@ var _dead_mat: ShaderMaterial
 var _ring: MeshInstance3D
 var _crate_mesh: BoxMesh
 var _crate_mat: StandardMaterial3D
-var _pile_nodes := {}  # key -> MeshInstance3D
 var _gear_mats := {}   # name -> StandardMaterial3D
 
 # Materials of held gear, by the item's key.
@@ -28,7 +27,6 @@ const GEAR_COLORS := {
 	"string": Color(0.9, 0.88, 0.8), "flint": Color(0.33, 0.36, 0.42), "leaf": Color(0.36, 0.55, 0.24),
 	"leaf_light": Color(0.5, 0.68, 0.3), "fur": Color(0.84, 0.77, 0.62), "fur_dark": Color(0.44, 0.3, 0.19),
 }
-var _pile_timer := 0.0
 
 const PART_HEAD := 0
 const PART_TORSO := 1
@@ -116,10 +114,7 @@ func _process(delta: float) -> void:
 		_ring.global_position = r.global_position + Vector3(0, 0.08, 0)
 	else:
 		_ring.visible = false
-	_pile_timer -= delta
-	if _pile_timer <= 0.0:
-		_pile_timer = 0.5
-		_update_piles()
+
 
 
 func _create(c: Dictionary) -> Dictionary:
@@ -935,22 +930,3 @@ func position_of(id: int) -> Vector3:
 	return Vector3.ZERO
 
 
-func _update_piles() -> void:
-	var seen := {}
-	for p in sim.piles():
-		var pos: Vector3i = p["pos"]
-		var key := "%d_%d_%d" % [pos.x, pos.y, pos.z]
-		seen[key] = true
-		if not _pile_nodes.has(key):
-			var mi := MeshInstance3D.new()
-			var bm := BoxMesh.new()
-			bm.size = Vector3(0.7, 0.45, 0.7)
-			mi.mesh = bm
-			mi.material_override = _crate_mat
-			mi.position = Vector3(pos) + Vector3(0.5, 0.22, 0.5)
-			add_child(mi)
-			_pile_nodes[key] = mi
-	for key in _pile_nodes.keys():
-		if not seen.has(key):
-			_pile_nodes[key].queue_free()
-			_pile_nodes.erase(key)
