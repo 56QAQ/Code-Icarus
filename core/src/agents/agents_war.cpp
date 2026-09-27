@@ -83,7 +83,7 @@ bool Agents::task_fight(Character& c) {
     // defenders also face the enemy's magical girls.
     const bool raiding = op.active && op.aim == "raid";
     // Raiders at work in the enemy's village turn only on those who come at them.
-    const float look = op.active && op.phase == 3 ? 6.0f : (raiding && op.phase == 2 ? 9.0f : 18.0f);
+    const float look = op.active && op.phase == 3 ? 6.0f : (raiding && op.phase == 2 ? 5.0f : 18.0f);
     Character* foe = nearest_enemy(c, look, true, raiding);
     // Kept on a leash: an army on campaign does not chase a fleeing enemy across the
     // countryside, only fights near its objective (or whoever is right upon it).
@@ -93,6 +93,9 @@ bool Agents::task_fight(Character& c) {
         const bool upon_us = foe->pos.dist_sq(c.pos) < 6.0f * 6.0f;
         if (!near_objective && !upon_us) foe = nullptr;
     }
+    // A foe who cannot be got at (up on a roof, across water) is left alone for now,
+    // rather than stood and stared at.
+    if (foe && blacklisted(c, foe->foot) && foe->pos.dist_sq(c.pos) > 2.5f * 2.5f) foe = nullptr;
     if (foe) {
         if (!op.engaged && op.active) {
             Event e;
@@ -135,7 +138,10 @@ bool Agents::task_fight(Character& c) {
         // Close in (re-plan only when the foe has moved on).
         if (t.target2.dist2(foe->foot) > 4 || !c.path.valid()) t.target2 = foe->foot;
         Move m = move_to(c, t.target2, true);
-        if (m == Move::Failed) blacklist(c, t.target2, 60);
+        if (m == Move::Failed) {
+            blacklist(c, t.target2, 60);
+            blacklist(c, foe->foot, 60);
+        }
         say(c, "冲向" + foe->name);
         return true;
     }

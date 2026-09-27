@@ -497,7 +497,9 @@ bool Agents::task_drink(Character& c) {
     const MatId WATER = ctx_.reg->m().water;
     if (t.step == 0) {
         Vec3i stand, water;
-        if (!find_water(c, stand, water) && !wild_water_near(c.foot, 40, stand)) {
+        // Far from the known springs: any water nearby, and farther afield when parched.
+        if (!find_water(c, stand, water) && !wild_water_near(c.foot, 40, stand) &&
+            !(c.needs.water < 0.35f && wild_water_near(c.foot, 100, stand))) {
             day.thirsty_no_water++;
             say(c, "找不到水源");
             end_task(c, false);
@@ -1458,6 +1460,11 @@ bool Agents::task_work(Character& c) {
                     t.step = 2;
                 } else {
                     if (now_ > t.until) return give_up("猎物跑远了，只好放弃");
+                    // Not across half the island after it: past a day's walk from home
+                    // the chase is given up.
+                    if (const Polity* hp = ctx_.society->polity(c.polity))
+                        if (const Building* seat = ctx_.buildings->get(hp->seat); seat && c.foot.dist2(seat->entrance) > 100 * 100)
+                            return give_up("猎物跑得太远，只好放弃");
                     const SpeciesDef& sp = fauna->spec(a->species);
                     // Mauled by the quarry: back off before it finishes the job.
                     const float hurt = 1.0f - (float)c.body.total_alive() / (float)std::max(1, c.body.total_voxels()) +

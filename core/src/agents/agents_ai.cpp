@@ -283,7 +283,8 @@ void Agents::think(Character& c) {
         }
     }
 
-    if (trapped(c)) {
+    // (Not again right where getting out was just found impossible: then try the needs.)
+    if (trapped(c) && !blacklisted(c, c.foot)) {
         // Needs cannot be met from here; getting out comes first unless dying of thirst
         // right next to water.
         float need = std::max(1.0f - c.needs.food, 1.0f - c.needs.water);

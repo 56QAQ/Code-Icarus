@@ -77,18 +77,24 @@ bool Agents::task_escape(Character& c) {
         return -1;
     };
 
-    // On a ledge inside the region (it can be walked down to, not back up from): first
-    // make sure she really cannot get home from here, then climb down to ground that
-    // can, taking a knock from a long drop.
-    if (t.step == 0 && region_map_.count(c.foot)) {
-        const Polity* pp = ctx_.society->polity(c.polity);
-        const Building* seat = pp ? ctx_.buildings->get(pp->seat) : nullptr;
+    // First make sure she really cannot get home from here: far out in the country, or
+    // after a string of failed searches, the way back may be open after all (then the
+    // places she gave up on are worth trying again).
+    const Polity* pp = ctx_.society->polity(c.polity);
+    const Building* seat = pp ? ctx_.buildings->get(pp->seat) : nullptr;
+    if (t.step == 0) {
         Path tmp;
-        if (!seat || nav.find_path(c.foot, seat->entrance, true, tmp, 30000)) {
+        if (!seat || nav.find_path(c.foot, seat->entrance, true, tmp, 60000)) {
             c.unreachable.clear();  // not stuck after all
+            c.water_spot = {-1, -1, -1};
             end_task(c, true);
             return true;
         }
+    }
+    // On a ledge inside the region (it can be walked down to, not back up from): climb
+    // down to ground from which home can be reached, taking a knock from a long drop.
+    if (t.step == 0 && region_map_.count(c.foot)) {
+        Path tmp;
         Vec3i best;
         int bcost = 1 << 30;
         for (int r = 1; r <= 6; ++r)
