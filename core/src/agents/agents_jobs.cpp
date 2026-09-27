@@ -10,6 +10,7 @@
 #include "icarus/economy/farming.h"
 #include "icarus/sim/clock.h"
 #include "icarus/society/society.h"
+#include "icarus/util/log.h"
 
 namespace icarus {
 
@@ -77,6 +78,63 @@ bool Agents::wild_water_near(const Vec3i& from, int radius, Vec3i& stand) {
             }
     }
     return false;
+}
+
+namespace {
+// A grown resident's trade, from what they are best at (learning aside).
+std::string trade_of(const Character& c) {
+    int top = 0;
+    for (int s = 1; s < kSkillCount; ++s)
+        if (s != kResearch && (top == kResearch || c.skills[s] > c.skills[top])) top = s;
+    return (top == kFarming || top == kCooking) ? "food" : (top == kBuilding ? "build" : "gather");
+}
+float studious(const Character& c) { return c.skills[kResearch] * 2.0f + c.pers.diligence + 0.5f * c.pers.idealism; }
+}  // namespace
+
+// Scholars: every research building has seats, and the most studious grown residents
+// fill them (never more than a quarter of the grown folk: the fields come first). When a
+// building is lost, the least studious go back to their old trade.
+void Agents::appoint_scholars() {
+    for (auto& pc : ctx_.society->polities()) {
+        if (!pc.alive) continue;
+        const int seats = ctx_.society->scholar_seats(pc.id);
+        std::vector<Character*> serving, pool;
+        for (auto& cp : chars_) {
+            Character* c = cp.get();
+            if (!c || !c->alive || c->departed || c->is_girl() || c->polity != pc.id) continue;
+            if (c->occupation == "research") serving.push_back(c);
+            else if (!c->drafted && !is_child(*c) && !is_elder(*c) && c->body.can_hold()) pool.push_back(c);
+        }
+        auto order = [](const Character* a, const Character* b) {
+            const float x = studious(*a), y = studious(*b);
+            return x != y ? x > y : a->id < b->id;
+        };
+        std::sort(serving.begin(), serving.end(), order);
+        while ((int)serving.size() > seats) {
+            serving.back()->occupation = trade_of(*serving.back());
+            serving.pop_back();
+        }
+        const int grown = (int)(serving.size() + pool.size());
+        const int room = std::min(seats, grown / 4) - (int)serving.size();
+        if (room <= 0 || pool.empty()) continue;
+        std::sort(pool.begin(), pool.end(), order);
+        std::string where = "书写室";
+        for (const Building& b : ctx_.buildings->all())
+            if (b.alive && b.functional && b.polity == pc.id)
+                if (const BuildingDef* d = ctx_.buildings->def(b.def); d && d->scholars > 0) where = d->name;
+        for (int i = 0; i < room && i < (int)pool.size(); ++i) {
+            Character& c = *pool[(size_t)i];
+            c.occupation = "research";
+            Event e;
+            e.type = EventType::Life;
+            e.severity = 2;
+            e.pos = c.foot;
+            e.actor = c.id;
+            e.polity = c.polity;
+            e.text = strfmt("%s成为学者，到%s专心钻研学问", c.name.c_str(), where.c_str());
+            ctx_.chron->emit(std::move(e));
+        }
+    }
 }
 
 void Agents::generate_jobs() {
@@ -308,27 +366,41 @@ void Agents::generate_jobs() {
     // Crafting and raw materials on demand (agents_production.cpp).
     production_jobs();
 
-    // Research at the study (or the hall) while a research direction is set.
+    // Research while a direction is set: scholars at the research buildings, a seat each;
+    // a tech of the wild era is also mused over by anyone at the fire or the hall.
     for (auto& pc : ctx_.society->polities()) {
-        if (!pc.alive || pc.policies.research.empty()) continue;
-        const Building* place = nullptr;
+        if (!pc.alive) continue;
+        const bool any = !pc.policies.research.empty();
+        const bool wild = any && !ctx_.society->needs_scholars(pc.policies.research);
+        std::vector<std::pair<u32, int>> places;  // building, seats
         for (const Building& b : ctx_.buildings->all())
-            if (b.alive && b.functional && b.polity == pc.id && b.def == "study") place = &b;
-        if (!place) place = ctx_.buildings->get(pc.seat);
-        if (!place || !place->functional) continue;
-        int open = 0;
-        for (const Job& j : jobs.all())
-            if (j.alive && j.type == JobType::Research && j.polity == pc.id) ++open;
-        const int want = place->def == "study" ? 3 : 2;
-        for (int k = open; k < want; ++k) {
-            Job& j = add(JobType::Research, pc.id, place->inside, 0.9f);
-            j.building = place->id;
+            if (b.alive && b.functional && b.polity == pc.id)
+                if (const BuildingDef* d = ctx_.buildings->def(b.def); d && d->scholars > 0) places.push_back({b.id, d->scholars});
+        if (wild)
+            if (const Building* seat = ctx_.buildings->get(pc.seat); seat && seat->functional) places.push_back({seat->id, 2});
+        for (const Job& j : jobs.all()) {
+            if (!j.alive || j.type != JobType::Research || j.polity != pc.id || j.claimed_by != kNoEntity) continue;
+            bool wanted = false;
+            for (auto [b, n] : places) wanted |= b == j.building;
+            if (!any || !wanted) jobs.cancel(j.id);  // no longer a place of study
+        }
+        if (!any) continue;
+        for (auto [bid, want] : places) {
+            const Building* place = ctx_.buildings->get(bid);
+            int open = 0;
+            for (const Job& j : jobs.all())
+                if (j.alive && j.type == JobType::Research && j.polity == pc.id && j.building == bid) ++open;
+            for (int k = open; k < want; ++k) {
+                Job& j = add(JobType::Research, pc.id, place->inside, 0.9f);
+                j.building = bid;
+            }
         }
     }
 
-    // Cooking: kitchens bake bread from spare grain; kitchens and campfires roast meat.
+    // Cooking: kitchens bake bread from spare grain; kitchens and campfires roast meat and fish.
     {
         const ItemId bread = reg.find_item("bread"), meat = reg.find_item("meat"), roast = reg.find_item("cooked_meat");
+        const ItemId fish = reg.find_item("fish"), grilled = reg.find_item("cooked_fish");
         for (const Building& k : ctx_.buildings->all()) {
             if (!k.alive || !k.complete || !k.functional || !k.store) continue;
             if (k.def != "kitchen" && k.def != "campfire") continue;
@@ -343,9 +415,10 @@ void Agents::generate_jobs() {
             };
             ItemId in = kNoItem;
             if (meat != kNoItem && roast != kNoItem && spare(meat) >= 3 && ks->count(roast) < 30) in = meat;
+            else if (fish != kNoItem && grilled != kNoItem && spare(fish) >= 3 && ks->count(grilled) < 30) in = fish;
             else if (k.def == "kitchen" && ks->count(bread) <= 30 && spare(grain) >= 12) in = grain;
             if (in == kNoItem) continue;
-            Job& j = add(JobType::Cook, k.polity, k.inside, in == meat ? 1.0f : 0.9f);
+            Job& j = add(JobType::Cook, k.polity, k.inside, in != grain ? 1.0f : 0.9f);
             j.building = k.id;
             j.item = in;
         }
@@ -577,6 +650,70 @@ void Agents::generate_jobs() {
             }
         }
     }
+
+    // Fishing: a spot on the shore by a school of fish, for a people that knows how and
+    // could use more food. The fish named in the job is spoken for; the catch is whatever
+    // of its school comes within reach.
+    if (ctx_.fauna && now_ % 300 == 150) {
+        for (const Animal& a : ctx_.fauna->all()) {
+            if (!a.alive || !(a.hunted_by & 0x80000000u) || !ctx_.fauna->spec(a.species).aquatic) continue;
+            bool live = false;
+            for (const Job& j : jobs.all())
+                if (j.alive && j.type == JobType::Fish && j.project == a.id) live = true;
+            if (!live) ctx_.fauna->get(a.id)->hunted_by = kNoEntity;
+        }
+        for (auto& pc : ctx_.society->polities()) {
+            if (!pc.alive || !pc.has_tech("fishing") || pc.stats.food_days >= 6.0f) continue;
+            const Building* seat = ctx_.buildings->get(pc.seat);
+            if (!seat) continue;
+            int people = 0;
+            for (const auto& cp : chars_)
+                if (cp && cp->alive && !cp->departed && cp->polity == pc.id && !cp->is_girl()) ++people;
+            int open = 0;
+            for (const Job& j : jobs.all())
+                if (j.alive && j.type == JobType::Fish && j.polity == pc.id) ++open;
+            const int max_open = std::max(1, people / 6);
+            for (int tries = 0; open < max_open && tries < 4; ++tries) {
+                Animal* a = ctx_.fauna->get(ctx_.fauna->find_fish(seat->entrance, 90));
+                if (!a) break;
+                a->hunted_by = 0x80000000u | pc.id;  // spoken for (also when no shore is found)
+                Vec3i stand;
+                if (!shore_near(a->foot, stand)) continue;
+                bool taken = false;  // one fisher to a stretch of shore
+                for (const Job& o : jobs.all())
+                    if (o.alive && o.type == JobType::Fish && o.pos.dist2(stand) < 6 * 6) taken = true;
+                if (taken) continue;
+                Job& j = add(JobType::Fish, pc.id, stand, pc.stats.food_days < 2.0f ? 1.05f : 0.9f);
+                j.project = a->id;
+                ++open;
+            }
+        }
+    }
+}
+
+// A spot on dry ground at the water's edge within a few cubes of p (nearest first).
+bool Agents::shore_near(const Vec3i& p, Vec3i& out) {
+    const MatId WATER = ctx_.reg->m().water;
+    Nav& nav = *ctx_.nav;
+    i64 bd = 1LL << 60;
+    bool found = false;
+    for (int dz = -6; dz <= 6; ++dz)
+        for (int dx = -6; dx <= 6; ++dx)
+            for (int dy = -1; dy <= 4; ++dy) {
+                const Vec3i q = p + Vec3i{dx, dy, dz};
+                if (ctx_.world->mat(q) == WATER || !nav.standable(q)) continue;
+                bool edge = false;
+                for (int d = 0; d < 4 && !edge; ++d)
+                    for (int ey = -2; ey <= 0 && !edge; ++ey) edge = ctx_.world->mat(q + kDir4H[d] + Vec3i{0, ey, 0}) == WATER;
+                if (!edge) continue;
+                const i64 d = q.dist2(p);
+                if (d < bd) {
+                    bd = d;
+                    out = q;
+                    found = true;
+                }
+            }
+    return found;
 }
 
 }  // namespace icarus

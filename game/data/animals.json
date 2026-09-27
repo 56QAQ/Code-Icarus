@@ -8,8 +8,18 @@
 //   (hunts `prey`; bites people when starving or cornered), territorial (attacks anyone
 //   who comes within `guard` cubes).
 //   look: shape details for the renderer (ears, tail, antlers, tusks, horns, mane).
+//   habitat "water": fish. They swim in schools in lakes and ponds (water_density: the
+//   chance of a school per 8x8 patch of water at least two cubes deep), dart away from
+//   anyone at the water's edge within `flee`, die stranded if their water is drained, and
+//   are caught from the shore by fishers (yield).
 {
   "species": [
+    {"key": "crucian", "name": "鲫鱼", "habitat": "water", "size": [0.5, 0.2, 0.1], "speed": 0.08, "run": 0.32, "stamina": 200, "hp": 0.06,
+     "temper": "shy", "flee": 3, "herd": [3, 6], "lifespan_days": 50, "litter": [2, 4], "breed_days": 4, "water_density": 0.35,
+     "yield": {"fish": 1}, "colors": ["#8b9a93", "#dfe6df", "#46534f"], "look": ["fins"]},
+    {"key": "carp", "name": "鲤鱼", "habitat": "water", "size": [0.8, 0.28, 0.16], "speed": 0.07, "run": 0.28, "stamina": 260, "hp": 0.12,
+     "temper": "shy", "flee": 3, "herd": [2, 4], "lifespan_days": 90, "litter": [1, 3], "breed_days": 6, "water_density": 0.15,
+     "yield": {"fish": 2}, "colors": ["#c9803a", "#f0d49a", "#8a4a22"], "look": ["fins", "barbels"]},
     {"key": "rabbit", "name": "野兔", "size": [0.6, 0.5, 0.4], "speed": 0.18, "run": 0.55, "stamina": 260, "hp": 0.12,
      "temper": "shy", "flee": 9, "herd": [1, 2], "lifespan_days": 60, "litter": [2, 4], "breed_days": 5,
      "biomes": {"grassland": 0.0016, "forest": 0.0008, "savanna": 0.0012, "taiga": 0.0006, "islet": 0.0015},

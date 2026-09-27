@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:-$ROOT/out/acceptance}"
 JOBS="${2:-3}"
-CLI="$ROOT/build/tools/cli/icarus_cli"
+CLI="${CLI:-$ROOT/build/tools/cli/icarus_cli}"  # (a copy, so a rebuild during the runs does not mix binaries)
 mkdir -p "$OUT"
 runs=()
 for s in 1 2 3 4 5 6 7 8; do runs+=("three_realms $s"); done

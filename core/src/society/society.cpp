@@ -269,8 +269,39 @@ bool Society::tech_available(const Polity& p, const std::string& key) const {
     if (e > 0) {
         const auto [known, needed] = era_foundation(p, e);
         if (known < needed) return false;
+        // ...and the tech of learning that opens it.
+        const std::string gate = era_gate(e);
+        if (!gate.empty() && !p.has_tech(gate)) return false;
     }
     return true;
+}
+
+std::string Society::era_gate(int era) const {
+    const Json& g = ctx_.reg->doc("techs")["era_gates"];
+    return g.str(std::to_string(era), "");
+}
+
+bool Society::needs_scholars(const std::string& key) const {
+    const Json* t = tech(key);
+    return t && t->integer("era", 0) > 0;
+}
+
+int Society::scholar_seats(u16 id) const {
+    int n = 0;
+    for (const Building& b : ctx_.buildings->all())
+        if (b.alive && b.functional && b.polity == id)
+            if (const BuildingDef* d = ctx_.buildings->def(b.def)) n += d->scholars;
+    return n;
+}
+
+float Society::research_per_day(u16 id, bool scholarly) const {
+    const float speed = 1.0f + tech_effect(id, "research_speed");
+    if (!scholarly) return 2.0f * 7.0f * 1.2f * speed;  // two at the fire or the hall
+    float pts = 0.0f;
+    for (const Building& b : ctx_.buildings->all())
+        if (b.alive && b.functional && b.polity == id)
+            if (const BuildingDef* d = ctx_.buildings->def(b.def)) pts += (float)d->scholars * 7.0f * 1.0f * d->research_rate;
+    return pts * speed;
 }
 
 std::pair<int, int> Society::era_foundation(const Polity& p, int era) const {
@@ -306,7 +337,7 @@ int Society::era(const Polity& p) const {
     return e;
 }
 
-void Society::add_research(u16 id, float points, EntityId by) {
+void Society::add_research(u16 id, float points, EntityId by, bool scholarly) {
     Polity* p = polity(id);
     if (!p || p->policies.research.empty()) return;
     const std::string key = p->policies.research;
@@ -315,6 +346,7 @@ void Society::add_research(u16 id, float points, EntityId by) {
         p->policies.research.clear();
         return;
     }
+    if (!scholarly && needs_scholars(key)) return;
     float* prog = nullptr;
     for (auto& r : p->research)
         if (r.first == key) prog = &r.second;
@@ -371,8 +403,15 @@ void Society::practice(u16 id, const std::string& activity, float amount, Entity
             p->research.push_back({key, 0.0f});
             prog = &p->research.back().second;
         }
+        const float cost = t.flt("cost", 100.0f);
+        // Past the wild era, experience only prepares the ground for the scholars.
+        if (needs_scholars(key)) {
+            const float cap = cost * (float)ctx_.reg->doc("techs").flt("practice_cap", 0.25f);
+            *prog = std::max(*prog, std::min(cap, *prog + per * amount));
+            continue;
+        }
         *prog += per * amount;
-        if (*prog >= t.flt("cost", 100.0f)) discover(*p, key, by, 0, true);
+        if (*prog >= cost) discover(*p, key, by, 0, true);
     }
 }
 

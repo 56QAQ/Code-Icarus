@@ -72,11 +72,21 @@ public:
     // Techs of the era before `era` a people knows, and how many they need to know
     // before techs of `era` open up.
     std::pair<int, int> era_foundation(const Polity& p, int era) const;
+    // The tech of learning that opens `era` ("" for the first era).
+    std::string era_gate(int era) const;
+    // Whether a tech can only be advanced by scholars at a research building (the
+    // techs after the wild era).
+    bool needs_scholars(const std::string& key) const;
     std::vector<std::string> available_techs(const Polity& p) const;
     float tech_effect(u16 polity, const std::string& effect) const;
     int era(const Polity& p) const;
-    // Adds research points to the current target; discovers it when complete.
-    void add_research(u16 polity, float points, EntityId by);
+    // Adds research points to the current target; discovers it when complete. Only
+    // scholars (`scholarly`) advance the techs after the wild era.
+    void add_research(u16 polity, float points, EntityId by, bool scholarly = false);
+    // Research buildings of a people: seats for scholars and knowledge a day at full
+    // strength (for estimates).
+    int scholar_seats(u16 polity) const;
+    float research_per_day(u16 polity, bool scholarly) const;
     void discover(Polity& p, const std::string& key, EntityId by, EventId cause, bool by_practice = false);
     // Learning by doing: everyday work (activity keys such as "forage", "chop", "hunt")
     // slowly teaches the techs whose "practice" lists it, whatever is being researched.

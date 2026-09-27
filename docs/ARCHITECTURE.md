@@ -82,11 +82,17 @@ Untouched parts of the island are left as generated and cost nothing. Its random
 stream and state are saved (older saves load with an empty ecology).
 
 **Fauna** (`fauna/fauna.cpp`, `data/animals.json`): deterministic, saved animals by
-biome (rabbits, deer, boar, goats, wolves, bears, fish, birds) that graze, flock, flee,
-hunt, breed within a cap and grow old. Far from people they move in large steps (LOD).
-Hunters stalk and strike them; carcasses are butchered into meat, hide and bone in the
-ledger. Wolves only prey on lone people at night when starving and far from buildings;
-bears and boars strike once at whoever comes too close or struck them, then break off.
+biome (rabbits, deer, boar, goats, wolves, bears) that graze, flock, flee, hunt, breed
+within a cap and grow old. Far from people they move in large steps (LOD). Hunters stalk
+and strike them; carcasses are butchered into meat, hide and bone in the ledger. Wolves
+only prey on lone people at night when starving and far from buildings; bears and boars
+strike once at whoever comes too close or struck them, then break off. Fish (crucian,
+carp; `habitat: water`) school in lakes and ponds at least two cubes deep: they swim in
+water cubes only (mid-water, up and down as well), dart from anyone at the edge, breed
+back towards what the water held at first, and die stranded if their water is drained.
+Once a people knows fishing (捕鱼), fishers take a spot on the shore by a school, spear
+(or, with weaving, net) whatever comes within reach and carry the catch home; fish are
+eaten raw or roasted at a campfire or kitchen.
 
 ## 5. Chronicle (core/sim/chronicle)
 
@@ -192,10 +198,18 @@ growth depends on irrigation from real water nearby.
   Hourly statistics, support drift, crises (food, water/irrigation, logistics, unrest)
   with root causes from the chronicle, projects. Passive spells of the polity's girls
   are summed per effect and shape daily life (mood floor, meal joy, preservation...).
-* **Technology** (`data/techs.json`): knowledge comes from research at the seat (or the
-  campfire) and from practice in everyday work. A tech of a new era can be studied or
-  stumbled on only once half of the previous era's techs are known, so a wild band
-  climbs through the eras rather than leaping ahead.
+* **Technology** (`data/techs.json`): the techs of the wild era come from practice in
+  everyday work, from anyone musing at the fire or the hall, and from the magical girls'
+  thoughts. From the farming era on only **scholars** advance a tech: residents appointed
+  (the most studious first, at most a quarter of the grown folk; spared from the draft)
+  to the seats of a research building — 书写室 (2 seats), 学舍 (3, faster), 书院 (4,
+  fastest) — who study there in working hours; practice brings such a tech at most a
+  quarter of the way. A new era opens once half of the previous era's techs are known
+  *and* its tech of learning: 文字 (a wild-era tech, which also allows the 书写室) opens
+  the farming era, 算学 the bronze era, 典籍 the iron era; the latter two also speed
+  research and allow the bigger buildings. A people that can write but has nowhere to
+  study is offered the 书写室 first, and research options past the wild era are
+  infeasible until it stands; village starts come with one.
 * **Jev pipeline** (`decision/`):
   1. *What she knows*: a situation text built from stats, crises with cause chains,
      the other girls and her past decisions.

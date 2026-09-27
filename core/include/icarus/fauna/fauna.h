@@ -34,6 +34,8 @@ struct SpeciesDef {
     int stamina = 300;
     Temper temper = Temper::Shy;
     bool tall = false;  // needs two cubes of headroom
+    bool aquatic = false;       // lives in water (fish): swims in lakes, dies stranded
+    float water_density = 0.0f; // aquatic: chance of a school per 8x8 patch of deep water
     std::vector<std::pair<Biome, float>> biomes;
     int herd_min = 1, herd_max = 1, litter_min = 1, litter_max = 1;
     float lifespan_days = 100.0f, breed_days = 10.0f;
@@ -103,6 +105,12 @@ public:
     int butcher(Animal& a, StoreId into);
     // The nearest living animal of a huntable kind within radius that nobody is after.
     u32 find_prey(const Vec3i& from, int radius, bool dangerous_too) const;
+    // The nearest fish within radius that nobody is after (0 if none).
+    u32 find_fish(const Vec3i& from, int radius) const;
+    // Kills a fish caught by `by` (a fisher) and puts the catch in `into`; returns units.
+    int catch_fish(Animal& a, EntityId by, StoreId into);
+    // Whether an animal of species s can be at p (on its feet, or swimming).
+    bool fits(const SpeciesDef& s, const Vec3i& p) const;
     // How threatening animals are at p for a person (0..1): predators on the prowl,
     // a bear's ground, a boar that was struck.
     float threat_at(const Vec3f& p) const;
@@ -118,7 +126,9 @@ public:
 
 private:
     bool walkable(const Vec3i& p, bool tall) const;
-    bool find_ground(Vec3i& p, bool tall) const;
+    bool swimmable(const Vec3i& p) const;
+    // A place for an animal of species s near p (ground, or water for fish).
+    bool find_spot(Vec3i& p, const SpeciesDef& s) const;
     void spawn_herd(u16 s, const Vec3i& at, int n, Tick now);
     u32 spawn(u16 s, const Vec3i& foot, u32 herd, Tick now);
     void think(Animal& a, bool near_people);

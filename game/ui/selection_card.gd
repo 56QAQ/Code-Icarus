@@ -324,7 +324,7 @@ func _refresh_character() -> void:
 		var roles := {"ruler": "统治者", "minister": "大臣", "governor": "总督", "general": "将军", "none": "无职务"}
 		_subtitle.text = "%s · %s · Lv%d · %d 岁" % [girl["title"], roles.get(girl["role"], girl["role"]), girl["level"], int(d.get("age", 16))]
 	else:
-		var occ := {"food": "农夫", "build": "工匠", "gather": "劳工"}
+		var occ := {"food": "农夫", "build": "工匠", "gather": "劳工", "research": "学者"}
 		var job: String = "士兵" if d.get("drafted", false) else occ.get(d.get("occupation", ""), "居民")
 		var stage := String(d.get("stage", "adult"))
 		if stage == "child":

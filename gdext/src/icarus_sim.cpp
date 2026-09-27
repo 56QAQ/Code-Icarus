@@ -618,6 +618,7 @@ const char* job_key(icarus::JobType t) {
         case J::Forage: return "forage";
         case J::Guard: return "guard";
         case J::Hunt: return "hunt";
+        case J::Fish: return "fish";
         default: return "work";
     }
 }
@@ -763,6 +764,7 @@ Array IcarusSim::animal_species() const {
         d["key"] = to_gd(s.key);
         d["name"] = to_gd(s.name);
         d["size"] = Vector3(s.size.x, s.size.y, s.size.z);
+        d["aquatic"] = s.aquatic;
         Array cols;
         for (uint32_t c : s.colors) cols.push_back(col(c));
         d["colors"] = cols;
@@ -1429,8 +1431,15 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
             res["name"] = to_gd(t->str("name"));
             res["progress"] = prog;
             res["cost"] = t->flt("cost", 100.0f);
+            res["scholarly"] = soc.needs_scholars(p->policies.research);
         }
     d["research"] = res;
+    // Scholars and their seats at the research buildings.
+    int scholars = 0;
+    for (const auto& cp : sim_->agents().all())
+        if (cp && cp->alive && !cp->departed && cp->polity == p->id && cp->occupation == "research") ++scholars;
+    d["scholars"] = scholars;
+    d["scholar_seats"] = soc.scholar_seats(p->id);
     d["soldiers"] = soc.soldiers(p->id);
     Array wars;
     for (const auto& w : p->wars) {
@@ -1630,13 +1639,21 @@ Array IcarusSim::tech_tree(int64_t polity) const {
         }
         d["progress"] = prog;
         d["state"] = state;
-        // The foundation a new era needs: techs of the era before it.
+        // The foundation a new era needs: techs of the era before it, and the tech of
+        // learning that opens it.
         const int era = t.integer("era", 0);
         if (p && era > 0) {
             const auto [known, needed] = soc.era_foundation(*p, era);
             d["foundation_known"] = known;
             d["foundation_needed"] = needed;
+            const std::string gate = soc.era_gate(era);
+            if (!gate.empty()) {
+                d["gate"] = to_gd(gate);
+                d["gate_known"] = p->has_tech(gate);
+            }
         }
+        d["scholarly"] = soc.needs_scholars(key);
+        d["learning"] = t.boolean("learning", false);
         out.push_back(d);
     }
     return out;

@@ -1540,6 +1540,83 @@ bool Agents::task_work(Character& c) {
             }
             return true;
         }
+        case JobType::Fish: {
+            // From the shore: spear the fish of the school that come near (or, with nets,
+            // cast for them), a few if they bite, and bring the catch home.
+            Fauna* fauna = ctx_.fauna;
+            auto give_up = [&](const std::string& msg) {
+                if (Animal* a = fauna ? fauna->get(j->project) : nullptr; a && a->alive) a->hunted_by = kNoEntity;
+                say(c, msg);
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                end_task(c, false);
+                return false;
+            };
+            if (!fauna) return give_up("这里没有鱼");
+            const Polity* pp = ctx_.society->polity(c.polity);
+            const bool net = pp && pp->has_tech("weaving");
+            if (t.step == 0) {
+                say(c, "去水边捕鱼");
+                Move m = move_to(c, j->pos, false);
+                if (m == Move::Failed) {
+                    blacklist(c, j->pos, kTicksPerHour * 2);
+                    return give_up("到不了水边");
+                }
+                if (m != Move::Arrived) return true;
+                t.until = now_ + work_ticks(net ? 80 : 110);
+                t.step = 1;
+            }
+            if (t.step == 1) {
+                // Face the water.
+                for (int d = 0; d < 4; ++d)
+                    for (int ey = -2; ey <= 0; ++ey)
+                        if (w.mat(c.foot + kDir4H[d] + Vec3i{0, ey, 0}) == reg.m().water)
+                            c.yaw = std::atan2((float)kDir4H[d].x, (float)kDir4H[d].z);
+                say(c, net ? "撒网捕鱼" : "在水边叉鱼");
+                if (now_ < t.until) return true;
+                Animal* best = nullptr;
+                float bd = 7.0f * 7.0f;
+                for (const Animal& a : fauna->all()) {
+                    if (!a.alive || !fauna->spec(a.species).aquatic || std::abs(a.foot.y - c.foot.y) > 5) continue;
+                    const float dx = a.pos.x - c.pos.x, dz = a.pos.z - c.pos.z;
+                    if (dx * dx + dz * dz < bd) {
+                        bd = dx * dx + dz * dz;
+                        best = fauna->get(a.id);
+                    }
+                }
+                const float chance = (net ? 0.8f : 0.5f) * (0.75f + 0.5f * c.skills[kFarming]);
+                if (best && rng_.chance(chance)) {
+                    const std::string kind = fauna->spec(best->species).name;
+                    if (fauna->catch_fish(*best, c.id, c.inv) > 0) {
+                        Event e;
+                        e.type = EventType::Hunt;
+                        e.severity = 1;
+                        e.pos = c.foot;
+                        e.actor = c.id;
+                        e.polity = c.polity;
+                        e.text = strfmt("%s捕到一条%s", c.name.c_str(), kind.c_str());
+                        ctx_.chron->emit(std::move(e));
+                        c.skills[kFarming] = std::min(1.0f, c.skills[kFarming] + 0.01f);
+                        ctx_.society->practice(c.polity, "hunt", 0.3f, c.id);
+                        ++t.count;
+                    }
+                    // Another cast while there is room in the basket.
+                    if (t.count < 3 && carried_weight(c) + 1.0f < carry_capacity(c)) {
+                        t.until = now_ + work_ticks(net ? 60 : 80);
+                        return true;
+                    }
+                } else if (++t.target2.x < 3) {
+                    t.until = now_ + work_ticks(60);  // nothing yet: wait a while longer
+                    return true;
+                }
+                if (t.count == 0) return give_up("鱼都游走了");
+                if (Animal* a = fauna->get(j->project); a && a->alive) a->hunted_by = kNoEntity;
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                t.step = 10;  // home with the catch
+            }
+            return true;
+        }
         case JobType::Build: {
             Building* b = ctx_.buildings->get(j->building);
             if (!b || b->complete) {
@@ -1620,8 +1697,9 @@ bool Agents::task_work(Character& c) {
             if (!k || !k->functional || !k->store) return fail("灶房不能用了");
             // What goes in (grain or meat) and what comes out (bread or roast).
             const ItemId grain = j->item != kNoItem ? j->item : reg.find_item("grain");
-            const bool roasting = reg.item(grain).key == "meat";
-            const ItemId bread = reg.find_item(roasting ? "cooked_meat" : "bread");
+            const bool fish = reg.item(grain).key == "fish";
+            const bool roasting = reg.item(grain).key == "meat" || fish;
+            const ItemId bread = reg.find_item(fish ? "cooked_fish" : (roasting ? "cooked_meat" : "bread"));
             if (t.step == 0) {
                 // Bring grain to the kitchen if it has none.
                 if (ctx_.econ->available(k->store, grain, c.id) >= 2) {
@@ -1638,7 +1716,7 @@ bool Agents::task_work(Character& c) {
                             src = sid;
                         }
                     }
-                    if (!src) return fail(roasting ? "没有肉可烤" : "没有谷物可烹饪");
+                    if (!src) return fail(fish ? "没有鱼可烤" : (roasting ? "没有肉可烤" : "没有谷物可烹饪"));
                     ctx_.econ->reserve(src, grain, 6, c.id, now_ + kTicksPerHour);
                     t.store = src;
                     t.step = 1;
@@ -1647,9 +1725,9 @@ bool Agents::task_work(Character& c) {
             if (t.step == 1) {
                 const Store* s = ctx_.econ->store(t.store);
                 if (!s) return fail("仓库不见了");
-                say(c, roasting ? "去取肉" : "去取谷物");
+                say(c, fish ? "去取鱼" : (roasting ? "去取肉" : "去取谷物"));
                 Move m = move_to(c, s->pos, true);
-                if (m == Move::Failed) return fail(roasting ? "取不到肉" : "取不到谷物");
+                if (m == Move::Failed) return fail(fish ? "取不到鱼" : (roasting ? "取不到肉" : "取不到谷物"));
                 if (m != Move::Arrived) return true;
                 ctx_.econ->transfer(t.store, c.inv, grain, 6);
                 ctx_.econ->release(t.store, c.id);
@@ -1665,7 +1743,7 @@ bool Agents::task_work(Character& c) {
                 t.step = 3;
             }
             if (t.step == 3) {
-                say(c, roasting ? "烤肉" : "烹饪面包");
+                say(c, fish ? "烤鱼" : (roasting ? "烤肉" : "烹饪面包"));
                 if (now_ < t.until) return true;
                 i32 n = ctx_.econ->remove(k->store, grain, 4, "cooked");
                 if (n > 0) ctx_.econ->add(k->store, bread, n, "cooked");
@@ -1691,9 +1769,13 @@ bool Agents::task_work(Character& c) {
                 const Polity* p = ctx_.society->polity(c.polity);
                 say(c, p && !p->policies.research.empty() ? "钻研新知" : "整理见闻");
                 if (now_ < t.until) return true;
-                float pts = 3.0f * (0.6f + c.skills[kResearch]) * (b->def == "study" ? 1.5f : 1.0f);
-                ctx_.society->add_research(c.polity, pts, c.id);
-                c.skills[kResearch] = std::min(1.0f, c.skills[kResearch] + 0.01f);
+                // Scholars at a research building work fastest; musing at the fire or
+                // the hall only advances the techs of the wild era.
+                const BuildingDef* bd = ctx_.buildings->def(b->def);
+                const bool scholarly = bd && bd->scholars > 0 && c.occupation == "research";
+                const float pts = (scholarly ? 1.0f * bd->research_rate : 1.2f) * (0.6f + c.skills[kResearch]);
+                ctx_.society->add_research(c.polity, pts, c.id, scholarly);
+                c.skills[kResearch] = std::min(1.0f, c.skills[kResearch] + 0.005f);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 end_task(c, true);

@@ -21,6 +21,8 @@ struct BuildingDef {
     std::string key, name, category, description, tech, workstation;
     int w = 0, d = 0, h = 0;
     int beds = 0;
+    int scholars = 0;            // research buildings: seats for scholars
+    float research_rate = 1.0f;  // ...and how fast they work there
     float storage = 0;
     float spoil_factor = 1.0f;
     bool seat = false;

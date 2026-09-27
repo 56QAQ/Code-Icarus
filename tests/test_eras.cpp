@@ -156,8 +156,20 @@ TEST("eras: everyday work teaches techs, and practice unlocks what research has 
     for (auto& r : soc.polity(pid)->research)
         if (r.first == "masonry") after = r.second;
     CHECK(after == before);
-    // Gathered wild grain teaches farming (it needs stone tools, now known).
-    for (int i = 0; i < 80 && !soc.polity(pid)->has_tech("farming"); ++i) soc.practice(pid, "forage_grain", 1.0f, who);
+    // Past the wild era practice only prepares the ground: gathered wild grain brings
+    // farming a quarter of the way (once writing opens the era), and scholars do the rest.
+    for (const char* k : {"hunting", "writing"}) soc.discover(*soc.polity(pid), k, 0, 0);
+    for (int i = 0; i < 200; ++i) soc.practice(pid, "forage_grain", 1.0f, who);
+    CHECK(!soc.polity(pid)->has_tech("farming"));
+    float farming = 0.0f;
+    for (auto& r : soc.polity(pid)->research)
+        if (r.first == "farming") farming = r.second;
+    CHECK(farming > 0.0f);
+    CHECK(farming <= 40.0f * 0.25f + 0.01f);
+    soc.polity(pid)->policies.research = "farming";
+    soc.add_research(pid, 100.0f, who);  // musing at the fire: not enough
+    CHECK(!soc.polity(pid)->has_tech("farming"));
+    soc.add_research(pid, 100.0f, who, true);  // scholars at their desks
     CHECK(soc.polity(pid)->has_tech("farming"));
 }
 
@@ -204,27 +216,36 @@ TEST("eras: a new era is built on the old one — half of its techs first") {
     CHECK(soc.tech_available(p, "stone_tools"));
     auto [known0, needed0] = soc.era_foundation(p, 1);
     CHECK_EQ(known0, 2);
-    CHECK_EQ(needed0, 3);
-    p.techs.push_back("hunting");
-    CHECK(soc.tech_available(p, "pottery"));
-    // Pottery alone does not open writing: the farming era must be half known.
-    p.techs.push_back("pottery");
-    CHECK(!soc.tech_available(p, "writing"));
-    for (const char* k : {"weaving", "stone_tools", "farming", "carpentry"}) p.techs.push_back(k);
-    CHECK(!soc.tech_available(p, "writing"));
-    p.techs.push_back("herbalism");
+    CHECK_EQ(needed0, 4);
+    for (const char* k : {"hunting", "stone_tools"}) p.techs.push_back(k);
+    // Half the wild era is known, but the farming era opens only with writing.
+    CHECK(!soc.tech_available(p, "pottery"));
     CHECK(soc.tech_available(p, "writing"));
+    p.techs.push_back("writing");
+    CHECK(soc.tech_available(p, "pottery"));
+    // The bronze era: half of the farming era, and mathematics.
+    for (const char* k : {"pottery", "weaving", "farming", "carpentry", "herbalism"}) p.techs.push_back(k);
+    CHECK(!soc.tech_available(p, "wheel"));
+    p.techs.push_back("masonry");
+    auto [known1, needed1] = soc.era_foundation(p, 2);
+    CHECK(known1 >= needed1);
+    CHECK(!soc.tech_available(p, "wheel"));
+    CHECK_EQ(soc.era_gate(2), std::string("mathematics"));
+    p.techs.push_back("mathematics");
+    CHECK(soc.tech_available(p, "wheel"));
     // Practice cannot stumble on a tech whose era is still closed.
     Polity& q = p;
     q.techs = {"gathering", "fire"};
     for (int i = 0; i < 200; ++i) soc.practice(q.id, "forage_grain", 1.0f, 0);
     CHECK(!q.has_tech("farming"));
-    // A village start already stands on the farming era.
+    // A village start already stands on the farming era, with a room for its scholars.
     Simulation v(test_registry());
     v.new_game(start("village"));
     v.run(5);
-    auto [known2, needed2] = v.society().era_foundation(band(v), 2);
+    auto [known2, needed2] = v.society().era_foundation(band(v), 1);
     CHECK(known2 >= needed2);
+    CHECK(band(v).has_tech("writing"));
+    CHECK(v.society().scholar_seats(band(v).id) >= 2);
 }
 
 TEST("eras: seed grain kept for sowing does not send the hungry to an empty larder") {
@@ -377,4 +398,49 @@ TEST("eras: buildings are sited on dry ground, never in a lake") {
         CHECK(!wet);
     }
     CHECK(checked > 0);
+}
+
+TEST("eras: scholars are appointed to the writing room, and only they advance the farming era") {
+    Simulation sim(test_registry());
+    sim.new_game(start("village"));
+    // The rulers' own choices are held back: the direction is set here.
+    sim.decisions().mode = "remote";
+    sim.decisions().remote_budget_per_day = 1 << 20;
+    sim.decisions().remote_deadline = kTicksPerDay * 100;
+    sim.run(kTicksPerHour);
+    Polity& p = band(sim);
+    Society& soc = sim.society();
+    const int seats = soc.scholar_seats(p.id);
+    REQUIRE(seats >= 2);
+    auto scholars = [&] {
+        int n = 0;
+        for (const auto& c : sim.agents().all())
+            if (c && c->alive && c->polity == p.id && c->occupation == "research") ++n;
+        return n;
+    };
+    CHECK_EQ(scholars(), seats);
+    bool announced = false;
+    for (const Event& e : sim.chronicle().events())
+        if (e.text.find("成为学者") != std::string::npos) announced = true;
+    CHECK(announced);
+    // A farming-era tech advances at the writing room, worked only by its scholars.
+    REQUIRE(soc.needs_scholars("pottery"));
+    REQUIRE(soc.tech_available(p, "pottery"));
+    p.policies.research = "pottery";
+    p.policies.pri_research = 0.6f;
+    auto progress = [&] {
+        for (auto& r : soc.polity(p.id)->research)
+            if (r.first == "pottery") return r.second;
+        return 0.0f;
+    };
+    const float before = progress();
+    bool only_scholars = true;
+    for (int h = 0; h < 30 && !soc.polity(p.id)->has_tech("pottery"); ++h) {
+        sim.run(kTicksPerHour);
+        for (const Job& j : sim.jobs().all())
+            if (j.alive && j.type == JobType::Research && j.claimed_by != kNoEntity)
+                if (const Character* c = sim.agents().get(j.claimed_by); c && c->occupation != "research") only_scholars = false;
+    }
+    CHECK(only_scholars);
+    CHECK(soc.polity(p.id)->has_tech("pottery") || progress() > before + 8.0f);
 }

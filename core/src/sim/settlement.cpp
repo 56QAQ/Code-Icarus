@@ -169,6 +169,9 @@ u16 found_settlement(SimContext& ctx, const GameConfig& cfg, Rng& rng, const Sit
         store = place_building(ctx, "storehouse", p.x, p.z, c, pid, ev);
         p = ring(-40, 15);
         kitchen = place_building(ctx, "kitchen", p.x, p.z, c, pid, ev);
+        // A people that can write keeps a room for its scholars, behind the hall.
+        p = ring(180, 13);
+        place_building(ctx, "study", p.x, p.z, c, pid, ev);
         const int n = std::max(1, (cfg.residents + 2) / 3);
         for (int i = 0; i < n; ++i) {
             p = ring(95.0f + (float)i * (170.0f / (float)std::max(1, n - 1)), 21.0f + (float)(i % 2) * 3.0f);

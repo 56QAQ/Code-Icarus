@@ -42,6 +42,8 @@ void Buildings::load_defs(const Registry& reg) {
         d.tech = b.str("tech");
         d.workstation = b.str("workstation");
         d.beds = b.integer("beds", 0);
+        d.scholars = b.integer("scholars", 0);
+        d.research_rate = b.flt("research_rate", 1.0f);
         d.storage = b.flt("storage", 0);
         d.spoil_factor = b.flt("spoil_factor", 1.0f);
         d.seat = b.boolean("seat", false);

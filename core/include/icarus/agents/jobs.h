@@ -16,6 +16,8 @@ enum class JobType : u8 {
     Trade,  // a caravan: goods to a partner polity's store and payment back (to = its store, project = the
             // partner; plot = 1 for aid, given without payment)
     Hunt,   // stalk an animal (project = its id), take it down, butcher it and bring it home
+    Fish,   // from a spot on the shore (pos), catch fish of the school nearby (project = one of
+            // them) and bring the catch home
     Count
 };
 const char* job_name_zh(JobType t);

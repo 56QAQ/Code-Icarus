@@ -570,7 +570,11 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
                 if (b.alive && b.polity == p.id && b.def == key) have = true;
             if (!have) cands.push_back(&bd);
         }
-        auto rank = [](const std::string& cat) {
+        // A people that can write but has nowhere to study builds that first: without it
+        // no knowledge beyond the wild era grows.
+        const bool no_study = ctx_.society->scholar_seats(p.id) == 0;
+        auto rank = [no_study](const std::string& cat) {
+            if (cat == "research" && no_study) return -1;
             if (cat == "storage") return 0;
             if (cat == "production") return 1;
             if (cat == "civic") return 2;
@@ -596,6 +600,7 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
             else if (cat == "civic") vals = {{kOrder, 0.6f}, {kSelfPower, 0.4f}, {kGrowth, 0.3f}, {kFrugality, -0.5f}};
             DecisionOption o = make("build_" + key, "兴建" + bd.str("name"), bd.str("description"), {}, act("build"));
             for (const auto& [f, v] : vals) o.f[f] = v;
+            if (cat == "research" && no_study) o.bias += 0.35f;
             o.action.set("def", key);
             if (const Building* seat = ctx_.buildings->get(p.seat)) {
                 Json near = Json::array();
@@ -871,17 +876,31 @@ void Decisions::build_research_options(Decision& d, Polity& p, Character& ruler)
         return ca != cb ? ca < cb : a < b;
     });
     if (keys.size() > 5) keys.resize(5);
-    const float per_day = 40.0f;  // rough research output of a village
+    // What the people can put into it: scholars at their research buildings, or (for the
+    // techs of the wild era) whoever muses at the fire or the hall.
+    const int seats = ctx_.society->scholar_seats(p.id);
+    int scholars = 0;
+    for (const auto& cp : ctx_.agents->all())
+        if (cp && cp->alive && !cp->departed && cp->polity == p.id && cp->occupation == "research") ++scholars;
     for (const std::string& k : keys) {
         const Json* t = ctx_.society->tech(k);
         float cost = t->flt("cost", 100.0f), done = 0;
         for (auto& r : p.research)
             if (r.first == k) done = r.second;
+        const bool scholarly = ctx_.society->needs_scholars(k);
+        float per_day = ctx_.society->research_per_day(p.id, scholarly);
+        if (scholarly && seats > 0) per_day *= (float)std::max(1, scholars) / (float)seats;
+        if (!scholarly) per_day += ctx_.society->research_per_day(p.id, true);
         DecisionOption o;
         o.key = "research_" + k;
         o.title = "研究「" + t->str("name") + "」";
-        o.desc = strfmt("%s 需要约 %.0f 点知识（已有 %.0f），约 %.1f 天。", t->str("desc").c_str(), cost, done,
-                        std::max(0.2f, (cost - done) / per_day));
+        o.desc = per_day > 0.0f ? strfmt("%s 需要约 %.0f 点知识（已有 %.0f），约 %.1f 天。", t->str("desc").c_str(), cost, done,
+                                         std::max(0.2f, (cost - done) / per_day))
+                                : strfmt("%s 需要约 %.0f 点知识（已有 %.0f）。", t->str("desc").c_str(), cost, done);
+        if (scholarly && seats == 0) {
+            o.feasible = false;
+            o.why_not = "还没有书写室：农耕时代以后的学问，要由学者在书写室里钻研";
+        }
         for (const auto& [fk, fv] : (*t)["values"].members())
             for (int f = 0; f < kFeatureCount; ++f)
                 if (fk == feature_key(f)) o.f[f] = fv.as_float();

@@ -208,6 +208,13 @@ func _refresh() -> void:
 		_research_bar.label_width = 92
 		_research_bar.show_value = true
 		_research_bar.set_value(frac)
+	# Past the wild era, knowledge grows only where scholars sit.
+	var scholars := int(d.get("scholars", 0))
+	var seats := int(d.get("scholar_seats", 0))
+	_research.tooltip_text = "科技树（T）· " + ("学者 %d / %d 人" % [scholars, seats] if seats > 0 else "还没有书写室：农耕时代以后的学问无处钻研")
+	if res.get("scholarly", false) and scholars == 0:
+		_research_bar.label = "研究 · %s（无学者）" % res["name"]
+		_research_bar.label_width = 150
 	_refresh_war(d)
 	for cr in d["crises"]:
 		_badge("%s %d%%" % [cr["kind"], int(float(cr["severity"]) * 100)], UITheme.BAD)

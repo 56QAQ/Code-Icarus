@@ -543,6 +543,11 @@ func _work_pose(job: String, need: String, armed: bool, t: float) -> Array:
 			return [-0.85, -0.95 + sin(t * 4.0) * 0.12, 0.12, 0.3, sin(t * 4.0 + 1.3) * 0.18]
 		"research":
 			return [-1.05, -1.05, 0.05, 0.4, -0.15]
+		"fish":
+			# Poised over the water with the fishing spear, now and then a quick jab.
+			var p := fposmod(t / 2.6, 1.0)
+			var jab := smoothstep(0.78, 0.84, p) - smoothstep(0.86, 1.0, p)
+			return [-0.95 + jab * 0.35, -1.25 + jab * 0.6, 0.3 + jab * 0.15, 0.45, 0.0]
 		"haul":
 			return [-1.15, -1.15, 0.0, 0.0, 0.0]
 	var p2 := sin(t * 9.0)
@@ -635,6 +640,13 @@ func _attach_tool(n: Dictionary, tool_key: String, kind: String, place: String, 
 			cover.albedo_color = Color(0.55, 0.22, 0.2)
 			_box(pg, Vector3(0.3, 0.05, 0.22), Vector3(-0.12, 0.02, 0.14), cover)
 			_box(pg, Vector3(0.27, 0.02, 0.2), Vector3(-0.12, 0.055, 0.14), _gear_mat("string"))
+		"fish":
+			# A fishing spear: a long pole with a sharpened, fire-hardened point.
+			pg.position = hand_r
+			pg.rotation.x = 1.35  # held low, the point toward the water
+			(parts[PART_ARM_R] as Node3D).add_child(pg)
+			_box(pg, Vector3(0.035, 0.035, 1.35), Vector3(0, 0, 0.45), wood)
+			_box(pg, Vector3(0.03, 0.03, 0.14), Vector3(0, 0, 1.18), _gear_mat("fur_dark"))
 		"forage", "sow", "harvest":
 			pg.position = hand_l
 			(parts[PART_ARM_L] as Node3D).add_child(pg)

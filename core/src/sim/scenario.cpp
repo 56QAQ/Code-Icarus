@@ -160,6 +160,9 @@ void build_village_scenario(SimContext& ctx, const GameConfig& cfg, Rng& rng) {
     u32 store = place("storehouse", du, dv, 0, 0);
     ring(-40, 15, du, dv);
     u32 kitchen = place("kitchen", du, dv, 0, 0);
+    // A people that can write keeps a room for its scholars, behind the hall.
+    ring(180, 13, du, dv);
+    place("study", du, dv, 0, 0);
     std::vector<u32> huts;
     int hut_count = std::max(1, (cfg.residents + 2) / 3);
     for (int i = 0; i < hut_count; ++i) {

@@ -66,6 +66,8 @@
     {"key": "linen_clothes", "name": "布衣", "weight": 0.8, "value": 3.0, "clothes": "cloth", "warmth": 0.35, "joy": 0.03, "tags": ["clothes"]},
     {"key": "meat", "name": "生肉", "weight": 0.6, "nutrition": 0.30, "joy": 0.0, "spoil_per_day": 0.18, "value": 1.2, "tags": ["food", "raw"]},
     {"key": "cooked_meat", "name": "烤肉", "weight": 0.5, "nutrition": 0.42, "joy": 0.08, "spoil_per_day": 0.06, "value": 2.2, "tags": ["food", "meal"]},
+    {"key": "fish", "name": "鲜鱼", "weight": 0.4, "nutrition": 0.26, "joy": 0.0, "spoil_per_day": 0.25, "value": 1.0, "tags": ["food", "raw"]},
+    {"key": "cooked_fish", "name": "烤鱼", "weight": 0.35, "nutrition": 0.38, "joy": 0.08, "spoil_per_day": 0.08, "value": 1.9, "tags": ["food", "meal"]},
     {"key": "hide", "name": "兽皮", "weight": 1.0, "value": 2.0, "tags": ["material"]},
     {"key": "bone", "name": "骨头", "weight": 0.5, "value": 0.4, "tags": ["material"]}
   ]

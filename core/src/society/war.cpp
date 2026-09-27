@@ -219,7 +219,8 @@ int Society::soldiers(u16 id) const {
 }
 
 static bool fit_to_serve(const SimContext& ctx, const Character& c, u16 polity) {
-    return c.alive && !c.departed && !c.is_girl() && c.polity == polity && !c.drafted && c.body.can_hold() &&
+    // (Scholars are spared: learning is slow to replace.)
+    return c.alive && !c.departed && !c.is_girl() && c.polity == polity && !c.drafted && c.occupation != "research" && c.body.can_hold() &&
            c.body.mobility() >= 0.6f && !ctx.agents->is_child(c) && !ctx.agents->is_elder(c);
 }
 

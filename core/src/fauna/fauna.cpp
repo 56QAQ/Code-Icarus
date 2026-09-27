@@ -19,6 +19,9 @@ constexpr int kIndexCell = 16;         // people index granularity
 constexpr Tick kCarcassTicks = kTicksPerDay * 2;
 constexpr float kGrownDays = 5.0f;
 
+// Fish swim a third of a cube above the floor of the cube they are in.
+float lift(const SpeciesDef& s) { return s.aquatic ? 0.35f : 0.0f; }
+
 i64 cell_key(int x, int z) { return ((i64)floordiv(x, kIndexCell) << 32) ^ (i64)(u32)floordiv(z, kIndexCell); }
 
 Temper temper_from(const std::string& t) {
@@ -52,6 +55,8 @@ void Fauna::load_species(const Registry& reg) {
         const Json& sz = e["size"];
         if (sz.is_array() && sz.size() >= 3) s.size = {(float)sz[0].as_num(), (float)sz[1].as_num(), (float)sz[2].as_num()};
         s.tall = s.size.y > 1.1f;
+        s.aquatic = e.str("habitat", "land") == "water";
+        s.water_density = e.flt("water_density", 0.0f);
         s.speed = e.flt("speed", 0.2f);
         s.run = e.flt("run", 0.5f);
         s.stamina = e.integer("stamina", 300);
@@ -144,10 +149,38 @@ bool Fauna::walkable(const Vec3i& p, bool tall) const {
     return clear(p) && (!tall || clear(p + Vec3i{0, 1, 0}));
 }
 
-bool Fauna::find_ground(Vec3i& p, bool tall) const {
+bool Fauna::swimmable(const Vec3i& p) const {
+    const World& w = *ctx_.world;
+    if (p.y < 1 || !w.in_bounds(p)) return false;
+    if (rough_) {
+        const ColumnInfo col = w.gen().column(p.x, p.z);
+        return col.water_top >= 0 && p.y > col.top && p.y < col.water_top + (col.frozen ? 0 : 1);
+    }
+    const Voxel v = w.peek(p);
+    return vmat(v) == ctx_.reg->m().water && vlevel(v) >= 4;
+}
+
+bool Fauna::fits(const SpeciesDef& s, const Vec3i& p) const {
+    return s.aquatic ? swimmable(p) : walkable(p, s.tall);
+}
+
+bool Fauna::find_spot(Vec3i& p, const SpeciesDef& s) const {
+    if (s.aquatic) {
+        // Mid-water: the middle of the water column under p.
+        int lo = 1 << 30, hi = -(1 << 30);
+        for (int dy = -6; dy <= 3; ++dy)
+            if (swimmable(p + Vec3i{0, dy, 0})) {
+                lo = std::min(lo, dy);
+                hi = std::max(hi, dy);
+            }
+        if (lo > hi) return false;
+        const int mid = (lo + hi) / 2;
+        p.y += swimmable(p + Vec3i{0, mid, 0}) ? mid : lo;
+        return true;
+    }
     for (int dy = 3; dy >= -6; --dy) {
         const Vec3i q = p + Vec3i{0, dy, 0};
-        if (walkable(q, tall)) {
+        if (walkable(q, s.tall)) {
             p = q;
             return true;
         }
@@ -166,7 +199,7 @@ u32 Fauna::spawn(u16 s, const Vec3i& foot, u32 herd, Tick now) {
     a.next = foot;
     a.goal = foot;
     a.home = foot;
-    a.pos = Vec3f((float)foot.x + 0.5f, (float)foot.y, (float)foot.z + 0.5f);
+    a.pos = Vec3f((float)foot.x + 0.5f, (float)foot.y + lift(species_[s]), (float)foot.z + 0.5f);
     a.yaw = rng_.uniform(0.0f, 6.2831853f);
     a.herd = herd ? herd : a.id;
     a.born = now;
@@ -176,11 +209,10 @@ u32 Fauna::spawn(u16 s, const Vec3i& foot, u32 herd, Tick now) {
 }
 
 void Fauna::spawn_herd(u16 s, const Vec3i& at, int n, Tick now) {
-    const bool tall = species_[s].tall;
     u32 leader = 0;
     for (int i = 0; i < n; ++i) {
         Vec3i p = at + Vec3i{rng_.range(-2, 2), 0, rng_.range(-2, 2)};
-        if (!find_ground(p, tall)) continue;
+        if (!find_spot(p, species_[s])) continue;
         const u32 id = spawn(s, p, leader, now);
         if (!leader) leader = id;
         // Start at any age up to half a life.
@@ -209,11 +241,21 @@ void Fauna::populate() {
             }
             if (!near_island) continue;
             const ColumnInfo col = gen.column_uncached(x, z);
+            // Fish: schools in deep water (lakes, ponds, the village's spring).
+            if (col.water_top >= 0 && col.water_top - col.top >= 2)
+                for (const SpeciesDef& s : species_) {
+                    if (!s.aquatic || s.water_density <= 0.0f || !rng_.chance(s.water_density)) continue;
+                    const int n = rng_.range(s.herd_min, s.herd_max);
+                    const size_t before = animals_.size();
+                    spawn_herd(s.id, Vec3i{x, col.water_top, z}, n, 0);
+                    spawned[s.id] += (int)(animals_.size() - before);
+                }
             if (!col.land || col.water_top >= 0 || col.reserved) continue;
             float site_d = 1e9f;
             for (const Site& s : f.sites)
                 site_d = std::min(site_d, std::sqrt((float)((s.center.x - x) * (s.center.x - x) + (s.center.z - z) * (s.center.z - z))));
             for (const SpeciesDef& s : species_) {
+                if (s.aquatic) continue;
                 const bool fierce = s.temper == Temper::Predator || s.temper == Temper::Territorial;
                 // The classic island is small and peaceful; beasts keep well away from homes.
                 if (fierce && (!continent || site_d < 110.0f)) continue;
@@ -326,6 +368,17 @@ void Fauna::think(Animal& a, bool near) {
         die(a, "饿死");
         return;
     }
+    // A fish whose water is gone (drained, dug away, frozen through) does not last.
+    if (s.aquatic && !swimmable(a.foot)) {
+        Vec3i p = a.foot;
+        if (find_spot(p, s) && p.dist2(a.foot) <= 4) {
+            a.foot = a.next = a.goal = p;
+            a.pos = Vec3f((float)p.x + 0.5f, (float)p.y + lift(s), (float)p.z + 0.5f);
+        } else {
+            die(a, "搁浅而死");
+            return;
+        }
+    }
     const float grown = std::min(1.0f, 0.4f + 0.6f * age_days / kGrownDays);
     auto away_from = [&](const Vec3f& from, float dist) {
         Vec3f d = a.pos - from;
@@ -333,7 +386,7 @@ void Fauna::think(Animal& a, bool near) {
         d = d.normalized();
         if (d.length() < 0.5f) d = Vec3f(std::cos(a.yaw), 0, std::sin(a.yaw));
         Vec3i g = (a.pos + d * dist).floor_i();
-        if (!find_ground(g, s.tall)) g = a.foot;
+        if (!find_spot(g, s)) g = a.foot;
         return g;
     };
     // Continuing an action.
@@ -454,7 +507,7 @@ void Fauna::think(Animal& a, bool near) {
             // Nothing to hunt here: a hungry pack moves on to new grounds.
             if (a.hunger > 1.0f && a.herd == a.id) {
                 Vec3i g = a.foot + Vec3i{rng_.range(-70, 70), 0, rng_.range(-70, 70)};
-                if (find_ground(g, s.tall)) {
+                if (find_spot(g, s)) {
                     a.home = g;
                     a.goal = g;
                     a.state = AnimalState::Wander;
@@ -473,7 +526,7 @@ void Fauna::think(Animal& a, bool near) {
     if (leader) {
         if (leader->pos.dist_sq(a.pos) > 5.0f * 5.0f || r < 0.3f) {
             Vec3i g = leader->foot + Vec3i{rng_.range(-3, 3), 0, rng_.range(-3, 3)};
-            a.goal = find_ground(g, s.tall) ? g : leader->foot;
+            a.goal = find_spot(g, s) ? g : leader->foot;
             a.state = AnimalState::Wander;
         } else {
             a.state = r < 0.7f ? AnimalState::Graze : AnimalState::Idle;
@@ -483,7 +536,7 @@ void Fauna::think(Animal& a, bool near) {
     }
     if (r < 0.35f) {
         Vec3i g = a.home + Vec3i{rng_.range(-14, 14), 0, rng_.range(-14, 14)};
-        if (find_ground(g, s.tall)) {
+        if (find_spot(g, s)) {
             a.goal = g;
             a.state = AnimalState::Wander;
             return;
@@ -495,11 +548,11 @@ void Fauna::think(Animal& a, bool near) {
 
 Vec3i Fauna::pick_next(const Animal& a) const {
     static const int dirs[8][2] = {{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
-    const bool tall = species_[a.species].tall;
+    const SpeciesDef& s = species_[a.species];
     Vec3i best = a.foot;
     auto score = [&](const Vec3i& p) {
-        const i64 dx = p.x - a.goal.x, dz = p.z - a.goal.z;
-        return dx * dx + dz * dz;
+        const i64 dx = p.x - a.goal.x, dz = p.z - a.goal.z, dy = s.aquatic ? p.y - a.goal.y : 0;
+        return dx * dx + dz * dz + dy * dy;
     };
     i64 bd = score(a.foot);
     const int start = (int)((a.id * 3 + (u32)(now_ / 16)) % 8);
@@ -507,7 +560,7 @@ Vec3i Fauna::pick_next(const Animal& a) const {
         const int* d = dirs[(start + k) % 8];
         for (int dy : {0, 1, -1, -2}) {
             const Vec3i c = a.foot + Vec3i{d[0], dy, d[1]};
-            if (!walkable(c, tall)) continue;
+            if (!fits(s, c)) continue;
             const i64 sc = score(c);
             if (sc < bd) {
                 bd = sc;
@@ -605,7 +658,7 @@ void Fauna::move(Animal& a, float dt) {
                 break;
             }
         }
-        const Vec3f t((float)a.next.x + 0.5f, (float)a.next.y, (float)a.next.z + 0.5f);
+        const Vec3f t((float)a.next.x + 0.5f, (float)a.next.y + lift(s), (float)a.next.z + 0.5f);
         Vec3f d = t - a.pos;
         const float len = d.length();
         if (len <= budget) {
@@ -658,7 +711,7 @@ bool Fauna::strike(Animal& a, float power, EntityId by, EventId cause) {
         d.y = 0;
         d = d.normalized();
         Vec3i g = (a.pos + d * 18.0f).floor_i();
-        a.goal = find_ground(g, s.tall) ? g : a.foot;
+        a.goal = find_spot(g, s) ? g : a.foot;
     } else if (c) {
         a.state = AnimalState::Attack;
         a.target = by;
@@ -678,12 +731,35 @@ int Fauna::butcher(Animal& a, StoreId into) {
     return n;
 }
 
+u32 Fauna::find_fish(const Vec3i& from, int radius) const {
+    const Animal* best = nullptr;
+    i64 bd = (i64)radius * radius;
+    for (const Animal& a : animals_) {
+        if (!a.alive || a.hunted_by != kNoEntity || !species_[a.species].aquatic) continue;
+        const i64 d = a.foot.dist2(from);
+        if (d < bd) {
+            bd = d;
+            best = &a;
+        }
+    }
+    return best ? best->id : 0;
+}
+
+int Fauna::catch_fish(Animal& a, EntityId by, StoreId into) {
+    if (!a.alive) return 0;
+    now_ = ctx_.now;
+    const Character* c = ctx_.agents ? ctx_.agents->get(by) : nullptr;
+    die(a, c ? "被" + c->name + "捕获" : std::string("被捕获"));
+    return butcher(a, into);
+}
+
 u32 Fauna::find_prey(const Vec3i& from, int radius, bool dangerous_too) const {
     const Animal* best = nullptr;
     i64 bd = (i64)radius * radius;
     for (const Animal& a : animals_) {
         if (!a.alive || a.hunted_by != kNoEntity) continue;
         const SpeciesDef& s = species_[a.species];
+        if (s.aquatic) continue;  // (fish are caught from the shore)
         if (!dangerous_too && s.temper != Temper::Shy) continue;
         const i64 d = a.foot.dist2(from);
         if (d < bd) {
@@ -761,7 +837,7 @@ void Fauna::daily() {
         const u32 herd = a.herd;
         for (int k = 0; k < litter && alive[s.id] < capacity_[s.id]; ++k) {
             Vec3i p = at + Vec3i{rng_.range(-1, 1), 0, rng_.range(-1, 1)};
-            if (!find_ground(p, s.tall)) continue;
+            if (!find_spot(p, s)) continue;
             spawn(s.id, p, herd, now_);
             alive[s.id]++;
         }

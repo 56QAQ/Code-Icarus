@@ -26,9 +26,10 @@ TEST("fauna: species live where their biomes are; the classic island has no pred
     std::map<std::string, int> by;
     for (const Animal& a : f.all()) {
         by[f.spec(a.species).key]++;
-        // Standing on the ground of a biome the species lives in.
+        // Standing on the ground of a biome the species lives in (fish: in a lake).
         const ColumnInfo col = sim.world().gen().column(a.foot.x, a.foot.z);
-        CHECK(col.land);
+        if (f.spec(a.species).aquatic) CHECK(col.water_top >= a.foot.y);
+        else CHECK(col.land);
     }
     for (const char* k : {"rabbit", "deer", "boar", "goat", "wolf"}) CHECK(by[k] > 0);
     Simulation classic(test_registry());
@@ -136,4 +137,37 @@ TEST("fauna: save and load continue identically") {
     sim.run(900);
     sim2.run(900);
     CHECK_EQ(sim2.state_hash(), sim.state_hash());
+}
+
+TEST("fauna: fish school in the lakes, stay in the water, and fishers bring them home") {
+    Simulation sim(test_registry());
+    GameConfig c;
+    c.world = WorldConfig::for_layout(WorldLayout::Continent, 3);
+    c.scenario = "three_realms";
+    sim.new_game(c);
+    Fauna& f = sim.fauna();
+    const int crucian = f.species_id("crucian"), carp = f.species_id("carp");
+    REQUIRE(crucian >= 0 && carp >= 0);
+    CHECK(f.count_alive(crucian) > 20);
+    CHECK(f.count_alive(carp) > 5);
+    const MatId water = sim.reg().m().water;
+    sim.run(kTicksPerHour * 3);
+    // Near the villages (where every cube is looked at) every living fish is in water.
+    int checked = 0;
+    for (const Animal& a : f.all()) {
+        if (!a.alive || !f.spec(a.species).aquatic) continue;
+        bool near = false;
+        for (const auto& cp : sim.agents().all())
+            if (cp && cp->alive && cp->foot.dist2(a.foot) < 60 * 60) near = true;
+        if (!near) continue;
+        ++checked;
+        CHECK(vmat(sim.world().peek(a.foot)) == water);
+    }
+    CHECK(checked > 0);
+    // Fishers catch them (the catch enters the ledger), and hunters never go after them.
+    sim.run(kTicksPerDay);
+    const auto& r = sim.economy().reasons();
+    CHECK(r.count("+butcher:fish") && r.at("+butcher:fish") > 0);
+    for (const auto& [k, n] : f.deaths)
+        if (k.rfind("crucian:", 0) == 0 || k.rfind("carp:", 0) == 0) CHECK(k.find("猎杀") == std::string::npos);
 }

@@ -109,13 +109,42 @@
       ]
     },
     {
-      "key": "study", "name": "智者小屋", "category": "research", "workstation": "research", "tech": "writing",
-      "description": "积累与传承知识的场所。",
+      "key": "study", "name": "书写室", "category": "research", "workstation": "research", "tech": "writing",
+      "scholars": 2, "research_rate": 1.0,
+      "description": "原木茅顶的小屋，两名学者在这里刻写、比较与钻研。农耕时代以后的学问只能在这样的地方研究。",
       "layers": [
-        ["SSSSS", "S...S", "S...S", "S...S", "SS.SS"],
-        ["PPPPP", "P...P", "G...G", "P...P", "PP.PP"],
-        ["PPPPP", "P...P", "P...P", "P...P", "PP.PP"],
-        ["TTTTT", "TTTTT", "TTTTT", "TTTTT", "TTTTT"]
+        ["LLLLL", "L...L", "L...L", "L...L", "LL.LL"],
+        ["LLLLL", "L...L", "L...L", "L...L", "LL.LL"],
+        ["LLLLL", "L...L", "L...L", "L...L", "LL.LL"],
+        ["TTTTT", "TTTTT", "TTTTT", "TTTTT", "TTTTT"],
+        [".....", ".TTT.", ".TTT.", ".TTT.", "....."]
+      ]
+    },
+    {
+      "key": "school", "name": "学舍", "category": "research", "workstation": "research", "tech": "mathematics",
+      "scholars": 3, "research_rate": 1.25,
+      "description": "木板墙的讲习之所，三名学者在这里演算、授业、钻研，比书写室更快。",
+      "layers": [
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "LLL.LLL"],
+        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "LPP.PPL"],
+        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "LPP.PPL"],
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "LLLLLLL"],
+        ["TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT"],
+        [".......", ".TTTTT.", ".TTTTT.", ".TTTTT.", "......."]
+      ]
+    },
+    {
+      "key": "academy", "name": "书院", "category": "research", "workstation": "research", "tech": "scholarship",
+      "scholars": 4, "research_rate": 1.5,
+      "description": "石墙明窗、藏书满架的书院，四名学者在这里著书立说，研究最快。",
+      "layers": [
+        ["SSSSSSSSS", "S.......S", "S.......S", "S.......S", "S.......S", "SSSS.SSSS"],
+        ["SPPPPPPPS", "P.......P", "G.......G", "G.......G", "P.......P", "SPPP.PPPS"],
+        ["SPPPPPPPS", "P.......P", "G.......G", "G.......G", "P.......P", "SPPP.PPPS"],
+        ["SSSSSSSSS", "S.......S", "S.......S", "S.......S", "S.......S", "SSSSSSSSS"],
+        ["TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT"],
+        [".........", ".TTTTTTT.", ".TTTTTTT.", ".TTTTTTT.", ".TTTTTTT.", "........."],
+        [".........", ".........", "..TTTTT..", "..TTTTT..", ".........", "........."]
       ]
     },
     {

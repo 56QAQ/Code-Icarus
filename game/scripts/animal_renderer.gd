@@ -3,7 +3,8 @@ extends Node3D
 ## Draws the wild animals near the camera from kernel snapshots: blocky voxel-style
 ## bodies built per species from its size, colours and features (ears, antlers, tusks,
 ## horns, tails), legs that swing with the gait, heads that dip to graze, young ones
-## smaller, the dead lying on their side. Pure presentation.
+## smaller, the dead lying on their side. Fish swim with a beating tail and float belly
+## up when dead. Pure presentation.
 
 var sim: IcarusSim
 var camera: Camera3D
@@ -80,6 +81,8 @@ func _create(a: Dictionary) -> Dictionary:
 	var sp: Dictionary = _species.get(String(a["species"]), {})
 	if sp.is_empty():
 		return {}
+	if sp.get("aquatic", false):
+		return _create_fish(a, sp)
 	var size: Vector3 = sp["size"]  # length, height, width
 	var cols: Array = sp["colors"]
 	var body_c: Color = cols[0] if cols.size() > 0 else Color(0.5, 0.4, 0.3)
@@ -181,6 +184,60 @@ func _create(a: Dictionary) -> Dictionary:
 		"grown": float(a.get("grown", 1.0)), "leg_h": leg_h, "id": int(a["id"])}
 
 
+## A fish: a slim body with a lighter belly, a dorsal fin and a tail fin on a pivot that
+## beats as it swims (the whole body sways with it).
+func _create_fish(a: Dictionary, sp: Dictionary) -> Dictionary:
+	var size: Vector3 = sp["size"]
+	var cols: Array = sp["colors"]
+	var body_c: Color = cols[0] if cols.size() > 0 else Color(0.55, 0.6, 0.58)
+	var light_c: Color = cols[1] if cols.size() > 1 else body_c.lightened(0.4)
+	var dark_c: Color = cols[2] if cols.size() > 2 else body_c.darkened(0.4)
+	var look: Array = sp["look"]
+	var L := size.x
+	var H := size.y
+	var W := size.z
+	var root := Node3D.new()
+	add_child(root)
+	var body := Node3D.new()
+	root.add_child(body)
+	_box(body, Vector3(W, H * 0.62, L * 0.62), Vector3(0, H * 0.1, 0.02), body_c)
+	_box(body, Vector3(W * 0.86, H * 0.34, L * 0.52), Vector3(0, -H * 0.2, 0.03), light_c)
+	_box(body, Vector3(W * 0.8, H * 0.5, L * 0.16), Vector3(0, 0.0, L * 0.38), body_c.lightened(0.05))  # head
+	for side in [-1.0, 1.0]:
+		_box(body, Vector3(0.02, 0.04, 0.04), Vector3(side * W * 0.42, H * 0.06, L * 0.4), Color(0.06, 0.06, 0.06))  # eyes
+		_box(body, Vector3(0.02, H * 0.2, L * 0.12), Vector3(side * W * 0.5, -H * 0.12, L * 0.18), dark_c, Vector3(0, 0, side * 0.5))  # pectoral fins
+	_box(body, Vector3(0.02, H * 0.34, L * 0.3), Vector3(0, H * 0.52, -0.02), dark_c)  # dorsal fin
+	if "barbels" in look:
+		for side in [-1.0, 1.0]:
+			_box(body, Vector3(0.01, 0.01, 0.1), Vector3(side * W * 0.25, -H * 0.12, L * 0.5), dark_c, Vector3(0.3, side * 0.4, 0))
+	var tail := Node3D.new()
+	tail.position = Vector3(0, H * 0.08, -L * 0.3)
+	body.add_child(tail)
+	_box(tail, Vector3(0.02, H * 0.9, L * 0.24), Vector3(0, 0, -L * 0.12), dark_c)
+	var now := Time.get_ticks_usec() / 1e6
+	root.position = a["pos"]
+	return {"root": root, "body": body, "legs": [], "head": tail, "prev": a["pos"], "cur": a["pos"], "t_cur": now,
+		"dt": 0.1, "phase": float(int(a["id"]) % 7), "moving": false, "running": false, "grazing": false, "alive": true,
+		"yaw": float(a["yaw"]), "grown": float(a.get("grown", 1.0)), "leg_h": 0.0, "id": int(a["id"]), "fish": true}
+
+
+func _animate_fish(n: Dictionary, delta: float) -> void:
+	var body: Node3D = n["body"]
+	var tail: Node3D = n["head"]
+	var alive: bool = n["alive"]
+	var moving: bool = n["moving"] and alive
+	var running: bool = n["running"] and moving
+	var rate := (16.0 if running else 8.0) if moving else 3.0
+	n["phase"] = float(n["phase"]) + delta * rate
+	var ph: float = n["phase"]
+	var beat := (0.7 if running else 0.45) if moving else 0.2
+	tail.rotation.y = sin(ph) * beat if alive else 0.0
+	body.rotation.y = -sin(ph) * beat * 0.18 if alive else 0.0
+	# Dead fish float belly up.
+	body.rotation.z = lerpf(body.rotation.z, 0.0 if alive else PI, 1.0 - exp(-delta * 3.0))
+	body.position.y = sin(ph * 0.35) * 0.03 if alive else 0.0
+
+
 func _update_target(n: Dictionary, a: Dictionary) -> void:
 	var now := Time.get_ticks_usec() / 1e6
 	var target: Vector3 = a["pos"]
@@ -210,6 +267,9 @@ func _animate(n: Dictionary, delta: float) -> void:
 	root.rotation.y = lerp_angle(root.rotation.y, float(n["yaw"]), k)
 	var g := float(n["grown"])
 	root.scale = Vector3.ONE * g
+	if n.get("fish", false):
+		_animate_fish(n, delta)
+		return
 	var body: Node3D = n["body"]
 	var alive: bool = n["alive"]
 	body.rotation.z = lerpf(body.rotation.z, 0.0 if alive else PI / 2.0, 1.0 - exp(-delta * 4.0))

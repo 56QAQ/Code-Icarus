@@ -140,7 +140,10 @@ void Agents::step(Tick now) {
         fail_ring_pos_ = (fail_ring_pos_ + 1) % (int)fail_ring_.size();
         fail_ring_[(size_t)fail_ring_pos_] = 0;
     }
-    if (now % kTicksPerHour == kTicksPerHour / 2) assign_homes();
+    if (now % kTicksPerHour == kTicksPerHour / 2) {
+        assign_homes();
+        appoint_scholars();
+    }
     if (now % kTicksPerDay == kTicksPerHour * 6 + 17) {
         daily_life();
         daily_drama();

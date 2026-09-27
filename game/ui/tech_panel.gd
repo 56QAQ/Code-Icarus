@@ -128,6 +128,8 @@ func _refresh() -> void:
 	var meta := "「%s」· 已掌握 %d / %d" % [info["name"], known, tree.size()]
 	if not res.is_empty():
 		meta += " · 研究中：%s %d%%" % [res["name"], int(100.0 * float(res["progress"]) / maxf(1.0, float(res["cost"])))]
+	var seats := int(info.get("scholar_seats", 0))
+	meta += " · 学者 %d / %d" % [int(info.get("scholars", 0)), seats] if seats > 0 else " · 尚无研究场所"
 	_head_meta.text = meta
 	if _view.selected == "":
 		_view.selected = String(res.get("key", ""))
@@ -138,7 +140,7 @@ func _show_detail() -> void:
 	var t: Dictionary = _view.tech(_view.selected)
 	if t.is_empty():
 		_detail_title.text = "点选一项科技查看详情"
-		_detail_body.text = "金色为正在研究的方向；绿色为已掌握；明亮的边框表示前置已满足、可以研究。新时代的科技需要先掌握上一时代至少一半的科技。"
+		_detail_body.text = "金色为正在研究的方向；绿色为已掌握；明亮的边框表示前置已满足、可以研究；紫色竖条是开启新时代的学问。新时代的科技需要先掌握上一时代至少一半的科技和开启它的学问（文字、算学、典籍）。蛮荒时代的科技在劳作与篝火旁的琢磨中积累；此后的科技只能由学者在书写室、学舍或书院里钻研。"
 		_detail_extra.text = ""
 		return
 	var state_names := {"known": "已掌握", "researching": "研究中", "available": "可研究", "locked": "未解锁"}
@@ -159,6 +161,11 @@ func _show_detail() -> void:
 		var have := int(t["foundation_known"])
 		var need := int(t["foundation_needed"])
 		parts.append("%s根基：%s科技 %d / %d" % ["✓" if have >= need else "✗", _view.era_name(int(t["era"]) - 1), have, need])
+	if t.has("gate") and t["state"] != "known" and String(t["gate"]) != String(t["key"]):
+		var g: Dictionary = _view.tech(String(t["gate"]))
+		parts.append("%s开启时代的学问：%s" % ["✓" if t.get("gate_known", false) else "✗", g.get("name", t["gate"])])
+	if t.get("scholarly", false) and t["state"] != "known":
+		parts.append("须由学者在研究场所钻研（劳作经验至多积累四分之一）")
 	var un: PackedStringArray = t["unlocks"]
 	if not un.is_empty():
 		parts.append("解锁：" + "、".join(un))
@@ -181,7 +188,7 @@ class TechTreeView extends Control:
 
 	const CARD_H := 50.0
 	const GAP_Y := 12.0
-	const HEAD_H := 30.0
+	const HEAD_H := 42.0
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
@@ -223,8 +230,8 @@ class TechTreeView extends Control:
 		for e in per_era:
 			most = maxi(most, int(per_era[e]))
 		var step := minf(CARD_H + GAP_Y, (size.y - HEAD_H - 4.0) / float(most))
-		var card_h := clampf(step - 6.0, 36.0, CARD_H)
-		step = maxf(step, card_h + 4.0)
+		var card_h := clampf(step - 5.0, 33.0, CARD_H)
+		step = maxf(step, card_h + 3.0)
 		# Order each column by where its prerequisites sit, so curves rarely cross.
 		var row_of := {}
 		for e in n_eras:
@@ -293,7 +300,13 @@ class TechTreeView extends Control:
 			if e % 2 == 1:
 				draw_rect(Rect2(x, 0, col_w, size.y), Color(1, 1, 1, 0.022))
 			var name: String = _eras[e] if e < _eras.size() else "第%d时代" % e
-			draw_string(bold, Vector2(x, 20), name, HORIZONTAL_ALIGNMENT_CENTER, col_w, 14, UITheme.TEXT_DIM)
+			draw_string(bold, Vector2(x, 18), name, HORIZONTAL_ALIGNMENT_CENTER, col_w, 14, UITheme.TEXT_DIM)
+			# The tech of learning that opens the era.
+			var gate := _gate_of(e)
+			if not gate.is_empty():
+				var ok: bool = gate.get("state", "") == "known"
+				draw_string(font, Vector2(x, 34), ("✓ " if ok else "须先掌握 ") + String(gate.get("name", "")), HORIZONTAL_ALIGNMENT_CENTER,
+					col_w, 11, UITheme.GOOD if ok else UITheme.MAGIC)
 		# Prerequisite curves (under the cards). The focused tech's links are highlighted.
 		var focus := _hover if _hover != "" else selected
 		for t in _techs:
@@ -331,6 +344,9 @@ class TechTreeView extends Control:
 				sb.bg_color = bg.lightened(0.08)
 				sb.border_color = Color(UITheme.TEXT, 0.5)
 			draw_style_box(sb, r)
+			# A tech of learning (it opens the next era): a violet stripe.
+			if t.get("learning", false):
+				draw_rect(Rect2(r.position.x + 3, r.position.y + 6, 3, r.size.y - 12), Color(UITheme.MAGIC, 0.9))
 			# State marker.
 			var mid := r.position.y + r.size.y * 0.5
 			var mc := Vector2(r.position.x + 16, mid)
@@ -369,6 +385,13 @@ class TechTreeView extends Control:
 			if cost > 0.0 and float(t["progress"]) > 0.0 and state != "known":
 				var frac := clampf(float(t["progress"]) / cost, 0.0, 1.0)
 				draw_rect(Rect2(r.position.x + 10, r.end.y - 5, (r.size.x - 20) * frac, 2.5), UITheme.ACCENT)
+
+	## The tech that opens an era (its techs name it as their "gate").
+	func _gate_of(era: int) -> Dictionary:
+		for t in _techs:
+			if int(t["era"]) == era and t.has("gate"):
+				return _by_key.get(String(t["gate"]), {})
+		return {}
 
 	func _curve(from: Rect2, to: Rect2, c: Color, w: float) -> void:
 		var pts := PackedVector2Array()

@@ -366,6 +366,36 @@ func _furnish(root: Node3D, b: Dictionary) -> void:
 			_table(desk)
 			_cyl(desk, 0.05, 0.4, Vector3(-0.15, 0.8, 0), Color(0.92, 0.88, 0.76), true)
 			_cyl(desk, 0.05, 0.4, Vector3(0.15, 0.8, 0.08), Color(0.92, 0.88, 0.76), true, 0.5)
+		"school":
+			# A slate for reckoning, and a bench for the pupils.
+			var board := _node(root, _spot(f, -1.6, 0.55), yaw)
+			var wood := Color(0.45, 0.33, 0.22)
+			_box(board, Vector3(1.1, 0.7, 0.06), Vector3(0, 1.25, 0), Color(0.19, 0.23, 0.21), 0.0)
+			for x in [-0.52, 0.52]:
+				_box(board, Vector3(0.06, 1.6, 0.06), Vector3(x, 0.8, 0.04), wood, 0.0)
+			for i in 3:
+				_box(board, Vector3(0.5 - i * 0.12, 0.02, 0.01), Vector3(-0.15 + i * 0.05, 1.42 - i * 0.14, -0.035), Color(0.9, 0.9, 0.84), 0.0)
+			var bench := _node(root, _spot(f, 1.3, 0.9), yaw)
+			_box(bench, Vector3(1.1, 0.06, 0.3), Vector3(0, 0.42, 0), wood, 0.0)
+			for x in [-0.45, 0.45]:
+				_box(bench, Vector3(0.06, 0.4, 0.26), Vector3(x, 0.2, 0), wood.darkened(0.15), 0.0)
+		"academy":
+			# Shelves of books at either side of the door, and a reading desk.
+			for side in [-2.3, 2.3]:
+				var sh := _node(root, _spot(f, side, 0.3), yaw)
+				var dark := Color(0.36, 0.25, 0.16)
+				_box(sh, Vector3(0.9, 1.5, 0.05), Vector3(0, 0.75, -0.13), dark, 0.0)
+				for x in [-0.43, 0.43]:
+					_box(sh, Vector3(0.05, 1.5, 0.3), Vector3(x, 0.75, 0), dark, 0.0)
+				for row in 3:
+					_box(sh, Vector3(0.82, 0.04, 0.28), Vector3(0, 0.1 + row * 0.48, 0), dark, 0.0)
+					for k in 6:
+						var bc: Color = [Color(0.55, 0.2, 0.18), Color(0.25, 0.35, 0.5), Color(0.62, 0.52, 0.3), Color(0.3, 0.45, 0.3)][(k + row) % 4]
+						_box(sh, Vector3(0.1, 0.3 + 0.05 * ((k * 7 + row) % 3), 0.22), Vector3(-0.32 + k * 0.13, 0.28 + row * 0.48, 0), bc, 0.0)
+			var desk := _node(root, _spot(f, 0.0, 1.6), yaw)
+			_table(desk)
+			_cyl(desk, 0.05, 0.4, Vector3(-0.15, 0.8, 0), Color(0.92, 0.88, 0.76), true)
+			_box(desk, Vector3(0.3, 0.06, 0.22), Vector3(0.2, 0.8, 0), Color(0.55, 0.2, 0.18), 0.0)
 		"herbalist":
 			var rack := _node(root, _spot(f, 1.4, 0.5), yaw)
 			_cyl(rack, 0.03, 1.4, Vector3(-0.5, 0.7, 0), Color(0.45, 0.33, 0.22))

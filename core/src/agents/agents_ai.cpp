@@ -49,6 +49,10 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     float dist = std::sqrt((float)c.foot.dist2(j.pos));
     float score = motivation * j.priority * cat_w * skill_f - dist / 260.0f;
     if (!c.occupation.empty() && c.occupation == cat) score += 0.08f;
+    // Scholars are there to study in working hours (unless the larder is emptying).
+    if (cat == "research" && c.occupation == "research" && is_work_time(c) &&
+        !(p && p->stats.food_days < 1.0f && p->stats.food_access < 0.9f))
+        score += 0.6f;
     // The right tool in hand makes a job more attractive (and bare hands less).
     {
         std::string kind;
@@ -109,6 +113,11 @@ u32 Agents::best_job(Character& c, float& best, std::string& why) {
         if (!j.alive || j.polity != c.polity) continue;
         if (j.claimed_by != kNoEntity && j.claimed_by != c.id) continue;
         if (j.suspended_until > now_) continue;
+        // Study keeps working hours; the seats at a research building are for its scholars.
+        if (j.type == JobType::Research && !is_work_time(c)) continue;
+        if (j.type == JobType::Research && c.occupation != "research")
+            if (const Building* b = ctx_.buildings->get(j.building))
+                if (const BuildingDef* d = ctx_.buildings->def(b->def); d && d->scholars > 0) continue;
         if (blacklisted(c, j.pos)) continue;
         // Cheap straight-line cut-off before scoring.
         if (c.foot.chebyshev(j.pos) > 240) continue;
