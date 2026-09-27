@@ -64,6 +64,7 @@ build/tools/cli/icarus_cli run --seed 3 --days 5 --events --admin 30:break_bridg
 build/tools/cli/icarus_cli run --layout continent --scenario three_realms --seed 5 --days 32 --every 96 --events
 build/tools/cli/icarus_cli run --layout continent --scenario wild --seed 2 --days 30 --events -v   # 蛮荒开局
 build/tools/cli/icarus_cli run --load out/r.sav --days 2 -v      # 从存档继续，报告卡顿的 tick
+tools/acceptance.sh out/acceptance 3                            # 第二版本验收：三国 8 局 + 蛮荒 6 局，各一年，输出汇总表
 build/tools/cli/icarus_cli experiment --seeds 1-8 --days 7 --admin 30:kill_spring --report out.md
 tools/screenshot.sh out.png --ticks 1500 --council   # 无头渲染一帧游戏画面
 tools/screenshot.sh out.png --layout continent --scenario three_realms --web   # 羁绊图（--spell-demo heal,rally 可演示法术）

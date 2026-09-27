@@ -112,18 +112,29 @@ events) and a decision trace (the scored options behind the current activity).
   govern, flee, protest, steal, cast, escape, serve as a soldier, get wounds dressed,
   go over to another polity, wander. The current activity gets a
   commitment bonus; the top options are kept as the "why" shown in the UI.
+* **Work choice**: each resident takes the best-scoring open job (priority × the
+  polity's category weight × motivation × skill − distance). Food work weighs up to
+  1.8× more as the larder empties; while people are fed, construction (building,
+  carrying to sites) and gathering (wood, stone) keep about 15% of the hands; nobody
+  sets out for far work late in the day.
 * **Tasks** are small state machines (`agents_tasks.cpp`); every resource target is
-  reserved with an expiry; unreachable targets are blacklisted for a while.
+  reserved with an expiry; targets out of reach are blacklisted for a while (other
+  failures only rest the job, so a busy store is never shunned).
 * **Jobs** (`agents_jobs.cpp`) appear where the world needs them: fields to till, sow
   and harvest; piles to store; construction/repair sites to supply and build; dig
   projects; kitchens; crafting on demand (recipes in `data/recipes.json`, produced at a
-  public store and logged in the ledger); foraging under scarcity.
+  public store and logged in the ledger); foraging under scarcity. Materials go to the
+  site nearest completion first, crafting leaves alone what sites wait for, and
+  builders lay roofs from a ladder (up to seven cubes above their feet). Rulers begin
+  no new building while three sites stand unfinished, nor one whose materials cannot
+  be made yet; sites are on dry, flat ground.
 * **Navigation**: A* over standable cube positions (8-way, climb 1–2 with headroom,
   drop 3). A flood fill labels **walkable regions** around settlement anchors (a flat
   open-addressing table, `region_map.h`); the survey is redone after building work at
   most every six hours (daily after settling matter), not when a new anchor lies in
-  ground already surveyed, and is saved, so water search skips unreachable spots and
-  saves stay deterministic. Regions flag whether their flood was cut short (`open`):
+  ground already surveyed. It is built a few thousand positions per tick into a
+  staging table and swapped in when done; the table and the staging state are saved,
+  so water search skips unreachable spots and saves stay deterministic. Regions flag whether their flood was cut short (`open`):
   another survey region is out of reach only when both floods ran their course. Long
   searches share a per-tick budget of expanded nodes; beyond it they wait a tick. Someone outside every region (fallen into the ravine) plans and cuts a
   45° staircase out of the rock (`agents_escape.cpp`).
@@ -180,6 +191,10 @@ growth depends on irrigation from real water nearby.
   Hourly statistics, support drift, crises (food, water/irrigation, logistics, unrest)
   with root causes from the chronicle, projects. Passive spells of the polity's girls
   are summed per effect and shape daily life (mood floor, meal joy, preservation...).
+* **Technology** (`data/techs.json`): knowledge comes from research at the seat (or the
+  campfire) and from practice in everyday work. A tech of a new era can be studied or
+  stumbled on only once half of the previous era's techs are known, so a wild band
+  climbs through the eras rather than leaping ahead.
 * **Jev pipeline** (`decision/`):
   1. *What she knows*: a situation text built from stats, crises with cause chains,
      the other girls and her past decisions.
