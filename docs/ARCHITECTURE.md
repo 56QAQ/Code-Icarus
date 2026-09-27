@@ -124,10 +124,11 @@ events) and a decision trace (the scored options behind the current activity).
   and harvest; piles to store; construction/repair sites to supply and build; dig
   projects; kitchens; crafting on demand (recipes in `data/recipes.json`, produced at a
   public store and logged in the ledger); foraging under scarcity. Materials go to the
-  site nearest completion first, crafting leaves alone what sites wait for, and
-  builders lay roofs from a ladder (up to seven cubes above their feet). Rulers begin
-  no new building while three sites stand unfinished, nor one whose materials cannot
-  be made yet; sites are on dry, flat ground.
+  site begun first, crafting leaves alone what sites wait for, and builders lay roofs
+  from a ladder (up to seven cubes up and two to the side). Rulers begin no new
+  building while two sites stand unfinished, nor one whose materials cannot be made
+  yet. Sites are on dry, flat ground, two cubes clear of other buildings (a campfire's
+  ring included), with the doorstep and two cubes beyond it open.
 * **Navigation**: A* over standable cube positions (8-way, climb 1–2 with headroom,
   drop 3). A flood fill labels **walkable regions** around settlement anchors (a flat
   open-addressing table, `region_map.h`); the survey is redone after building work at
