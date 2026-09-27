@@ -121,7 +121,9 @@ i32 Economy::transfer(StoreId from, StoreId to, ItemId item, i32 n) {
     ItemStack* st = find_stack(*a, item);
     if (!st) return 0;
     float unit = std::max(0.001f, reg_->item(item).weight);
-    i32 room = (i32)std::floor(free_capacity(*b) / unit + 1e-4f);
+    // (Room counted in doubles: an unlimited store holds more light items than an i32.)
+    const double fit = std::floor((double)free_capacity(*b) / (double)unit + 1e-4);
+    const i32 room = (i32)std::clamp(fit, -1.0, 2.0e9);
     i32 k = std::min({n, st->count, room});
     if (k <= 0) return 0;
     st->count -= k;

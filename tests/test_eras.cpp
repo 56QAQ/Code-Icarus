@@ -279,3 +279,44 @@ TEST("eras: a band that knows stone tools goes out for wood and stone") {
     CHECK(chop);
     CHECK(mine);
 }
+
+TEST("eras: light goods reach a building site, and a thatched shelter gets its roof") {
+    // A site's store has no weight limit; light goods (fiber for thatch) must still fit.
+    Simulation sim(test_registry());
+    GameConfig cfg = start("wild", 6);
+    cfg.scenario = "wild";
+    sim.new_game(cfg);
+    Economy& econ = sim.economy();
+    const ItemId fiber = test_registry().find_item("fiber");
+    const StoreId site = econ.create_store(StoreKind::Site, {0, 0, 0}, 1);
+    const StoreId bag = econ.create_store(StoreKind::Stockpile, {1, 0, 0}, 1, kNoEntity, 50.0f);
+    econ.add(bag, fiber, 21, "test");
+    CHECK_EQ(econ.transfer(bag, site, fiber, 1 << 30), 21);
+    CHECK_EQ(econ.transfer(site, bag, fiber, 1 << 30), 21);
+    // A wild band that knows how to build shelters finishes one.
+    Polity& p = band(sim);
+    for (const char* k : {"stone_tools", "shelter"}) p.techs.push_back(k);
+    const Building* seat = sim.buildings().get(p.seat);
+    REQUIRE(seat != nullptr);
+    econ.add(seat->store, fiber, 40, "test");
+    econ.add(seat->store, test_registry().find_item("wood"), 20, "test");
+    Vec3i origin;
+    u8 rot = 0;
+    REQUIRE(sim.buildings().find_site("lean_to", seat->entrance, 40, origin, rot));
+    Project pr;
+    pr.polity = p.id;
+    pr.kind = "construct";
+    pr.title = "兴建窝棚";
+    pr.priority = 1.5f;
+    pr.target = origin;
+    const u32 pid = sim.society().add_project(pr);
+    const u32 bid = sim.buildings().start_site("lean_to", origin, rot, p.id, pid);
+    if (Project* prp = sim.society().project(pid)) prp->building = bid;
+    bool built = false;
+    for (int h = 0; h < 48 && !built; ++h) {
+        sim.run(kTicksPerHour);
+        for (const Building& b : sim.buildings().all())
+            if (b.alive && b.def == "lean_to" && b.functional) built = true;
+    }
+    CHECK(built);
+}

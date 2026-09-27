@@ -114,7 +114,8 @@ bool Society::foraging_band(const Polity& p) const {
     int plots = 0;
     for (const Farm& f : ctx_.farming->all())
         if (f.alive && f.polity == p.id) plots += (int)f.plots.size();
-    return plots < 2 * std::max(1, p.stats.population);
+    // Fields for fewer than half its people: it still lives mostly from what it finds.
+    return plots * 2 < std::max(1, p.stats.population);
 }
 
 float Society::public_food(u16 id) const {
