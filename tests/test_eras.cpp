@@ -352,3 +352,29 @@ TEST("eras: builders lay a hut's roof from a ladder, and the hut is finished") {
     }
     CHECK(built);
 }
+
+TEST("eras: buildings are sited on dry ground, never in a lake") {
+    Simulation sim(test_registry());
+    GameConfig cfg = start("wild", 2);
+    cfg.scenario = "wild";
+    sim.new_game(cfg);
+    sim.run(5);
+    const auto& waters = sim.world().gen().features().waters;
+    REQUIRE(!waters.empty());
+    int checked = 0;
+    for (const Vec3i& wpos : waters) {
+        Vec3i origin;
+        u8 rot = 0;
+        if (!sim.buildings().find_site("hut", wpos, 30, origin, rot)) continue;
+        ++checked;
+        const BuildingDef* d = sim.buildings().def("hut");
+        const int w = (rot & 1) ? d->d : d->w, dd = (rot & 1) ? d->w : d->d;
+        bool wet = false;
+        for (int z = origin.z; z < origin.z + dd; ++z)
+            for (int x = origin.x; x < origin.x + w; ++x)
+                for (int y = origin.y; y <= origin.y + 1; ++y)
+                    if (test_registry().mat(sim.world().mat({x, y, z})).fluid) wet = true;
+        CHECK(!wet);
+    }
+    CHECK(checked > 0);
+}

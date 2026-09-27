@@ -429,6 +429,9 @@ bool Buildings::find_site(const std::string& key, const Vec3i& near, int radius,
                     const Material& tm = reg.mat(top);
                     if (tm.fluid || top == reg.m().farmland || tm.trunk || tm.foliage || top == reg.m().planks)
                         ok = false;
+                    // Dry ground: a shallow lake's sandy bed is no place for a floor.
+                    for (int k = 1; k <= 2 && ok; ++k)
+                        if (reg.mat(w_.mat({x, y + k, z})).fluid) ok = false;
                     for (int k = 0; k <= 4 && ok; ++k)
                         if (at({x, y + k, z})) ok = false;
                 }
