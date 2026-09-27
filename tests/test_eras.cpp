@@ -189,3 +189,39 @@ TEST("eras: the first fields are offered once farming is known and seed is at ha
     CHECK(offered);
     if (chosen) CHECK(founded);
 }
+
+TEST("eras: a new era is built on the old one — half of its techs first") {
+    Simulation sim(test_registry());
+    GameConfig cfg = start("wild");
+    cfg.scenario = "wild";
+    sim.new_game(cfg);
+    sim.run(5);
+    Society& soc = sim.society();
+    Polity& p = band(sim);
+    // Only gathering and fire: nothing of the farming era yet, not even pottery.
+    CHECK(!soc.tech_available(p, "pottery"));
+    CHECK(soc.tech_available(p, "stone_tools"));
+    auto [known0, needed0] = soc.era_foundation(p, 1);
+    CHECK_EQ(known0, 2);
+    CHECK_EQ(needed0, 3);
+    p.techs.push_back("hunting");
+    CHECK(soc.tech_available(p, "pottery"));
+    // Pottery alone does not open writing: the farming era must be half known.
+    p.techs.push_back("pottery");
+    CHECK(!soc.tech_available(p, "writing"));
+    for (const char* k : {"weaving", "stone_tools", "farming", "carpentry"}) p.techs.push_back(k);
+    CHECK(!soc.tech_available(p, "writing"));
+    p.techs.push_back("herbalism");
+    CHECK(soc.tech_available(p, "writing"));
+    // Practice cannot stumble on a tech whose era is still closed.
+    Polity& q = p;
+    q.techs = {"gathering", "fire"};
+    for (int i = 0; i < 200; ++i) soc.practice(q.id, "forage_grain", 1.0f, 0);
+    CHECK(!q.has_tech("farming"));
+    // A village start already stands on the farming era.
+    Simulation v(test_registry());
+    v.new_game(start("village"));
+    v.run(5);
+    auto [known2, needed2] = v.society().era_foundation(band(v), 2);
+    CHECK(known2 >= needed2);
+}

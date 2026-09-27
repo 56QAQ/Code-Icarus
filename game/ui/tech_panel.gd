@@ -94,10 +94,10 @@ func _ready() -> void:
 	dcol.add_child(_detail_extra)
 
 
-func open_for(pid: int) -> void:
+func open_for(pid: int, key := "") -> void:
 	polity_id = pid
 	visible = true
-	_view.selected = ""
+	_view.selected = key
 	_refresh()
 
 
@@ -138,7 +138,7 @@ func _show_detail() -> void:
 	var t: Dictionary = _view.tech(_view.selected)
 	if t.is_empty():
 		_detail_title.text = "点选一项科技查看详情"
-		_detail_body.text = "金色为正在研究的方向；绿色为已掌握；明亮的边框表示前置已满足、可以研究。"
+		_detail_body.text = "金色为正在研究的方向；绿色为已掌握；明亮的边框表示前置已满足、可以研究。新时代的科技需要先掌握上一时代至少一半的科技。"
 		_detail_extra.text = ""
 		return
 	var state_names := {"known": "已掌握", "researching": "研究中", "available": "可研究", "locked": "未解锁"}
@@ -155,6 +155,10 @@ func _show_detail() -> void:
 			var r: Dictionary = _view.tech(k)
 			names.append(("✓" if r.get("state", "") == "known" else "✗") + String(r.get("name", k)))
 		parts.append("前置：" + " ".join(names))
+	if t.has("foundation_needed") and t["state"] != "known":
+		var have := int(t["foundation_known"])
+		var need := int(t["foundation_needed"])
+		parts.append("%s根基：%s科技 %d / %d" % ["✓" if have >= need else "✗", _view.era_name(int(t["era"]) - 1), have, need])
 	var un: PackedStringArray = t["unlocks"]
 	if not un.is_empty():
 		parts.append("解锁：" + "、".join(un))
@@ -187,6 +191,9 @@ class TechTreeView extends Control:
 	func tech(key: String) -> Dictionary:
 		return _by_key.get(key, {})
 
+	func era_name(i: int) -> String:
+		return String(_eras[i]) if i >= 0 and i < _eras.size() else "上一时代"
+
 	func set_data(techs: Array, eras: Array) -> void:
 		var sig := ""
 		for t in techs:
@@ -208,6 +215,16 @@ class TechTreeView extends Control:
 			n_eras = maxi(n_eras, int(t["era"]) + 1)
 		var col_w := size.x / float(n_eras)
 		var card_w := minf(col_w - 36.0, 210.0)
+		# Cards shrink a little when the fullest era would not fit the height.
+		var per_era := {}
+		for t in _techs:
+			per_era[int(t["era"])] = int(per_era.get(int(t["era"]), 0)) + 1
+		var most := 1
+		for e in per_era:
+			most = maxi(most, int(per_era[e]))
+		var step := minf(CARD_H + GAP_Y, (size.y - HEAD_H - 4.0) / float(most))
+		var card_h := clampf(step - 6.0, 36.0, CARD_H)
+		step = maxf(step, card_h + 4.0)
 		# Order each column by where its prerequisites sit, so curves rarely cross.
 		var row_of := {}
 		for e in n_eras:
@@ -226,13 +243,13 @@ class TechTreeView extends Control:
 						n += 1
 				keyed.append([ys / n if n > 0 else float(i), i, t])
 			keyed.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1]))
-			var total_h := keyed.size() * (CARD_H + GAP_Y) - GAP_Y
+			var total_h := keyed.size() * step - (step - card_h)
 			var y0 := HEAD_H + maxf(0.0, (size.y - HEAD_H - total_h) * 0.5)
 			for j in keyed.size():
 				var t: Dictionary = keyed[j][2]
 				row_of[String(t["key"])] = j
 				var x := col_w * e + (col_w - card_w) * 0.5
-				_rects[String(t["key"])] = Rect2(x, y0 + j * (CARD_H + GAP_Y), card_w, CARD_H)
+				_rects[String(t["key"])] = Rect2(x, y0 + j * step, card_w, card_h)
 		queue_redraw()
 
 	func _gui_input(event: InputEvent) -> void:
@@ -315,7 +332,8 @@ class TechTreeView extends Control:
 				sb.border_color = Color(UITheme.TEXT, 0.5)
 			draw_style_box(sb, r)
 			# State marker.
-			var mc := r.position + Vector2(16, CARD_H * 0.5)
+			var mid := r.position.y + r.size.y * 0.5
+			var mc := Vector2(r.position.x + 16, mid)
 			match state:
 				"known":
 					draw_circle(mc, 7, UITheme.GOOD)
@@ -330,7 +348,7 @@ class TechTreeView extends Control:
 					draw_arc(mc, 6.5, 0, TAU, 24, Color(1, 1, 1, 0.18), 1.4, true)
 			var tx := r.position.x + 32
 			var tw := r.size.x - 40
-			draw_string(bold, Vector2(tx, r.position.y + 21), String(t["name"]), HORIZONTAL_ALIGNMENT_LEFT, tw, 14,
+			draw_string(bold, Vector2(tx, mid - 4), String(t["name"]), HORIZONTAL_ALIGNMENT_LEFT, tw, 14,
 				UITheme.TEXT if state != "locked" else UITheme.TEXT_FAINT)
 			var sub := ""
 			var cost := float(t["cost"])
@@ -346,7 +364,7 @@ class TechTreeView extends Control:
 			var un: PackedStringArray = t["unlocks"]
 			if not un.is_empty() and state != "researching":
 				sub += " · " + un[0] + ("等" if un.size() > 1 else "")
-			draw_string(font, Vector2(tx, r.position.y + 38), sub, HORIZONTAL_ALIGNMENT_LEFT, tw, 11, UITheme.TEXT_DIM)
+			draw_string(font, Vector2(tx, mid + 13), sub, HORIZONTAL_ALIGNMENT_LEFT, tw, 11, UITheme.TEXT_DIM)
 			# Progress along the bottom edge.
 			if cost > 0.0 and float(t["progress"]) > 0.0 and state != "known":
 				var frac := clampf(float(t["progress"]) / cost, 0.0, 1.0)

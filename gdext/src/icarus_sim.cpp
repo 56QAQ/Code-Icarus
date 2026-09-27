@@ -1558,6 +1558,13 @@ Array IcarusSim::tech_tree(int64_t polity) const {
         }
         d["progress"] = prog;
         d["state"] = state;
+        // The foundation a new era needs: techs of the era before it.
+        const int era = t.integer("era", 0);
+        if (p && era > 0) {
+            const auto [known, needed] = soc.era_foundation(*p, era);
+            d["foundation_known"] = known;
+            d["foundation_needed"] = needed;
+        }
         out.push_back(d);
     }
     return out;

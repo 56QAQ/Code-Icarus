@@ -262,7 +262,24 @@ bool Society::tech_available(const Polity& p, const std::string& key) const {
     if (!t || p.has_tech(key)) return false;
     for (const Json& r : (*t)["requires"].items())
         if (!p.has_tech(r.as_str())) return false;
+    // An era is built on the one before it: a people must know at least half of the
+    // previous era's techs before anything of the next era can be studied or stumbled on.
+    const int e = t->integer("era", 0);
+    if (e > 0) {
+        const auto [known, needed] = era_foundation(p, e);
+        if (known < needed) return false;
+    }
     return true;
+}
+
+std::pair<int, int> Society::era_foundation(const Polity& p, int era) const {
+    int total = 0, known = 0;
+    for (const Json& t : ctx_.reg->doc("techs")["techs"].items())
+        if (t.integer("era", 0) == era - 1) {
+            ++total;
+            if (p.has_tech(t.str("key"))) ++known;
+        }
+    return {known, (total + 1) / 2};
 }
 
 std::vector<std::string> Society::available_techs(const Polity& p) const {

@@ -69,6 +69,9 @@ public:
     // Technology.
     const Json* tech(const std::string& key) const;
     bool tech_available(const Polity& p, const std::string& key) const;  // requirements met, not known
+    // Techs of the era before `era` a people knows, and how many they need to know
+    // before techs of `era` open up.
+    std::pair<int, int> era_foundation(const Polity& p, int era) const;
     std::vector<std::string> available_techs(const Polity& p) const;
     float tech_effect(u16 polity, const std::string& effect) const;
     int era(const Polity& p) const;

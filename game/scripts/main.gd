@@ -3,7 +3,7 @@ extends Node3D
 ## active tool, and supports scripted screenshots for automated visual checks:
 ##   godot --path game -- --shot out.png [--seed N | --load FILE] [--layout classic|continent] [--scenario key]
 ##        [--ticks N] [--cam x,y,z,yaw,pitch,dist]
-##        [--admin type:{json}|break_bridge] [--council [id]] [--tech] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
+##        [--admin type:{json}|break_bridge] [--council [id]] [--tech [key]] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--select id [--focus dist]]
 ##        [--focus-job job[,dist]] [--focus-animal species[,dist]]
 ##        [--hide-ui] [--frames N] [--late-admin type:{json} [--late-frames N] [--late-ticks N] [--late-run]]
 
@@ -197,7 +197,8 @@ func _ready() -> void:
 	if _cli.has("tool"):
 		Game.set_tool(_cli["tool"])
 	if _cli.has("tech"):
-		hud.toggle_tech()
+		var tk := String(_cli["tech"])
+		hud.toggle_tech("" if tk == "true" else tk)
 	if _cli.has("web"):
 		hud.toggle_web()
 	if _cli.has("ending"):

@@ -563,14 +563,14 @@ func toggle_chronicle(id: int = 0) -> void:
 
 
 ## Opens the technology tree of the polity shown in the civilisation card.
-func toggle_tech() -> void:
+func toggle_tech(key := "") -> void:
 	if tech.visible:
 		tech.visible = false
 	else:
 		council.visible = false
 		chronicle.visible = false
 		web.visible = false
-		tech.open_for(civ_card.polity_id)
+		tech.open_for(civ_card.polity_id, key)
 
 
 func overlay_open() -> bool:
