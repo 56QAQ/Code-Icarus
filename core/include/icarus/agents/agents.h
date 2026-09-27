@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "icarus/agents/character.h"
+#include "icarus/agents/region_map.h"
 #include "icarus/agents/jobs.h"
 #include "icarus/sim/context.h"
 #include "icarus/sim/physics.h"
@@ -244,13 +245,16 @@ private:
     Tick now_ = 0;
     std::vector<std::pair<Vec3f, float>> dangers_;  // recent hazards (pos, radius)
     std::vector<SpellFx> spell_fx_;
+    // Path search nodes expanded this tick (long searches beyond the budget wait a tick).
+    static constexpr u64 kPathTickBudget = 40000;
+    u64 path_spent_ = 0;
     std::array<int, 24> fail_ring_{};                // path failures per hour, last 24 h
     int fail_ring_pos_ = 0;
     std::vector<Vec3i> water_spots_;                // standable places next to drinkable water
     std::vector<u16> water_regions_;                // walkable region of each spot (0 = unknown)
     // Walkable regions flooded from settlement anchors. Rebuilt when event-driven terrain
     // changes happen (or daily after minor settling); saved so reloads stay deterministic.
-    std::unordered_map<Vec3i, u16, Vec3iHash> region_map_;
+    RegionMap region_map_;
     std::vector<u8> region_open_;  // per region id: 1 if its flood was cut short (may reach further)
     std::vector<Vec3i> region_anchors_;
     Tick region_built_ = 0;

@@ -2,6 +2,8 @@
 //   icarus_cli map  --seed N [--layout continent] --out map.png   top-down map of the generated world
 #include <chrono>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <cstring>
 #include <map>
 #include <string>
@@ -32,6 +34,7 @@ struct Args {
     int civs = 0;
     std::string layout = "classic";  // classic | continent
     std::string save;
+    std::string load;              // run: continue from a save instead of a new game
     bool verbose = false;
     int every = 1;                 // print stats every N hours
     bool events = false;           // stream notable events
@@ -56,6 +59,7 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--civs") a.civs = std::stoi(next());
         else if (k == "--layout" || k == "--island") a.layout = next();
         else if (k == "--save") a.save = next();
+        else if (k == "--load") a.load = next();
         else if (k == "-v" || k == "--verbose") a.verbose = true;
         else if (k == "--every") a.every = std::max(1, std::stoi(next()));
         else if (k == "--events") a.events = true;
@@ -365,11 +369,22 @@ int cmd_run(const Args& a) {
     cfg.scenario = a.scenario;
     if (!a.era.empty()) cfg.era = a.era;
     if (a.civs > 0) cfg.civs = a.civs;
-    sim.new_game(cfg);
+    if (!a.load.empty()) {
+        std::ifstream in(a.load, std::ios::binary);
+        std::vector<u8> blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (blob.empty()) {
+            std::fprintf(stderr, "cannot read %s\n", a.load.c_str());
+            return 1;
+        }
+        sim.load(blob);
+    } else {
+        sim.new_game(cfg);
+    }
     std::vector<Scheduled> sched = parse_admin(a, sim);
     size_t shown = sim.chronicle().events().size();
     Tick total = (Tick)(a.days * (double)kTicksPerDay);
     double max_us = 0, sum_us = 0, sum_phys = 0, sum_ag = 0, sum_soc = 0, sum_dec = 0;
+    NavStats nav_prev = sim.ctx().nav->stats;
     for (Tick t = 0; t < total; ++t) {
         for (const Scheduled& s : sched)
             if (s.at == sim.now()) sim.queue_admin(s.cmd);
@@ -389,10 +404,14 @@ int cmd_run(const Args& a) {
             }
         }
         const auto& pr = sim.profile();
+        const NavStats& ns = sim.ctx().nav->stats;
         if (a.verbose && pr.total_us > 40000.0)
-            std::printf("  spike tick %llu (%s): %.0fus phys %.0f ag %.0f soc %.0f dec %.0f fauna %.0f\n",
+            std::printf("  spike tick %llu (%s): %.0fus phys %.0f ag %.0f soc %.0f dec %.0f fauna %.0f | paths %llu expanded %llu flood %llu%s\n",
                         (unsigned long long)(sim.now() - 1), format_time_zh(sim.now() - 1).c_str(), pr.total_us,
-                        pr.physics_us, pr.agents_us, pr.society_us, pr.decisions_us, pr.fauna_us);
+                        pr.physics_us, pr.agents_us, pr.society_us, pr.decisions_us, pr.fauna_us,
+                        (unsigned long long)(ns.searches - nav_prev.searches), (unsigned long long)(ns.expansions - nav_prev.expansions),
+                        (unsigned long long)(ns.flood_nodes - nav_prev.flood_nodes), (sim.now() - 1) % 600 == 0 ? " water-scan" : "");
+        nav_prev = ns;
         max_us = std::max(max_us, pr.total_us);
         sum_us += pr.total_us;
         sum_phys += pr.physics_us;

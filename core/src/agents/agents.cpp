@@ -101,6 +101,7 @@ void Agents::place_at(Character& c, const Vec3i& foot) {
 
 void Agents::step(Tick now) {
     now_ = now;
+    path_spent_ = 0;
     if (now % kTicksPerHour == 0) {
         fail_ring_pos_ = (fail_ring_pos_ + 1) % (int)fail_ring_.size();
         fail_ring_[(size_t)fail_ring_pos_] = 0;
@@ -495,7 +496,16 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok) 
                 budget = !other ? 6000 : (open(rf->second) && (gl == 0 || open(gl)) ? 60000 : 0);
             }
         }
-        if (budget == 0 || !nav.find_path(c.foot, goal, adjacent_ok, c.path, budget)) {
+        // Long searches are shared out over the ticks: when this tick's share is spent
+        // (an army setting out all at once), the search waits for the next tick.
+        if (budget > 8000 && path_spent_ >= kPathTickBudget) {
+            c.moving = false;
+            return Move::Moving;
+        }
+        const u64 expanded = nav.stats.expansions;
+        const bool found = budget > 0 && nav.find_path(c.foot, goal, adjacent_ok, c.path, budget);
+        path_spent_ += nav.stats.expansions - expanded;
+        if (!found) {
             blacklist(c, goal, kTicksPerHour * 3);
             day.path_failures++;
             fail_ring_[(size_t)fail_ring_pos_]++;
@@ -837,7 +847,9 @@ void Agents::save(BinWriter& w) const {
     w.varu(region_anchors_.size());
     for (const Vec3i& a : region_anchors_) w.vec3i(a);
     {
-        std::vector<std::pair<Vec3i, u16>> cells(region_map_.begin(), region_map_.end());
+        std::vector<std::pair<Vec3i, u16>> cells;
+        cells.reserve(region_map_.size());
+        region_map_.for_each([&](const Vec3i& p, u16 id) { cells.push_back({p, id}); });
         std::sort(cells.begin(), cells.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         w.varu(cells.size());
         Vec3i prev{0, 0, 0};
@@ -1086,7 +1098,7 @@ void Agents::load(BinReader& outer) {
     Vec3i prev{0, 0, 0};
     for (u64 k = 0; k < nc; ++k) {
         Vec3i p{prev.x + (i32)r.vari(), prev.y + (i32)r.vari(), prev.z + (i32)r.vari()};
-        region_map_[p] = (u16)r.varu();
+        region_map_.set(p, (u16)r.varu());
         prev = p;
     }
     if (!r.at_end()) {
@@ -1148,7 +1160,7 @@ void Agents::load(BinReader& outer) {
     } else {
         // Older saves: every survey region may reach beyond itself.
         u16 top = 0;
-        for (const auto& [p, id] : region_map_) top = std::max(top, id);
+        region_map_.for_each([&](const Vec3i&, u16 id) { top = std::max(top, id); });
         region_open_.assign((size_t)top + 1, 1);
     }
     if (!r.at_end()) {

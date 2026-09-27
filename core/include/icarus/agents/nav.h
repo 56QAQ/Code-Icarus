@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "icarus/agents/region_map.h"
+
 #include "icarus/world/world.h"
 
 namespace icarus {
@@ -22,6 +24,7 @@ struct Path {
 
 struct NavStats {
     u64 searches = 0, failures = 0, expansions = 0;
+    u64 flood_nodes = 0;  // positions labelled by region floods
 };
 
 class Nav {
@@ -44,8 +47,7 @@ public:
     // reached position with id (positions already labelled are not revisited).
     // `open` is set when the flood was cut short (radius or node limit): places beyond it
     // may still be reachable.
-    int flood(const Vec3i& seed, int radius, int max_nodes, std::unordered_map<Vec3i, u16, Vec3iHash>& label, u16 id,
-              bool* open = nullptr);
+    int flood(const Vec3i& seed, int radius, int max_nodes, RegionMap& label, u16 id, bool* open = nullptr);
 
     // Called with the world change journal: flags changes that alter walkability
     // (solid/passable) so cached reachability can be reused while nothing changed.

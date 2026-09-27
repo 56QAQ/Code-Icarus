@@ -129,13 +129,12 @@ int Nav::neighbors(const Vec3i& p, Vec3i* out, float* cost) {
     return n;
 }
 
-int Nav::flood(const Vec3i& seed, int radius, int max_nodes, std::unordered_map<Vec3i, u16, Vec3iHash>& label, u16 id,
-               bool* open) {
+int Nav::flood(const Vec3i& seed, int radius, int max_nodes, RegionMap& label, u16 id, bool* open) {
     if (open) *open = false;
     if (!standable(seed) || label.count(seed)) return 0;
     std::vector<Vec3i> queue;
     queue.push_back(seed);
-    label[seed] = id;
+    label.emplace(seed, id);
     const i64 r2 = (i64)radius * radius;
     size_t head = 0;
     Vec3i nb[8];
@@ -150,11 +149,11 @@ int Nav::flood(const Vec3i& seed, int radius, int max_nodes, std::unordered_map<
                 if (open) *open = true;
                 continue;
             }
-            auto [it, fresh] = label.emplace(q, id);
-            if (fresh) queue.push_back(q);
+            if (label.emplace(q, id)) queue.push_back(q);
         }
     }
     if (open && head < queue.size()) *open = true;  // stopped at the node limit
+    stats.flood_nodes += queue.size();
     return (int)queue.size();
 }
 

@@ -121,7 +121,24 @@ void Agents::refresh_water_spots() {
     for (const Vec3i& c : centers) anchors.push_back(c);
     for (const Farm& f : ctx_.farming->all())
         if (f.alive) anchors.push_back(f.center + Vec3i{0, 1, 0});
-    bool stale = anchors != region_anchors_ || nav.major_dirty ||
+    // New anchors (a new field, a new village) inside ground already surveyed need no new
+    // survey; only changed walkability or truly new ground does.
+    bool moved = anchors != region_anchors_;
+    if (moved && !region_map_.empty()) {
+        bool covered = true;
+        for (const Vec3i& a : anchors) {
+            if (std::find(region_anchors_.begin(), region_anchors_.end(), a) != region_anchors_.end()) continue;
+            Vec3i st = a;
+            if ((!nav.standable(st) && !nav.find_standable_near(a, st, 3)) || !region_map_.count(st)) covered = false;
+        }
+        if (covered) {
+            region_anchors_ = anchors;
+            moved = false;
+        }
+    }
+    // A full survey is costly: after building work or collapses at most every few hours
+    // (paths are still searched for real in between; the survey only guides them).
+    bool stale = moved || (nav.major_dirty && now_ >= region_built_ + kTicksPerHour * 6) ||
                  (nav.minor_dirty && now_ >= region_built_ + kTicksPerDay);
     if (stale) {
         region_anchors_ = anchors;
