@@ -413,7 +413,7 @@ void Society::update_wars(Polity& p) {
         const float hour = hour_of(ctx_.now);
         const bool daylight = hour >= 5.5f && hour < 16.0f;
         const bool waited = op.staged_since && ctx_.now - op.staged_since > kTicksPerHour * 3 / 2;
-        if (serving > 0 && daylight && (formed * 3 >= serving * 2 || waited)) {
+        if (serving > 0 && daylight && (formed * 3 >= serving * 2 || (waited && formed * 3 >= serving))) {
             op.phase = 2;
             op.since = ctx_.now;
             if (op.aim != "defend") {
@@ -519,10 +519,12 @@ void Society::update_wars(Polity& p) {
             e.polity = p.id;
             e.causes[0] = op.event;
             if (op.aim == "raid")
-                e.text = op.loot > 0 ? strfmt("「%s」劫掠「%s」的队伍回来了：抢回 %d 份粮食（出动 %d 人，折损 %d 人）",
-                                              p.name.c_str(), enemy.c_str(), op.loot, op.party, op.lost)
-                                     : strfmt("「%s」劫掠「%s」的队伍空手而归（出动 %d 人，折损 %d 人）", p.name.c_str(),
-                                              enemy.c_str(), op.party, op.lost);
+                e.text = op.loot > 0  ? strfmt("「%s」劫掠「%s」的队伍回来了：抢回 %d 份粮食（出动 %d 人，折损 %d 人）",
+                                               p.name.c_str(), enemy.c_str(), op.loot, op.party, op.lost)
+                         : op.lost > 0 ? strfmt("「%s」劫掠「%s」的队伍被守军击退，空手而归（出动 %d 人，折损 %d 人）",
+                                               p.name.c_str(), enemy.c_str(), op.party, op.lost)
+                                       : strfmt("「%s」劫掠「%s」的队伍空手而归（出动 %d 人，折损 %d 人）", p.name.c_str(),
+                                                enemy.c_str(), op.party, op.lost);
             else if (op.aim == "conquest")
                 e.text = strfmt("「%s」进攻「%s」未能得手，军队撤回（出动 %d 人，折损 %d 人）", p.name.c_str(), enemy.c_str(),
                                 op.party, op.lost);
