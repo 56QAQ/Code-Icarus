@@ -135,7 +135,7 @@ int Society::enlist_champions(u16 id, EventId cause) {
         c->next_think = ctx_.now;
         Event e;
         e.type = EventType::Battle;
-        e.severity = 2;
+        e.severity = 3;
         e.actor = c->id;
         e.polity = id;
         e.causes[0] = cause;

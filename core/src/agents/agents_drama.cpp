@@ -24,7 +24,7 @@ std::string drive_name(const Registry& reg, const std::string& key) {
     const Json* d = drive_of(reg, key);
     return d ? d->str("name", key) : key;
 }
-constexpr float kTurn = 1.2f;     // trauma or solace at which a drive may turn
+constexpr float kTurn = 1.0f;     // trauma or solace at which a drive may turn
 constexpr float kFade = 0.97f;    // what is left of both after a day
 constexpr size_t kMarks = 4;      // experiences remembered as causes
 }  // namespace
@@ -112,6 +112,12 @@ void Agents::girl_died(Character& dead, EventId ev) {
     // (Bonds to her stay: a friend lost is still part of their story.)
     for (auto& cp : chars_)
         if (cp && cp->girl && cp->girl->duel == dead.id) cp->girl->duel = kNoEntity;
+    // The last magical girl of a people gone: the people do not stay leaderless for long.
+    bool left = false;
+    for (auto& cp : chars_)
+        if (cp && cp->alive && !cp->departed && cp->girl && cp->polity == dead.polity) left = true;
+    if (!left)
+        if (const Polity* p = ctx_.society->polity(dead.polity)) awaken(*p, ev);
 }
 
 void Agents::girl_felled(Character& victor, Character& fallen, EventId cause) {

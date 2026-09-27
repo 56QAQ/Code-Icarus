@@ -68,6 +68,8 @@ public:
     void set_first_age(Character& c);
     // Once a day: old age, partnerships, births, coming of age, awakenings.
     void daily_life();
+    // A magical girl awakens among the people of a polity (false: nobody could).
+    bool awaken(const Polity& p, EventId cause);
     // The children of a character (living ones).
     std::vector<EntityId> children_of(EntityId id) const;
 

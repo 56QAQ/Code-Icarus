@@ -44,6 +44,9 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("material_table"), &IcarusSim::material_table);
     ClassDB::bind_method(D_METHOD("take_fx"), &IcarusSim::take_fx);
     ClassDB::bind_method(D_METHOD("take_spells"), &IcarusSim::take_spells);
+    ClassDB::bind_method(D_METHOD("girl_web"), &IcarusSim::girl_web);
+    ClassDB::bind_method(D_METHOD("biography", "id"), &IcarusSim::biography);
+    ClassDB::bind_method(D_METHOD("debates", "within_ticks"), &IcarusSim::debates);
     ClassDB::bind_method(D_METHOD("fire_spots", "max_count"), &IcarusSim::fire_spots);
     ClassDB::bind_method(D_METHOD("build_cell_mesh", "cell"), &IcarusSim::build_cell_mesh);
     ClassDB::bind_method(D_METHOD("build_lod_mesh", "column", "step"), &IcarusSim::build_lod_mesh);
@@ -1041,6 +1044,34 @@ Dictionary IcarusSim::character_info(int64_t id) const {
         for (uint32_t id : g.decisions) decs.push_back((int32_t)id);
         gd["decisions"] = decs;
         if (const icarus::Character* gr = sim_->agents().get(g.grudge)) gd["grudge"] = to_gd(gr->name);
+        // Her story so far: the drive she awoke with, what weighs on her, her ties.
+        if (!g.born_drive.empty() && g.born_drive != g.drive) {
+            gd["born_drive"] = drive_name(*reg_, g.born_drive);
+            gd["drive_changed_days"] = (double)(now - g.drive_changed) / (double)icarus::kTicksPerDay;
+        }
+        gd["trauma"] = g.trauma;
+        gd["solace"] = g.solace;
+        gd["first"] = g.awakened == 0;
+        gd["champion"] = c.drafted;
+        if (const icarus::Character* du = sim_->agents().get(g.duel); du && du->alive && now - g.duel_since < icarus::kTicksPerHour * 6)
+            gd["duel"] = to_gd(du->name);
+        Array bonds;
+        for (const icarus::Bond& b : g.bonds) {
+            const icarus::Character* o = sim_->agents().get(b.other);
+            if (!o) continue;
+            Dictionary bd;
+            bd["id"] = (int64_t)o->id;
+            bd["name"] = to_gd(o->name);
+            bd["kind"] = (int)b.kind;
+            bd["kind_name"] = to_gd(icarus::bond_name_zh(b.kind));
+            bd["alive"] = o->alive;
+            bd["days"] = (double)(now - b.since) / (double)icarus::kTicksPerDay;
+            bd["same_polity"] = o->polity == c.polity;
+            if (o->girl) bd["drive"] = drive_name(*reg_, o->girl->drive);
+            bd["accent"] = col(o->look.accent);
+            bonds.push_back(bd);
+        }
+        gd["bonds"] = bonds;
         float sup = 0;
         int n = 0;
         for (const auto& rp : sim_->agents().all())
@@ -1078,6 +1109,134 @@ Dictionary IcarusSim::character_info(int64_t id) const {
         d["girl_data"] = gd;
     }
     return d;
+}
+
+Dictionary IcarusSim::girl_web() const {
+    Dictionary out;
+    Array nodes, edges;
+    if (!sim_) return out;
+    const icarus::Tick now = sim_->now();
+    const auto& all = sim_->agents().all();
+    // Who follows whom: each resident counts for the girl they support most (if at all).
+    std::vector<int> following(all.size(), 0);
+    for (const auto& rp : all) {
+        if (!rp || !rp->alive || rp->departed || rp->is_girl()) continue;
+        float best = 0.15f;
+        icarus::EntityId who = icarus::kNoEntity;
+        for (const icarus::Support& su : rp->support)
+            if (su.value > best) {
+                const icarus::Character* g = sim_->agents().get(su.girl);
+                if (g && g->alive && g->polity == rp->polity) {
+                    best = su.value;
+                    who = su.girl;
+                }
+            }
+        if (who && who < following.size()) following[who]++;
+    }
+    // The living girls, and those gone within the last days (their ties still matter).
+    std::vector<bool> shown(all.size(), false);
+    for (const auto& cp : all) {
+        const icarus::Character* c = cp.get();
+        if (!c || !c->girl || c->departed) continue;
+        if (!c->alive && now - c->died > 8 * icarus::kTicksPerDay) continue;
+        shown[c->id] = true;
+        const icarus::Polity* p = sim_->society().polity(c->polity);
+        Dictionary n;
+        n["id"] = (int64_t)c->id;
+        n["name"] = to_gd(c->name);
+        n["alive"] = c->alive;
+        n["polity"] = (int)c->polity;
+        n["polity_name"] = p ? to_gd(p->name) : String();
+        n["polity_color"] = p ? col(p->color) : Color(0.5, 0.5, 0.5);
+        n["ruler"] = p && p->ruler == c->id;
+        n["drive"] = drive_name(*reg_, c->girl->drive);
+        if (!c->girl->born_drive.empty() && c->girl->born_drive != c->girl->drive) n["born_drive"] = drive_name(*reg_, c->girl->born_drive);
+        if (const icarus::Json* dd = drive_doc(*reg_, c->girl->drive)) n["valence"] = dd->integer("valence", 1);
+        n["accent"] = col(c->look.accent);
+        n["cloth"] = col(c->look.cloth);
+        n["hair"] = col(c->look.hair);
+        n["level"] = c->girl->level;
+        n["role"] = to_gd(c->girl->role);
+        n["stance"] = to_gd(c->girl->stance);
+        n["followers"] = following[c->id];
+        n["champion"] = c->drafted;
+        nodes.push_back(n);
+    }
+    for (const auto& cp : all) {
+        const icarus::Character* c = cp.get();
+        if (!c || !c->girl || c->id >= shown.size() || !shown[c->id]) continue;
+        for (const icarus::Bond& b : c->girl->bonds) {
+            if (b.other >= shown.size() || !shown[b.other]) continue;
+            // Each tie once: the mentor's side of a teaching, the lower id otherwise.
+            if (b.kind == icarus::BondKind::Student) continue;
+            if (b.kind != icarus::BondKind::Mentor && b.other < c->id) continue;
+            Dictionary e;
+            e["a"] = (int64_t)c->id;
+            e["b"] = (int64_t)b.other;
+            e["kind"] = (int)b.kind;
+            e["kind_name"] = to_gd(b.kind == icarus::BondKind::Mentor ? "师徒" : icarus::bond_name_zh(b.kind));
+            e["event"] = (int64_t)b.event;
+            edges.push_back(e);
+        }
+    }
+    out["nodes"] = nodes;
+    out["edges"] = edges;
+    return out;
+}
+
+Array IcarusSim::biography(int64_t id) const {
+    Array out;
+    if (!sim_) return out;
+    using T = icarus::EventType;
+    const auto& ev = sim_->chronicle().events();
+    for (const icarus::Event& e : ev) {
+        if (e.actor != (icarus::EntityId)id && e.target != (icarus::EntityId)id) continue;
+        bool keep = false;
+        switch (e.type) {
+            case T::Awakening: case T::LevelUp: case T::RulerChanged: case T::Coup: case T::Secession: case T::Bond:
+            case T::DriveChanged: case T::Death: case T::WarDeclared: case T::Peace: case T::Unification:
+                keep = true;
+                break;
+            case T::Battle: keep = e.severity >= 4 || e.text.find("出征") != std::string::npos; break;
+            case T::SpellCast: keep = e.severity >= 3 && e.actor == (icarus::EntityId)id && e.text.find("对决") != std::string::npos; break;
+            case T::Punishment: case T::Rebellion: keep = e.severity >= 3; break;
+            default: break;
+        }
+        if (keep) out.push_back(event_to_dict(e));
+    }
+    // The latest 60 moments at most.
+    while (out.size() > 60) out.remove_at(0);
+    return out;
+}
+
+Array IcarusSim::debates(int64_t within) const {
+    Array out;
+    if (!sim_) return out;
+    const icarus::Tick now = sim_->now();
+    for (const icarus::Decision& d : sim_->decisions().all()) {
+        if (d.id == 0 || d.proposals.empty() || d.answered == 0 || now - d.answered > (icarus::Tick)within) continue;
+        Dictionary t;
+        t["id"] = (int64_t)d.id;
+        t["girl"] = (int64_t)d.girl;
+        t["polity"] = (int)d.polity;
+        t["topic"] = to_gd(d.topic);
+        t["age"] = (int64_t)(now - d.answered);
+        if (d.chosen >= 0 && d.chosen < (int)d.options.size()) t["chosen"] = to_gd(d.options[(size_t)d.chosen].title);
+        Array props;
+        for (const icarus::Proposal& pr : d.proposals) {
+            Dictionary pd;
+            pd["girl"] = (int64_t)pr.girl;
+            String title = to_gd(pr.key);
+            for (const auto& o : d.options)
+                if (o.key == pr.key) title = to_gd(o.title);
+            pd["option"] = title;
+            pd["adopted"] = pr.adopted;
+            props.push_back(pd);
+        }
+        t["proposals"] = props;
+        out.push_back(t);
+    }
+    return out;
 }
 
 Array IcarusSim::polities() const {

@@ -248,13 +248,32 @@ void Agents::daily_life() {
         if (girls >= wanted || people < 4) continue;
         if (girls > 0 && now_ - since < gap) continue;
         if (!rng_.chance(girls == 0 ? 0.9f : life_f(reg, "awaken_chance", 0.2f))) continue;
+        awaken(pc, 0);
+    }
+}
+
+bool Agents::awaken(const Polity& pc, EventId cause) {
+    const Registry& reg = *ctx_.reg;
+    auto emit = [&](EventType type, u8 sev, const Character& who, EntityId other, EventId because, std::string text) {
+        Event e;
+        e.type = type;
+        e.severity = sev;
+        e.pos = who.foot;
+        e.actor = who.id;
+        e.target = other;
+        e.polity = who.polity;
+        e.causes[0] = because;
+        e.text = std::move(text);
+        return ctx_.chron->emit(std::move(e));
+    };
+    {
         // She is the one the times weigh on most: strong memories, strong feelings.
         Character* pick = nullptr;
         float best = -1e9f;
         float good = 0, bad = 0;
         for (const auto& cp : chars_) {
             if (!cp || !cp->alive || cp->departed || cp->polity != pc.id || cp->is_girl() || is_child(*cp)) continue;
-            if (cp->drafted || is_elder(*cp)) continue;
+            if (cp->drafted || is_elder(*cp) || !cp->female) continue;
             float weight = 0;
             for (const Memory& m : cp->memories) {
                 weight += std::fabs(m.valence);
@@ -266,7 +285,7 @@ void Agents::daily_life() {
                 pick = cp.get();
             }
         }
-        if (!pick) continue;
+        if (!pick) return false;
         // The drive answers what the polity has been through.
         const Polity& p = pc;
         const bool hungry = p.crisis(CrisisKind::Food) && p.crisis(CrisisKind::Food)->active;
@@ -293,11 +312,12 @@ void Agents::daily_life() {
         std::string dname = drive;
         for (const Json& d : reg.doc("drives")["drives"].items())
             if (d.str("key") == drive) dname = d.str("name");
-        const EventId ev = emit(EventType::Awakening, 4, g, kNoEntity, 0,
+        const EventId ev = emit(EventType::Awakening, 4, g, kNoEntity, cause,
                                 strfmt("%s觉醒为魔法少女，源动力：%s%s", g.name.c_str(), dname.c_str(),
                                        war ? "（生于战火）" : hungry ? "（生于饥馑）" : oppressed ? "（生于压迫）" : ""));
         take_student(g, ev);
     }
+    return true;
 }
 
 }  // namespace icarus

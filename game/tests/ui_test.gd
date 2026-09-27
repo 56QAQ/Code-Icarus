@@ -47,6 +47,17 @@ func _process(_delta: float) -> bool:
 			_main.call("_select_character", girl)
 			hud.selection._tab = "politics"
 		5:
+			# The magical girls' web, and a girl's life story.
+			hud.toggle_web()
+			_expect(hud.web.visible, "bonds web opens")
+			_expect(not (hud.web.get("_nodes") as Array).is_empty(), "the web shows the girls")
+			_expect(game.sim.debates(1000000) is Array, "council debates are readable")
+			hud.selection._tab = "bio"
+		6:
+			hud.toggle_web()
+			_expect(not hud.web.visible, "bonds web closes")
+			_expect(hud.selection.visible, "girl card still open with her biography")
+		7:
 			game.set_tool("inspect")
 			game.admin("bless_food", {"pos": game.sim.world_info()["features"]["village"], "amount": 10})
 			game.sim.step(5)
@@ -56,11 +67,11 @@ func _process(_delta: float) -> bool:
 			if not beasts.is_empty():
 				hud.selection.show_animal(int(beasts[0]["id"]))
 				_expect(hud.selection.visible, "animal card opens")
-		6:
+		8:
 			# A new world through the same path the menu uses.
 			game.start_new_game({"seed": 3})
 			_expect(not hud.selection.visible, "selection cleared on a new world")
-		7:
+		9:
 			print("UI ", "PASS" if _errors == 0 else "FAIL")
 			quit(0 if _errors == 0 else 1)
 			return true

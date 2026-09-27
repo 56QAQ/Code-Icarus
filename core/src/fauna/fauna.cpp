@@ -358,14 +358,15 @@ void Fauna::think(Animal& a, bool near) {
             if (settled) c = nullptr;
         }
         // Starving wolves go for someone alone at night, away from the fires and houses.
-        if (!c && s.temper == Temper::Predator && a.hunger > 1.6f && is_night(now_)) {
+        if (!c && s.temper == Temper::Predator && a.hunger > 2.2f && is_night(now_)) {
             const Character* p = nearest_person(a.pos, 20.0f);
             bool settled = false;
             if (p)
-                for (const Polity& pol : ctx_.society->polities())
-                    if (pol.alive)
-                        if (const Building* seat = ctx_.buildings->get(pol.seat); seat && seat->entrance.dist2(p->foot) < 45 * 45)
-                            settled = true;
+                for (const Building& b : ctx_.buildings->all())
+                    if (b.alive && b.entrance.dist2(p->foot) < 40 * 40) {
+                        settled = true;
+                        break;
+                    }
             if (p && !p->is_girl() && !settled) {
                 bool alone = true;
                 for (const auto& cp : ctx_.agents->all())
@@ -546,8 +547,12 @@ void Fauna::move(Animal& a, float dt) {
                     e.text = strfmt("%s遭到%s袭击", c->name.c_str(), s.name.c_str());
                     const EventId ev = ctx_.chron->emit(std::move(e));
                     ctx_.agents->damage(*c, s.attack, -1, "被" + s.name + "咬伤", ev);
-                    // Having struck, a bear lets the intruder go; a wolf keeps at it a while.
-                    if (s.temper == Temper::Territorial) a.state_until = now_ + 30;
+                    // Having struck back, a bear or boar lets the intruder go (unless struck
+                    // again); a wolf keeps at it a while.
+                    if (s.temper == Temper::Territorial || s.temper == Temper::Defensive) {
+                        a.state_until = now_ + 30;
+                        a.attacker = kNoEntity;
+                    }
                     if (!c->alive && s.temper == Temper::Predator) {
                         a.state = AnimalState::Eat;
                         a.hunger = 0.0f;

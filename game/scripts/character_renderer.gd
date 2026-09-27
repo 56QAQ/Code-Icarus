@@ -806,10 +806,20 @@ func _make_tag(name_text: String, accent: Color) -> Control:
 	sb.border_color = Color(accent, 0.8)
 	sb.border_width_left = 3
 	tag.add_theme_stylebox_override("panel", sb)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tag.add_child(col)
 	var l := UITheme.label(name_text, 13, Color(1.0, 0.95, 0.84), true)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tag.add_child(l)
+	col.add_child(l)
 	tag.set_meta("label", l)
+	# What she said at the council just now (see _poll_debates).
+	var say := UITheme.label("", 12, UITheme.TEXT_DIM)
+	say.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	say.visible = false
+	col.add_child(say)
+	tag.set_meta("say", say)
 	tag.set_meta("fade", 0.0)
 	tag.set_meta("occ_timer", randf() * 0.2)
 	tag.set_meta("occluded", false)
@@ -818,12 +828,37 @@ func _make_tag(name_text: String, accent: Color) -> Control:
 	return tag
 
 
+## The council, seen: for a few hours after a decision the girls' tags say what each
+## of them argued for, and the ruler's what she decided.
+var _debate_timer := 0.0
+var _speech := {}  # girl id -> [text, colour]
+
+
+func _poll_debates(delta: float) -> void:
+	_debate_timer -= delta
+	if _debate_timer > 0.0:
+		return
+	_debate_timer = 1.0
+	_speech.clear()
+	for d in sim.debates(750):  # about three game hours
+		var ruler := int(d["girl"])
+		for p in d.get("proposals", []):
+			var gid := int(p["girl"])
+			if gid == ruler:
+				continue
+			var agreed: bool = p.get("adopted", false)
+			_speech[gid] = [("附议：" if agreed else "主张：") + String(p["option"]), UITheme.GOOD if agreed else UITheme.WARN]
+		if d.has("chosen"):
+			_speech[ruler] = ["裁决：" + String(d["chosen"]), UITheme.ACCENT]
+
+
 ## Tags sit above the girls' heads: slightly smaller with distance, faded out far away
 ## or when a building or hill is between her and the camera, and nudged apart when
 ## several overlap on screen.
 func _update_tags(delta: float) -> void:
 	if overlay == null or camera == null:
 		return
+	_poll_debates(delta)
 	var placed: Array[Rect2] = []
 	var order: Array = []
 	for id in _nodes.keys():
@@ -863,6 +898,15 @@ func _update_tags(delta: float) -> void:
 		var fs := int(clampf(round(16.0 - dist * 0.035), 11.0, 15.0))
 		if l.get_theme_font_size("font_size") != fs:
 			l.add_theme_font_size_override("font_size", fs)
+		var say: Label = tag.get_meta("say")
+		var said: Array = _speech.get(int(item[1]), [])
+		say.visible = not said.is_empty() and dist < 90.0
+		if say.visible:
+			var t := String(said[0])
+			if t.length() > 18:
+				t = t.substr(0, 17) + "…"
+			say.text = t
+			say.add_theme_color_override("font_color", said[1])
 		tag.reset_size()
 		var sz := tag.get_combined_minimum_size()
 		var sp := camera.unproject_position(anchor)

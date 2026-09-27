@@ -88,6 +88,9 @@ func _ready() -> void:
 	hud.selection.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 40.0))
 	hud.selection.character_requested.connect(func(id: int) -> void: _select_character(id))
 	hud.focus_requested.connect(func(p: Vector3) -> void: rig.focus(p, 45.0))
+	hud.character_requested.connect(func(id: int) -> void:
+		_select_character(id, get_viewport().get_visible_rect().size * 0.5)
+		rig.focus(chars.position_of(id), 40.0))
 	hud.civ_card.girl_selected.connect(func(id: int) -> void:
 		# The camera turns to her (she ends up in the middle): the card goes beside that.
 		_select_character(id, get_viewport().get_visible_rect().size * 0.5)
@@ -113,6 +116,14 @@ func _ready() -> void:
 		Game.sim.step(int(_cli["after-ticks"]))
 	if _cli.has("tab"):
 		hud.selection._tab = _cli["tab"]
+	if _cli.has("select-ruler"):
+		# Screenshot helper: the ruler of the most populous people.
+		var best := {}
+		for p in Game.sim.polities():
+			if best.is_empty() or int(p["stats"]["population"]) > int(best["stats"]["population"]):
+				best = p
+		if not best.is_empty():
+			_cli["select"] = str(int(best["ruler"]))
 	if _cli.has("select"):
 		_select_character(int(_cli["select"]))
 		if _cli.has("focus"):
@@ -184,6 +195,8 @@ func _ready() -> void:
 		Game.set_tool(_cli["tool"])
 	if _cli.has("tech"):
 		hud.toggle_tech()
+	if _cli.has("web"):
+		hud.toggle_web()
 	if _cli.has("ending"):
 		hud.show_ending()
 	if _cli.has("menu"):
@@ -485,6 +498,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.toggle_chronicle()
 			KEY_T:
 				hud.toggle_tech()
+			KEY_B:
+				hud.toggle_web()
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_apply_tool()
 

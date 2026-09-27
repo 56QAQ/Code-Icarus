@@ -27,8 +27,10 @@ var _sel_anchor := Vector2(-1, -1)
 var civ_card: CivCard
 var selection: SelectionCard
 signal focus_requested(pos: Vector3)
+signal character_requested(id: int)
 
 var council: CouncilPanel
+var web: GirlWebPanel
 var chronicle: ChroniclePanel
 var tech: TechPanel
 var ending: EndingPanel
@@ -216,6 +218,9 @@ func _build_time_pill() -> void:
 	var council_btn := _icon_button("scroll", "议事录：魔法少女的决策（J）")
 	council_btn.pressed.connect(func() -> void: toggle_council())
 	row.add_child(council_btn)
+	var web_btn := _icon_button("bonds", "魔法少女的羁绊（B）")
+	web_btn.pressed.connect(func() -> void: toggle_web())
+	row.add_child(web_btn)
 	var chron_btn := _icon_button("chronicle", "编年史与因果链（C）")
 	chron_btn.pressed.connect(func() -> void: toggle_chronicle())
 	row.add_child(chron_btn)
@@ -499,6 +504,13 @@ func _build_council() -> void:
 	menu = WorldMenu.new()
 	menu.visible = false
 	_council_wrap.add_child(menu)
+	web = GirlWebPanel.new()
+	web.sim = Game.sim
+	web.visible = false
+	_council_wrap.add_child(web)
+	web.character_requested.connect(func(id: int) -> void:
+		web.visible = false
+		character_requested.emit(id))
 	chronicle.focus_requested.connect(func(p: Vector3) -> void:
 		chronicle.visible = false
 		focus_requested.emit(p))
@@ -514,6 +526,7 @@ func _size_council() -> void:
 	council.custom_minimum_size = sz
 	chronicle.custom_minimum_size = sz
 	tech.custom_minimum_size = sz
+	web.custom_minimum_size = sz
 
 
 ## Opens the decision ledger (at a decision if given); only one overlay at a time.
@@ -523,7 +536,19 @@ func toggle_council(id: int = 0) -> void:
 	else:
 		chronicle.visible = false
 		tech.visible = false
+		web.visible = false
 		council.open_at(id)
+
+
+## Opens the web of ties between the magical girls.
+func toggle_web() -> void:
+	if web.visible:
+		web.visible = false
+	else:
+		council.visible = false
+		chronicle.visible = false
+		tech.visible = false
+		web.open()
 
 
 ## Opens the chronicle (at an event if given).
@@ -533,6 +558,7 @@ func toggle_chronicle(id: int = 0) -> void:
 	else:
 		council.visible = false
 		tech.visible = false
+		web.visible = false
 		chronicle.open_at(id)
 
 
@@ -543,14 +569,16 @@ func toggle_tech() -> void:
 	else:
 		council.visible = false
 		chronicle.visible = false
+		web.visible = false
 		tech.open_for(civ_card.polity_id)
 
 
 func overlay_open() -> bool:
-	return council.visible or chronicle.visible or tech.visible or ending.visible or menu.visible
+	return council.visible or chronicle.visible or tech.visible or ending.visible or menu.visible or web.visible
 
 
 func close_overlays() -> void:
+	web.visible = false
 	council.visible = false
 	chronicle.visible = false
 	tech.visible = false
@@ -561,6 +589,7 @@ func close_overlays() -> void:
 
 ## The world menu: new island, saves, quit.
 func open_menu() -> void:
+	web.visible = false
 	council.visible = false
 	chronicle.visible = false
 	tech.visible = false
@@ -570,6 +599,7 @@ func open_menu() -> void:
 
 ## After a new or loaded world: forget what belonged to the old one.
 func on_world_changed() -> void:
+	web.visible = false
 	council.visible = false
 	chronicle.visible = false
 	tech.visible = false
@@ -584,6 +614,7 @@ func on_world_changed() -> void:
 
 ## The round's end card (when the island has been unified).
 func show_ending() -> void:
+	web.visible = false
 	council.visible = false
 	chronicle.visible = false
 	tech.visible = false

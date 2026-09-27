@@ -135,6 +135,13 @@ func _draw() -> void:
 			for i in 4:
 				var a := float(i) * TAU / 4.0 + PI / 4.0
 				draw_line(P.call(0.5 + cos(a) * 0.18, 0.5 + sin(a) * 0.18), P.call(0.5 + cos(a) * 0.42, 0.5 + sin(a) * 0.42), color, w, true)
+		"bonds":
+			# Three figures tied together.
+			var pts := [P.call(0.5, 0.26), P.call(0.24, 0.72), P.call(0.76, 0.72)]
+			for i in 3:
+				draw_line(pts[i], pts[(i + 1) % 3], Color(color, 0.6), w, true)
+			for q in pts:
+				draw_circle(q, 0.13 * s, color)
 		"scroll":
 			draw_rect(Rect2(P.call(0.24, 0.18), Vector2(0.52, 0.64) * s), Color(color, 0.18))
 			draw_rect(Rect2(P.call(0.24, 0.18), Vector2(0.52, 0.64) * s), color, false, w)

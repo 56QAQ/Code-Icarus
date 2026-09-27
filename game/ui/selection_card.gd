@@ -108,6 +108,7 @@ func show_character(id: int) -> void:
 	if info.get("girl", false):
 		tabs.append(["politics", "政见"])
 		tabs.append(["magic", "魔法"])
+		tabs.append(["bio", "传记"])
 	_set_tabs(tabs)
 	visible = true
 	_refresh()
@@ -337,6 +338,10 @@ func _refresh_character() -> void:
 				_line("死因：%s" % d.get("death_cause", ""), 14, UITheme.BAD)
 				return
 			_line("正在%s：%s" % [d["task"], d["status"]], 14)
+			if girl.has("duel"):
+				_line("⚔ 正与敌方魔法少女%s对决" % girl["duel"], 13, UITheme.BAD)
+			elif girl.get("champion", false):
+				_line("⚔ 随军出征中", 13, UITheme.WARN)
 			_section("需求")
 			var needs: Dictionary = d["needs"]
 			_bar("饱腹", needs["food"])
@@ -406,6 +411,8 @@ func _refresh_character() -> void:
 				var b := _bar(s["name"], s["value"])
 				b.fixed_color = UITheme.ACCENT
 		"social":
+			if not girl.is_empty():
+				_bonds(girl)
 			_section("对魔法少女的支持")
 			for s in d["support"]:
 				_bar("%s" % s["name"], s["value"], true)
@@ -475,7 +482,14 @@ func _refresh_character() -> void:
 			if girl.is_empty():
 				return
 			_line("源动力：%s（%s）" % [girl["drive"], "正面" if int(girl.get("valence", 1)) > 0 else "负面"], 14, UITheme.MAGIC)
+			if girl.has("born_drive"):
+				_line("觉醒时的源动力是「%s」，%.0f 天前转变" % [girl["born_drive"], float(girl.get("drive_changed_days", 0.0))], 12, UITheme.WARN)
 			_line("性情：%s" % girl.get("temperament", ""), 13, UITheme.TEXT_DIM)
+			# What weighs on her and what lifts her: enough of either can turn her drive.
+			var weight := _bar("心之重负", clampf(float(girl.get("trauma", 0.0)) / 1.2, 0.0, 1.0))
+			weight.fixed_color = UITheme.BAD
+			var lift := _bar("慰藉", clampf(float(girl.get("solace", 0.0)) / 1.2, 0.0, 1.0))
+			lift.fixed_color = UITheme.GOOD
 			_bar("魔力", girl["mana"])
 			_bar("忠诚", girl["loyalty"], true)
 			_section("魔法（Lv%d）" % girl["level"])
@@ -484,6 +498,55 @@ func _refresh_character() -> void:
 				var col := UITheme.TEXT if sp["unlocked"] else UITheme.TEXT_FAINT
 				_line("%s【%s·Lv%d】%s" % ["◆" if sp["unlocked"] else "◇", tag, sp["level"], sp["name"]], 13, col)
 				_line("　" + String(sp["desc"]), 12, UITheme.TEXT_FAINT)
+
+
+		"bio":
+			if girl.is_empty():
+				return
+			_section("人生大事记")
+			if girl.get("first", false):
+				_line("开国时的魔法少女之一", 13, UITheme.TEXT_DIM)
+			var bio: Array = sim.biography(target_id)
+			if bio.is_empty():
+				_line("还没有值得记下的事", 13, UITheme.TEXT_DIM)
+			for i in range(bio.size() - 1, -1, -1):
+				var ev: Dictionary = bio[i]
+				var b := Button.new()
+				b.focus_mode = Control.FOCUS_NONE
+				b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+				b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				b.custom_minimum_size = Vector2(340, 0)
+				b.add_theme_font_size_override("font_size", 12)
+				var when := String(ev.get("time", ""))
+				b.text = "%s  %s" % [when.substr(when.find(" ") + 1) if when.find(" ") >= 0 else when, ev["text"]]
+				var sev := int(ev.get("severity", 1))
+				b.add_theme_color_override("font_color", UITheme.ACCENT if sev >= 5 else (UITheme.TEXT if sev >= 3 else UITheme.TEXT_DIM))
+				var eid := int(ev["id"])
+				b.tooltip_text = "在编年史中追溯"
+				b.pressed.connect(func() -> void: event_requested.emit(eid))
+				_body.add_child(b)
+
+
+## Her ties to other magical girls, as links to their cards.
+const BOND_COLORS := {1: Color(0.52, 0.82, 0.55), 2: Color(0.96, 0.66, 0.30), 3: Color(0.50, 0.80, 0.95), 4: Color(0.50, 0.80, 0.95), 5: Color(0.93, 0.36, 0.36)}
+
+
+func _bonds(girl: Dictionary) -> void:
+	_section("羁绊")
+	var bonds: Array = girl.get("bonds", [])
+	if bonds.is_empty():
+		_line("与其他魔法少女尚无深交", 13, UITheme.TEXT_DIM)
+	for b in bonds:
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.custom_minimum_size = Vector2(0, 24)
+		btn.add_theme_font_size_override("font_size", 13)
+		btn.text = "%s · %s（%s）%s" % [b["kind_name"], b["name"], b.get("drive", ""), "" if b.get("alive", true) else " · 已故"]
+		btn.add_theme_color_override("font_color", BOND_COLORS.get(int(b["kind"]), UITheme.TEXT))
+		var oid := int(b["id"])
+		btn.pressed.connect(func() -> void: character_requested.emit(oid))
+		_body.add_child(btn)
 
 
 ## Partner, parents and children as links to their own cards.
