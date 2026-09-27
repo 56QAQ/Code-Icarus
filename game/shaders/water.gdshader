@@ -8,6 +8,7 @@ render_mode blend_mix, depth_draw_always, cull_back, diffuse_burley, specular_sc
 uniform vec3 shallow_color : source_color = vec3(0.30, 0.66, 0.72);
 uniform vec3 deep_color : source_color = vec3(0.05, 0.19, 0.38);
 uniform float clarity = 2.6;  // cubes of water until it shows mostly its own colour
+uniform float rain = 0.0;     // 0 dry .. 1 pouring: raindrops ring the surface
 uniform sampler2D depth_tex : hint_depth_texture, filter_linear_mipmap;
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
 
@@ -30,6 +31,31 @@ float vnoise(vec2 p) {
 }
 
 // Slope of the wave field at p (a few travelling waves and a little noise).
+// Raindrops on a still surface: rings spreading from random points, one drop per cell
+// of about half a cube at a time. Returns the slope of the surface (xz) at p.
+vec2 rain_ripples(vec2 p, float t) {
+	vec2 g = vec2(0.0);
+	for (int k = 0; k < 2; k++) {
+		vec2 q = p * 2.2 + vec2(float(k) * 0.37, float(k) * 0.71);
+		vec2 cell = floor(q);
+		for (int j = -1; j <= 1; j++) {
+			for (int i = -1; i <= 1; i++) {
+				vec2 c = cell + vec2(float(i), float(j));
+				float h = hash12(c + float(k) * 17.0);
+				if (h > 0.55) continue;  // not every spot has a drop just now
+				vec2 centre = c + vec2(hash12(c * 1.7 + 3.1), hash12(c * 2.3 + 7.7));
+				float age = fract(t * 0.9 + h);
+				vec2 d = q - centre;
+				float dist = length(d);
+				float r = age * 0.9;
+				float ring = exp(-pow((dist - r) / 0.07, 2.0)) * (1.0 - age) * (1.0 - age);
+				g += (dist > 0.001 ? d / dist : vec2(0.0)) * ring * sin((dist - r) * 40.0);
+			}
+		}
+	}
+	return g * 0.5;
+}
+
 vec2 wave_slope(vec2 p, float t) {
 	vec2 g = vec2(0.0);
 	vec2 d1 = vec2(0.8, 0.3);
@@ -56,8 +82,14 @@ void vertex() {
 void fragment() {
 	// World-space normal with waves on the surface; the engine wants view space.
 	vec3 nw = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	float rings = 0.0;
 	if (is_top > 0.5) {
 		vec2 g = wave_slope(wpos.xz, TIME);
+		if (rain > 0.01) {
+			vec2 rr = rain_ripples(wpos.xz, TIME);
+			g += rr * rain * 2.2;
+			rings = clamp(length(rr) * 0.5, 0.0, 0.22) * rain;
+		}
 		nw = normalize(vec3(-g.x, 1.0, -g.y));
 	}
 	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
@@ -90,6 +122,8 @@ void fragment() {
 		col = mix(col, shallow_color * 1.3, 0.35);
 	}
 	col = mix(col, vec3(0.92, 0.96, 1.0), foam * 0.85);
+	col = mix(col, col * vec3(0.8, 0.85, 0.9) + vec3(0.03), rain * 0.4);
+	col = mix(col, vec3(0.85, 0.9, 0.96), rings);
 	ALBEDO = col;
 	ALPHA = mix(0.88, 1.0, murk);
 	ROUGHNESS = mix(0.05, 0.6, foam);

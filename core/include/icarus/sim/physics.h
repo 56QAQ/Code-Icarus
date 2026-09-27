@@ -111,7 +111,7 @@ public:
 
     // Weather: rain refills water surfaces and douses exposed fires.
     bool raining() const { return rain_until_ > now_; }
-    void start_rain(Tick duration) { rain_until_ = now_ + duration; }
+    void start_rain(Tick now, Tick duration) { rain_until_ = std::max(rain_until_, now + duration); }
     Tick rain_until() const { return rain_until_; }
 
     // Parameters (tunable).

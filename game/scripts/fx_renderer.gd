@@ -279,35 +279,70 @@ func _make_smoke() -> GPUParticles3D:
 
 
 func _make_rain() -> GPUParticles3D:
+	# Fine streaks, slanting a little with the wind; where a drop hits the ground or the
+	# water it bursts into a small splash (a sub-emitter at the collision).
+	var splash := GPUParticles3D.new()
+	splash.amount = 1600
+	splash.lifetime = 0.35
+	splash.local_coords = false
+	splash.emitting = false
+	splash.visibility_aabb = AABB(Vector3(-60, -60, -60), Vector3(120, 90, 120))
+	var sp := ParticleProcessMaterial.new()
+	sp.direction = Vector3(0, 1, 0)
+	sp.spread = 55.0
+	sp.initial_velocity_min = 0.8
+	sp.initial_velocity_max = 1.8
+	sp.gravity = Vector3(0, -9.0, 0)
+	sp.scale_min = 0.5
+	sp.scale_max = 1.0
+	sp.color = Color(0.82, 0.88, 0.98, 0.55)
+	sp.color_ramp = _ramp([Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.0)], [0.0, 1.0])
+	splash.process_material = sp
+	splash.draw_pass_1 = _billboard(0.11, false)
+	add_child(splash)
 	var e := GPUParticles3D.new()
-	e.amount = 4000
-	e.lifetime = 1.4
+	e.amount = 7000
+	e.lifetime = 1.2
 	e.local_coords = false
 	e.emitting = false
 	e.visibility_aabb = AABB(Vector3(-60, -60, -60), Vector3(120, 90, 120))
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(55, 1, 55)
-	pm.direction = Vector3(0.08, -1, 0.04)
-	pm.spread = 2.0
-	pm.initial_velocity_min = 26.0
-	pm.initial_velocity_max = 32.0
+	pm.emission_box_extents = Vector3(48, 1, 48)
+	pm.direction = Vector3(0.1, -1, 0.05)
+	pm.spread = 1.5
+	pm.initial_velocity_min = 28.0
+	pm.initial_velocity_max = 34.0
 	pm.gravity = Vector3(0, -10, 0)
 	pm.collision_mode = ParticleProcessMaterial.COLLISION_HIDE_ON_CONTACT
-	pm.color = Color(0.75, 0.82, 0.95, 0.5)
+	pm.sub_emitter_mode = ParticleProcessMaterial.SUB_EMITTER_AT_COLLISION
+	pm.sub_emitter_amount_at_collision = 2
+	pm.color = Color(0.8, 0.86, 0.96, 0.55)
 	e.process_material = pm
 	var q := QuadMesh.new()
-	q.size = Vector2(0.045, 1.0)
+	q.size = Vector2(0.03, 0.8)
 	var m := StandardMaterial3D.new()
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.vertex_color_use_as_albedo = true
-	m.albedo_color = Color(1, 1, 1, 0.55)
+	m.albedo_texture = _streak()
 	q.material = m
 	e.draw_pass_1 = q
 	add_child(e)
+	e.sub_emitter = e.get_path_to(splash)
 	return e
+
+
+## A raindrop streak: brightest at the head, fading along its tail and at the sides.
+func _streak() -> ImageTexture:
+	var img := Image.create_empty(4, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		var v := float(y) / 31.0
+		for x in 4:
+			var side := 1.0 - absf(float(x) - 1.5) / 2.0
+			img.set_pixel(x, y, Color(1, 1, 1, pow(v, 1.6) * side))
+	return ImageTexture.create_from_image(img)
 
 
 # ------------------------------------------------------------------ helpers

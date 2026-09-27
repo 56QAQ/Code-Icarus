@@ -101,6 +101,7 @@ func set_night(v: float) -> void:
 func set_wetness(v: float) -> void:
 	mat_terrain.set_shader_parameter("wetness", v)
 	mat_foliage.set_shader_parameter("wetness", v)
+	mat_water.set_shader_parameter("rain", v)
 
 
 func pending_count() -> int:

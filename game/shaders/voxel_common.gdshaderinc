@@ -24,6 +24,31 @@ float hash12(vec2 p) {
 	return fract((p3.x + p3.y) * p3.z);
 }
 
+// Raindrops on a still surface: rings spreading from random points, one drop per cell
+// of about half a cube at a time. Returns the slope of the surface (xz) at p.
+vec2 rain_ripples(vec2 p, float t) {
+	vec2 g = vec2(0.0);
+	for (int k = 0; k < 2; k++) {
+		vec2 q = p * 2.2 + vec2(float(k) * 0.37, float(k) * 0.71);
+		vec2 cell = floor(q);
+		for (int j = -1; j <= 1; j++) {
+			for (int i = -1; i <= 1; i++) {
+				vec2 c = cell + vec2(float(i), float(j));
+				float h = hash12(c + float(k) * 17.0);
+				if (h > 0.55) continue;  // not every spot has a drop just now
+				vec2 centre = c + vec2(hash12(c * 1.7 + 3.1), hash12(c * 2.3 + 7.7));
+				float age = fract(t * 0.9 + h);
+				vec2 d = q - centre;
+				float dist = length(d);
+				float r = age * 0.9;
+				float ring = exp(-pow((dist - r) / 0.07, 2.0)) * (1.0 - age) * (1.0 - age);
+				g += (dist > 0.001 ? d / dist : vec2(0.0)) * ring * sin((dist - r) * 40.0);
+			}
+		}
+	}
+	return g * 0.5;
+}
+
 float hash13(vec3 p3) {
 	p3 = fract(p3 * 0.1031);
 	p3 += dot(p3, p3.zyx + 31.32);

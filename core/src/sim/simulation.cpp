@@ -304,7 +304,7 @@ EventId Simulation::apply_admin(const AdminCommand& cmd) {
         const int hours = std::clamp(p.integer("hours", 6), 1, 48);
         e.text = strfmt("管理员唤来了降雨（约 %d 小时）", hours);
         EventId id = chronicle_.emit(std::move(e));
-        physics_.start_rain((Tick)hours * kTicksPerHour);
+        physics_.start_rain(now(), (Tick)hours * kTicksPerHour);
         return id;
     }
     if (cmd.type == "ignite") {
