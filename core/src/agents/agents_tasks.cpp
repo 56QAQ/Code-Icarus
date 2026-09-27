@@ -330,7 +330,7 @@ StoreId Agents::nearest_storage(u16 polity, const Vec3i& from, ItemId item) {
         // Skip stores that cannot be walked to from here: another region, or left
         // hanging in the air (the ground beneath it blown away).
         const u16 there = region(s->pos);
-        if (home && there && there != home) continue;
+        if (regions_apart(home, there)) continue;
         if (!there && !ctx_.world->solid(s->pos + Vec3i{0, -1, 0})) continue;
         float d = (float)from.dist2(s->pos);
         if (d < bd) {
@@ -964,7 +964,17 @@ bool Agents::task_work(Character& c) {
     };
     auto fail = [&](const char* msg) {
         say(c, msg);
-        if (j) blacklist(c, j->pos, kTicksPerHour * 2);
+        if (j) {
+            // Out of reach: this resident leaves the place alone for a while. Anything
+            // else (materials short, goods taken) is no reason to shun the place, which
+            // is often the store everyone brings things to: the job just rests a little.
+            const std::string m = msg;
+            if (m.find("到不了") != std::string::npos || m.find("运不过去") != std::string::npos ||
+                m.find("取不到") != std::string::npos)
+                blacklist(c, j->pos, kTicksPerHour * 2);
+            else
+                j->suspended_until = std::max(j->suspended_until, now_ + kTicksPerHour / 2);
+        }
         end_task(c, false);
         return false;
     };

@@ -58,13 +58,42 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
         }
         if (!kind.empty()) score += 0.06f * (std::min(1.4f, tool_factor(c, kind)) - 0.7f);
     }
+    // Building and gathering keep a share of the hands while people are fed: otherwise
+    // food work, always the most urgent, would take everyone and nothing would be built.
+    if (p && (cat == "build" || cat == "gather")) {
+        const bool band = ctx_.society->foraging_band(*p);
+        const bool fed = band ? p->stats.food_access >= 0.9f : (p->stats.food_days >= 1.0f && p->stats.food_access >= 0.85f);
+        if (fed && c.polity < crew_.size() && is_work_time(c)) {
+            const float hands = (float)std::max(4, p->stats.population);
+            const float share = (float)crew_[c.polity][cat == "build" ? 0 : 1] / hands;
+            constexpr float kWant = 0.15f;
+            if (share < kWant) score += 0.6f * (kWant - share) / kWant * clampv(1.0f - dist / 150.0f, 0.2f, 1.0f);
+        }
+    }
+    // Late in the working day nobody sets out for work far from home.
+    if (p && dist > 40.0f) {
+        const float left = 8.0f + p->policies.work_hours - hour_of(now_);
+        if (left < 2.0f && left > -1.0f) score -= (2.0f - left) * 0.25f * std::min(1.0f, dist / 100.0f);
+    }
     if (c.work_debt > 2.0f && pol.punishment > 0) score += pol.punishment * c.pers.conformity * 0.3f;
     if (!is_work_time(c)) score *= 0.25f + 0.4f * c.pers.diligence;
     why = strfmt("%s（优先级 %.1f，技能 %s，距离 %.0f）", job_name_zh(j.type), j.priority * cat_w, pct(skill), dist);
     return score;
 }
 
+void Agents::count_crews() {
+    crew_tick_ = now_;
+    crew_.assign(ctx_.society->polities().size() + 1, {0, 0});
+    for (const Job& j : ctx_.jobs->all()) {
+        if (!j.alive || j.claimed_by == kNoEntity || j.polity >= crew_.size()) continue;
+        const std::string cat = job_category(j.type);
+        if (cat == "build") crew_[j.polity][0]++;
+        else if (cat == "gather") crew_[j.polity][1]++;
+    }
+}
+
 u32 Agents::best_job(Character& c, float& best, std::string& why) {
+    if (crew_tick_ != now_) count_crews();
     best = -1e9f;
     u32 pick = 0;
     for (const Job& j : ctx_.jobs->all()) {

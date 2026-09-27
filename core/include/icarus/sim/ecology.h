@@ -11,6 +11,7 @@
 // belong, and picked fruit trees bear again after a few days.
 #pragma once
 
+#include <algorithm>
 #include <vector>
 
 #include "icarus/util/binio.h"
@@ -30,6 +31,10 @@ public:
 
     // Trees that grew from saplings and still stand.
     int regrown_standing() const;
+    // A tree that grew here from a sapling (woodcutters leave young growth for last).
+    bool regrown_at(const Vec3i& trunk_base) const {
+        return std::find(regrown_.begin(), regrown_.end(), trunk_base) != regrown_.end();
+    }
     size_t saplings() const { return saplings_.size(); }
     // A wild plant was gathered here (fruit picked, a bush stripped, grain cut); it
     // grows back after a few days if the spot is still free.

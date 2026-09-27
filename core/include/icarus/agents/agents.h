@@ -194,6 +194,11 @@ private:
     void think(Character& c);
     float work_score(Character& c, const Job& j, std::string& why);
     u32 best_job(Character& c, float& score, std::string& why);
+    // Jobs in hand per polity and category (build, gather), counted afresh each tick
+    // someone looks for work: building and gathering keep a share of the hands.
+    Tick crew_tick_ = ~Tick(0);
+    std::vector<std::array<u16, 2>> crew_;
+    void count_crews();
     // tasks
     void run_task(Character& c);
     void end_task(Character& c, bool success);
@@ -287,6 +292,13 @@ private:
     };
     Survey survey_;
     void refresh_water_spots();
+    // Two survey regions are surely apart only if one of their floods ran its course; two
+    // floods both cut short (big islands) may well be one walkable area.
+    bool regions_apart(u16 a, u16 b) const {
+        if (!a || !b || a == b) return false;
+        auto open = [&](u16 id) { return id < region_open_.size() && region_open_[id]; };
+        return !(open(a) && open(b));
+    }
     void survey_step();
     void relabel_regions();
 };

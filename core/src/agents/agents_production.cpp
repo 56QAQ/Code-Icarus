@@ -8,6 +8,7 @@
 #include <map>
 
 #include "icarus/agents/agents.h"
+#include "icarus/sim/ecology.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/sim/clock.h"
 #include "icarus/society/society.h"
@@ -201,7 +202,8 @@ void Agents::production_jobs() {
                         if (ctx_.buildings->at(p)) break;
                         bool crown = false;
                         for (int k = 1; k <= 13 && !crown; ++k) crown = reg.mat(vmat(w.peek(p + Vec3i{0, k, 0}))).foliage;
-                        if (crown) spots.push_back({d, p, 0});
+                        // Young trees grown back from saplings are felled last.
+                        if (crown) spots.push_back({ctx_.ecology && ctx_.ecology->regrown_at(p) ? d + 90 * 90 : d, p, 0});
                         break;
                     }
                 }
@@ -259,7 +261,7 @@ void Agents::production_jobs() {
                 for (int dz = -1; dz <= 1; ++dz)
                     for (int dx = -1; dx <= 1; ++dx) {
                         auto it = region_map_.find(p + Vec3i{dx, dy, dz});
-                        if (it != region_map_.end() && it->second == home_region) return true;
+                        if (it != region_map_.end() && !regions_apart(it->second, home_region)) return true;
                     }
             return false;
         };

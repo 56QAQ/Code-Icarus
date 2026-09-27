@@ -618,20 +618,24 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         int plots = 0;
         for (const Farm& f : ctx_.farming->all())
             if (f.alive && f.polity == p.id) plots += (int)f.plots.size();
-        const bool short_fields = plots < p.stats.population;
+        // A field feeds less than half a person: short of fields below two per head.
+        const bool short_fields = plots < 2 * p.stats.population;
         DecisionOption o = make("expand_farms", strfmt("扩建田地（约 +%d 块）", n),
                                 band ? strfmt("把存下的谷种（%d 份）种进新开的田里，少靠一点采集。", grain)
                                      : strfmt("现有田地 %d 块、居民 %d 人；每块新田要一份谷种（存谷 %d 份）。", plots, p.stats.population, grain),
                                 {{kFoodSecurity, band || short_fields ? 0.8f : 0.5f}, {kGrowth, 0.7f}, {kFrugality, -0.2f}, {kSpeed, -0.4f}},
                                 act("expand_farm"));
         o.action.set("n", n);
-        if (short_fields && p.stats.food_days < 3.0f) o.bias += 0.25f;
+        if (short_fields) o.bias += p.stats.food_days < 3.0f ? 0.35f : 0.2f;
         if (plots >= 3 * std::max(4, p.stats.population)) {
             o.feasible = false;
             o.why_not = "田地已多到种不过来";
         } else if (grain < n + keep) {
             o.feasible = false;
             o.why_not = "还没攒下足够的谷种";
+        } else if (!band && p.stats.food_days < 1.0f && p.stats.food_access < 0.9f) {
+            o.feasible = false;
+            o.why_not = "正闹饥荒，谷种先留作口粮";
         }
         O.push_back(o);
     }
