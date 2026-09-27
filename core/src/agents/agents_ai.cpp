@@ -28,7 +28,11 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     const Policies pol = p ? p->policies : Policies{};
     std::string cat = job_category(j.type);
     float cat_w = 1.0f;
-    if (cat == "food") cat_w = pol.pri_food;
+    if (cat == "food") {
+        cat_w = pol.pri_food;
+        // An emptying larder makes food work more urgent, whatever the ruler has ordered.
+        if (p && p->stats.food_days < 1.5f) cat_w *= 1.0f + 0.8f * (1.5f - std::max(0.0f, p->stats.food_days)) / 1.5f;
+    }
     else if (cat == "build") cat_w = pol.pri_build;
     else if (cat == "gather") cat_w = pol.pri_gather;
     else if (cat == "research") cat_w = pol.pri_research;
@@ -62,11 +66,11 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     // food work, always the most urgent, would take everyone and nothing would be built.
     if (p && (cat == "build" || cat == "gather")) {
         const bool band = ctx_.society->foraging_band(*p);
-        const bool fed = band ? p->stats.food_access >= 0.9f : (p->stats.food_days >= 1.0f && p->stats.food_access >= 0.85f);
+        const bool fed = p->stats.food_days >= (band ? 1.0f : 1.5f) && p->stats.food_access >= 0.9f;
         if (fed && c.polity < crew_.size() && is_work_time(c)) {
             const float hands = (float)std::max(4, p->stats.population);
             const float share = (float)crew_[c.polity][cat == "build" ? 0 : 1] / hands;
-            constexpr float kWant = 0.15f;
+            const float kWant = band ? 0.1f : 0.15f;
             if (share < kWant) score += 0.6f * (kWant - share) / kWant * clampv(1.0f - dist / 150.0f, 0.2f, 1.0f);
         }
     }
