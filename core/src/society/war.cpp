@@ -407,9 +407,13 @@ void Society::update_wars(Polity& p) {
                 (cp->foot.dist2(op.stage) < 14 * 14 || cp->foot.dist2(op.objective) < 16 * 16))
                 ++formed;
         if (formed > 0 && op.staged_since == 0) op.staged_since = ctx_.now;
-        // Stragglers are waited for, through the night if need be.
-        const bool waited = op.staged_since && ctx_.now - op.staged_since > kTicksPerHour * 3 / 2 && !is_night(ctx_.now);
-        if (serving > 0 && (formed * 3 >= serving * 2 || waited)) {
+        // Stragglers are waited for, through the night if need be; the assault goes in by
+        // day, early enough to be done before dark (an army arriving in the evening camps
+        // on the forming-up ground and falls on the village at dawn).
+        const float hour = hour_of(ctx_.now);
+        const bool daylight = hour >= 5.5f && hour < 16.0f;
+        const bool waited = op.staged_since && ctx_.now - op.staged_since > kTicksPerHour * 3 / 2;
+        if (serving > 0 && daylight && (formed * 3 >= serving * 2 || waited)) {
             op.phase = 2;
             op.since = ctx_.now;
             if (op.aim != "defend") {
@@ -425,8 +429,9 @@ void Society::update_wars(Polity& p) {
                              : strfmt("「%s」的大军（%d 人）兵临「%s」的议事厅", p.name.c_str(), formed, en ? en->name.c_str() : "?");
                 op.event = ctx_.chron->emit(std::move(e));
             }
-        } else if (ctx_.now - op.since > kTicksPerDay * 3 / 4) {
-            op.phase = 3;  // could not get there
+        } else if ((!op.staged_since && ctx_.now - op.since > kTicksPerDay * 3 / 4) ||
+                   (op.staged_since && ctx_.now - op.staged_since > kTicksPerDay * 3 / 2)) {
+            op.phase = 3;  // could not get there (or waited in vain)
             op.since = ctx_.now;
         }
     }

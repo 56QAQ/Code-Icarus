@@ -259,7 +259,9 @@ void Agents::think(Character& c) {
     // War: soldiers serve; civilians keep away from enemy fighters.
     if (p && !p->wars.empty()) {
         if (c.drafted) {
-            float duty = 1.25f + (p->op.active ? 0.35f : 0.0f);
+            // On campaign, and above all in the thick of it at the objective, the army's
+            // business comes before anything that can wait.
+            float duty = 1.25f + (p->op.active ? 0.35f : 0.0f) + (p->op.active && p->op.phase == 2 ? 0.7f : 0.0f);
             add("从军", duty, p->op.active ? "军令在身：" + p->op.aim : "战时戒备");
             // The badly wounded fall back out of the fight.
             const float hurt = 1.0f - (float)c.body.total_alive() / (float)std::max(1, c.body.total_voxels()) +

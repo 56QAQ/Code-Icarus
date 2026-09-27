@@ -235,7 +235,9 @@ growth depends on irrigation from real water nearby.
   outside the enemy's village, raid or besiege the objective, return), with up to two
   magical girls with battle magic as champions. Armies set out by day and wait on the
   forming-up ground for their stragglers (through the night if need be) before they
-  charge together. A raid aims at the enemy store with the most food; raiders go from
+  charge together, by daylight and early enough to be done before dark (an army that
+  arrives in the evening camps and falls on the village at dawn); at the objective the
+  soldiers put the fight before any need that can wait. A raid aims at the enemy store with the most food; raiders go from
   store to store in the village until they can carry no more, then withdraw; defenders
   go out to meet enemy soldiers who come within reach of their hall. Hits remove voxels
   from bodies, reduced by armour; the badly wounded fall back and an army breaks at a
