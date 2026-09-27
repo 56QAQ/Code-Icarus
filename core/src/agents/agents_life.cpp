@@ -296,7 +296,7 @@ void Agents::daily_life() {
         const EventId ev = emit(EventType::Awakening, 4, g, kNoEntity, 0,
                                 strfmt("%s觉醒为魔法少女，源动力：%s%s", g.name.c_str(), dname.c_str(),
                                        war ? "（生于战火）" : hungry ? "（生于饥馑）" : oppressed ? "（生于压迫）" : ""));
-        (void)ev;
+        take_student(g, ev);
     }
 }
 

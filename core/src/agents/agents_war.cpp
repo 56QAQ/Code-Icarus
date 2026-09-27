@@ -55,6 +55,7 @@ void Agents::strike(Character& attacker, Character& target, float power, const s
             ctx_.society->add_grievance(tp->id, attacker.polity, 0.05f);
         }
         attacker.skills[kCombat] = std::min(1.0f, attacker.skills[kCombat] + 0.03f);
+        if (attacker.girl && target.girl) girl_felled(attacker, target, target.death_event ? target.death_event : cause);
     }
 }
 
@@ -107,7 +108,9 @@ bool Agents::task_fight(Character& c) {
                 float hit = clampv(0.55f + 0.35f * skill + (c.fear > 0.6f ? -0.15f : 0.0f), 0.15f, 0.9f);
                 if (rng_.chance(hit)) {
                     float power = weapon ? weapon->power : 0.03f;
-                    power *= 0.8f + 0.4f * c.body.manipulation();
+                    // A magical girl's bare hands hit like a weapon.
+                    if (c.is_girl()) power = std::max(power, 0.08f);
+                    power *= (0.8f + 0.4f * c.body.manipulation()) * empowerment(c);
                     std::string how = weapon ? (weapon->range > 3.0f ? "中箭" : "被" + weapon->name + "所伤") : "被拳脚所伤";
                     strike(c, *foe, power, how, p->op.event ? p->op.event : cause);
                 }

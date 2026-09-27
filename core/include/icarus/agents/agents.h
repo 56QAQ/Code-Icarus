@@ -132,6 +132,21 @@ public:
         std::string name;
     };
     float pick_spell(Character& c, SpellPick& out, std::string& why);
+    // The drama among magical girls (agents_drama.cpp): ties, what weighs on them, and
+    // drives that turn.
+    void daily_drama();
+    void mark_girl(EntityId id, float trauma, float solace, EventId ev);
+    void set_bond(Character& a, Character& b, BondKind ka, BondKind kb, EventId ev);
+    void drop_bond(Character& a, Character& b);
+    void take_student(Character& girl, EventId cause);
+    void girl_died(Character& dead, EventId ev);
+    void girl_felled(Character& victor, Character& fallen, EventId cause);
+    void turn_drive(Character& c, const std::string& to, bool darker);
+    EventId tell(EventType type, u8 severity, const Character& a, EntityId other, EventId cause, std::string text);
+    // A blow in war (agents_war.cpp): wounds, the tally of the dead, grievances.
+    void strike(Character& attacker, Character& target, float power, const std::string& how, EventId cause);
+    // Two enemy magical girls turning their magic on each other (told once per duel).
+    void begin_duel(Character& a, Character& b, EventId cause);
     // The rituals among her spells: war cry, frenzy, discord, withering, devouring.
     void cast_ritual(Character& c, int code, const std::string& name, const Json* sp, const Vec3i& at, Character* who,
                      Event& e);
@@ -189,7 +204,6 @@ private:
     // Nearest living enemy (at war); fighters_only = soldiers and magical girls,
     // soldiers_only = drafted residents only.
     Character* nearest_enemy(const Character& c, float radius, bool fighters_only, bool soldiers_only = false);
-    void strike(Character& attacker, Character& target, float power, const std::string& how, EventId cause);
     bool task_fight(Character& c);
     bool task_escape(Character& c);
     bool task_leave(Character& c);

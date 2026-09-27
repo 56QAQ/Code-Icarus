@@ -64,4 +64,15 @@ const char* task_name_zh(TaskType t) {
     }
 }
 
+const char* bond_name_zh(BondKind k) {
+    switch (k) {
+        case BondKind::Friend: return "挚友";
+        case BondKind::Rival: return "对手";
+        case BondKind::Mentor: return "徒弟";   // she is the mentor: the other is her student
+        case BondKind::Student: return "师父";  // she is the student: the other is her teacher
+        case BondKind::Nemesis: return "宿敌";
+        default: return "";
+    }
+}
+
 }  // namespace icarus

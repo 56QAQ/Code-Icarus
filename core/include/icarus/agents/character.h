@@ -97,6 +97,16 @@ struct Task {
     u8 resume = 0;       // step to go back to after fetching a tool (step 9)
 };
 
+// A tie between two magical girls, as she sees it.
+enum class BondKind : u8 { None = 0, Friend, Rival, Mentor, Student, Nemesis };
+const char* bond_name_zh(BondKind k);
+struct Bond {
+    EntityId other = kNoEntity;
+    BondKind kind = BondKind::None;
+    Tick since = 0;
+    EventId event = 0;  // what made it
+};
+
 struct GirlData {
     std::string drive;        // drive key (see drives.json)
     int level = 1;
@@ -115,6 +125,20 @@ struct GirlData {
     std::vector<std::pair<std::string, float>> experience;  // option key -> how it worked out
     EntityId grudge = kNoEntity;   // someone who wronged her politically
     Tick awakened = 0;             // when she awoke among the people (0: one of the first)
+    // The drama of her life (magic_drama.cpp).
+    std::vector<Bond> bonds;
+    float trauma = 0;              // grief, defeat, famine: toward a darker drive
+    float solace = 0;              // kindness received, triumph, friendship: toward a brighter one
+    std::vector<EventId> marks;    // the experiences behind them (the latest few)
+    std::string born_drive;        // the drive she awoke with ("" = unchanged)
+    Tick drive_changed = 0;
+    EntityId duel = kNoEntity;     // an enemy girl she is locked in a duel with
+    Tick duel_since = 0;
+    const Bond* bond_with(EntityId o) const {
+        for (const Bond& b : bonds)
+            if (b.other == o) return &b;
+        return nullptr;
+    }
     float experience_of(const std::string& k) const {
         for (auto& e : experience)
             if (e.first == k) return e.second;

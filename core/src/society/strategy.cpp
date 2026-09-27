@@ -280,7 +280,10 @@ void Society::make_vassal(u16 vassal, u16 overlord, EventId cause) {
     e.polity = vassal;
     e.causes[0] = cause;
     e.text = strfmt("「%s」向「%s」称臣，成为其附庸，定期纳贡", title(vassal).c_str(), title(overlord).c_str());
-    ctx_.chron->emit(std::move(e));
+    const EventId ev = ctx_.chron->emit(std::move(e));
+    // A humiliation for the one who bowed, a triumph for the one who was bowed to.
+    ctx_.agents->mark_girl(v->ruler, 0.5f, 0.0f, ev);
+    ctx_.agents->mark_girl(o->ruler, 0.0f, 0.35f, ev);
 }
 
 int Society::border_distance(u16 a, u16 b) const {

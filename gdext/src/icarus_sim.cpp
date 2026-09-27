@@ -526,7 +526,7 @@ String IcarusSim::event_category(int type) {
         case T::DecisionRequested: case T::DecisionMade: case T::PolicyChanged: case T::Secession: case T::Coup:
         case T::RulerChanged: case T::Protest: case T::Punishment: case T::Refusal: case T::Rebellion:
         case T::SupportShift: case T::LevelUp: case T::WarDeclared: case T::Battle: case T::Peace:
-        case T::Unification:
+        case T::Unification: case T::Awakening: case T::Bond: case T::DriveChanged:
             return "politics";
         case T::MeteorImpact: case T::FireStarted: case T::FireSpread: case T::Flood: case T::Collapse:
         case T::DebrisLanded: case T::StructureDamaged: case T::StructureDestroyed: case T::WaterSourceLost:

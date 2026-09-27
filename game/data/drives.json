@@ -4,6 +4,8 @@
 //   food_security welfare order harshness cooperation self_power growth frugality military risk fairness speed
 // Positive drives have lower power but govern and cooperate better; negative drives are
 // stronger but rule by punishment and rarely share power.
+// fall / rise: the drive it turns into under grief and defeat (bright drives) or under
+// kindness and triumph (dark drives).
 // war_appetite: how readily a ruler of this drive looks for a fight with a neighbour
 // (added to her motive for war; hostility toward strangers also cools less under her).
 {
@@ -15,7 +17,7 @@
   "drives": [
     {
       "key": "hope", "name": "希望", "valence": 1, "category": "governance", "power": 0.85, "mana_regen": 1.1,
-      "punish_bias": 0.1, "cooperation": 0.9, "war_appetite": -0.2, "costume": {"cloth": "#f4f1e6", "accent": "#8fd3e8", "hair": "#e8b24a"},
+      "punish_bias": 0.1, "cooperation": 0.9, "war_appetite": -0.2, "fall": "despair", "costume": {"cloth": "#f4f1e6", "accent": "#8fd3e8", "hair": "#e8b24a"},
       "values": {"food_security": 0.9, "welfare": 1.2, "order": 0.2, "harshness": -1.0, "cooperation": 1.0, "self_power": -0.2,
                  "growth": 0.8, "frugality": 0.0, "military": -0.3, "risk": 0.3, "fairness": 1.0, "speed": 0.2},
       "spells": [
@@ -31,7 +33,7 @@
     },
     {
       "key": "courage", "name": "勇气", "valence": 1, "category": "combat", "power": 1.0, "mana_regen": 1.0,
-      "punish_bias": 0.3, "cooperation": 0.7, "war_appetite": 0.25, "costume": {"cloth": "#d9534f", "accent": "#f0c05a", "hair": "#e87a3a"},
+      "punish_bias": 0.3, "cooperation": 0.7, "war_appetite": 0.25, "fall": "wrath", "costume": {"cloth": "#d9534f", "accent": "#f0c05a", "hair": "#e87a3a"},
       "values": {"food_security": 0.7, "welfare": 0.6, "order": 0.5, "harshness": -0.3, "cooperation": 0.7, "self_power": 0.5,
                  "growth": 0.4, "frugality": -0.2, "military": 1.1, "risk": 0.9, "fairness": 0.6, "speed": 0.8},
       "spells": [
@@ -47,7 +49,7 @@
     },
     {
       "key": "light", "name": "光明", "valence": 1, "category": "governance", "power": 0.9, "mana_regen": 1.0,
-      "punish_bias": 0.35, "cooperation": 0.65, "war_appetite": 0.05, "costume": {"cloth": "#f7e7a8", "accent": "#ffffff", "hair": "#f4cf4f"},
+      "punish_bias": 0.35, "cooperation": 0.65, "war_appetite": 0.05, "fall": "envy", "costume": {"cloth": "#f7e7a8", "accent": "#ffffff", "hair": "#f4cf4f"},
       "values": {"food_security": 0.8, "welfare": 0.7, "order": 1.2, "harshness": 0.1, "cooperation": 0.6, "self_power": 0.2,
                  "growth": 0.7, "frugality": 0.3, "military": 0.3, "risk": -0.4, "fairness": 1.2, "speed": 0.3},
       "spells": [
@@ -63,7 +65,7 @@
     },
     {
       "key": "gourmet", "name": "美食", "valence": 1, "category": "development", "power": 0.8, "mana_regen": 1.1,
-      "punish_bias": 0.15, "cooperation": 0.85, "war_appetite": -0.1, "costume": {"cloth": "#f2c38a", "accent": "#e36b5a", "hair": "#c2683a"},
+      "punish_bias": 0.15, "cooperation": 0.85, "war_appetite": -0.1, "fall": "gluttony", "costume": {"cloth": "#f2c38a", "accent": "#e36b5a", "hair": "#c2683a"},
       "values": {"food_security": 1.5, "welfare": 1.1, "order": 0.2, "harshness": -0.8, "cooperation": 0.9, "self_power": 0.1,
                  "growth": 0.9, "frugality": -0.3, "military": -0.5, "risk": 0.0, "fairness": 0.7, "speed": 0.5},
       "spells": [
@@ -79,7 +81,7 @@
     },
     {
       "key": "wrath", "name": "愤怒", "valence": -1, "category": "combat", "power": 1.35, "mana_regen": 1.2,
-      "punish_bias": 0.8, "cooperation": 0.25, "war_appetite": 0.5, "costume": {"cloth": "#5a1e22", "accent": "#ff5a2a", "hair": "#2a1a1a"},
+      "punish_bias": 0.8, "cooperation": 0.25, "war_appetite": 0.5, "rise": "courage", "costume": {"cloth": "#5a1e22", "accent": "#ff5a2a", "hair": "#2a1a1a"},
       "values": {"food_security": 0.6, "welfare": 0.1, "order": 1.0, "harshness": 1.1, "cooperation": -0.6, "self_power": 1.0,
                  "growth": 0.2, "frugality": 0.0, "military": 1.3, "risk": 0.9, "fairness": -0.2, "speed": 1.1},
       "spells": [
@@ -95,7 +97,7 @@
     },
     {
       "key": "envy", "name": "嫉妒", "valence": -1, "category": "governance", "power": 1.2, "mana_regen": 1.0,
-      "punish_bias": 0.7, "cooperation": 0.15, "war_appetite": 0.35, "costume": {"cloth": "#2f5a3a", "accent": "#9be36b", "hair": "#1e2f24"},
+      "punish_bias": 0.7, "cooperation": 0.15, "war_appetite": 0.35, "rise": "light", "costume": {"cloth": "#2f5a3a", "accent": "#9be36b", "hair": "#1e2f24"},
       "values": {"food_security": 0.6, "welfare": 0.0, "order": 1.1, "harshness": 0.8, "cooperation": -0.8, "self_power": 1.3,
                  "growth": 0.3, "frugality": 0.4, "military": 0.6, "risk": 0.2, "fairness": -0.4, "speed": 0.6},
       "spells": [
@@ -111,7 +113,7 @@
     },
     {
       "key": "despair", "name": "绝望", "valence": -1, "category": "governance", "power": 1.25, "mana_regen": 0.9,
-      "punish_bias": 0.75, "cooperation": 0.2, "war_appetite": 0.1, "costume": {"cloth": "#2a2a3e", "accent": "#7a6ab0", "hair": "#c8c8d8"},
+      "punish_bias": 0.75, "cooperation": 0.2, "war_appetite": 0.1, "rise": "hope", "costume": {"cloth": "#2a2a3e", "accent": "#7a6ab0", "hair": "#c8c8d8"},
       "values": {"food_security": 0.8, "welfare": -0.2, "order": 1.3, "harshness": 0.9, "cooperation": -0.5, "self_power": 0.8,
                  "growth": -0.2, "frugality": 0.8, "military": 0.5, "risk": -0.6, "fairness": -0.3, "speed": 0.2},
       "spells": [
@@ -127,7 +129,7 @@
     },
     {
       "key": "gluttony", "name": "暴食", "valence": -1, "category": "development", "power": 1.3, "mana_regen": 1.3,
-      "punish_bias": 0.6, "cooperation": 0.2, "war_appetite": 0.3, "costume": {"cloth": "#6b2d5c", "accent": "#e8b04a", "hair": "#d86aa0"},
+      "punish_bias": 0.6, "cooperation": 0.2, "war_appetite": 0.3, "rise": "gourmet", "costume": {"cloth": "#6b2d5c", "accent": "#e8b04a", "hair": "#d86aa0"},
       "values": {"food_security": 1.6, "welfare": 0.2, "order": 0.6, "harshness": 0.7, "cooperation": -0.7, "self_power": 1.2,
                  "growth": 0.5, "frugality": -0.6, "military": 0.4, "risk": 0.5, "fairness": -0.6, "speed": 0.9},
       "spells": [

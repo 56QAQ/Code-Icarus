@@ -66,6 +66,8 @@ enum class EventType : u16 {
     Hunt,         // game taken, beasts attacking people
     Life,         // partnerships, births, coming of age, dying of old age
     Awakening,    // a resident awakens as a magical girl
+    Bond,         // ties between magical girls: friends, rivals, mentors, nemeses
+    DriveChanged, // a magical girl's drive turns darker or brighter
     Count
 };
 

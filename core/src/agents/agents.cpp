@@ -106,7 +106,10 @@ void Agents::step(Tick now) {
         fail_ring_[(size_t)fail_ring_pos_] = 0;
     }
     if (now % kTicksPerHour == kTicksPerHour / 2) assign_homes();
-    if (now % kTicksPerDay == kTicksPerHour * 6 + 17) daily_life();
+    if (now % kTicksPerDay == kTicksPerHour * 6 + 17) {
+        daily_life();
+        daily_drama();
+    }
     if (now % 600 == 0) refresh_water_spots();
     if (now % 50 == 0) {
         ctx_.jobs->expire(now);
@@ -368,6 +371,7 @@ void Agents::kill(Character& c, const std::string& cause, EventId ev_cause) {
         if (aff > 0.3f) o->remember(now_, MemoryKind::FriendDied, c.id, -0.25f * aff, c.death_event);
         else if (o->pos.dist_sq(c.pos) < 144.0f) o->remember(now_, MemoryKind::SawDeath, c.id, -0.08f, c.death_event);
     }
+    if (c.girl) girl_died(c, c.death_event);
 }
 
 void Agents::damage(Character& c, float fraction, int part, const std::string& what, EventId cause) {
@@ -883,6 +887,30 @@ void Agents::save(BinWriter& w) const {
     }
     w.varu(region_open_.size());
     for (u8 o : region_open_) w.u8v(o);
+    // The magical girls' drama (version 1): bonds, trauma and solace, drive history, duels.
+    w.varu(1);
+    w.varu(chars_.size());
+    for (size_t i = 1; i < chars_.size(); ++i) {
+        const Character& c = *chars_[i];
+        w.boolean(c.girl != nullptr);
+        if (!c.girl) continue;
+        const GirlData& g = *c.girl;
+        w.varu(g.bonds.size());
+        for (const Bond& b : g.bonds) {
+            w.u32v(b.other);
+            w.u8v((u8)b.kind);
+            w.u64v(b.since);
+            w.u32v(b.event);
+        }
+        w.f32(g.trauma);
+        w.f32(g.solace);
+        w.varu(g.marks.size());
+        for (EventId m : g.marks) w.u32v(m);
+        w.str(g.born_drive);
+        w.u64v(g.drive_changed);
+        w.u32v(g.duel);
+        w.u64v(g.duel_since);
+    }
     w.end_section(sec);
 }
 
@@ -1123,6 +1151,35 @@ void Agents::load(BinReader& outer) {
         for (const auto& [p, id] : region_map_) top = std::max(top, id);
         region_open_.assign((size_t)top + 1, 1);
     }
+    if (!r.at_end()) {
+        r.varu();  // drama block version
+        const u64 count = r.varu();
+        for (size_t i = 1; i < (size_t)count; ++i) {
+            if (!r.boolean()) continue;
+            GirlData dummy;
+            Character* c = i < chars_.size() ? chars_[i].get() : nullptr;
+            GirlData& g = c && c->girl ? *c->girl : dummy;
+            const u64 nb = r.varu();
+            g.bonds.clear();
+            for (u64 k = 0; k < nb; ++k) {
+                Bond b;
+                b.other = r.u32v();
+                b.kind = (BondKind)r.u8v();
+                b.since = r.u64v();
+                b.event = r.u32v();
+                g.bonds.push_back(b);
+            }
+            g.trauma = r.f32();
+            g.solace = r.f32();
+            const u64 nm = r.varu();
+            g.marks.clear();
+            for (u64 k = 0; k < nm; ++k) g.marks.push_back(r.u32v());
+            g.born_drive = r.str();
+            g.drive_changed = r.u64v();
+            g.duel = r.u32v();
+            g.duel_since = r.u64v();
+        }
+    }
 }
 
 u64 Agents::hash() const {
@@ -1136,6 +1193,10 @@ u64 Agents::hash() const {
         h = hash_combine(h, ((u64)c->partner << 32) ^ (u64)c->parents[0] ^ ((u64)c->parents[1] << 16));
         h = fnv1a64(&c->age0, sizeof(c->age0), h);
         h = hash_combine(h, c->empowered_until);
+        if (c->girl) {
+            h = hash_combine(h, ((u64)c->girl->bonds.size() << 32) ^ (u64)c->girl->duel ^ ((u64)c->girl->drive_changed << 8));
+            h = fnv1a64(&c->girl->trauma, sizeof(float), h);
+        }
     }
     return h;
 }

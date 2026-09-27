@@ -49,6 +49,11 @@ float trade_gain(const Registry& reg, const Polity& p, ItemId in, ItemId out) {
         g += 0.5f * std::min(1.0f, (4.0f - p.stats.food_days) / 4.0f);
     return g;
 }
+// A war dragging on past its first week: the longing for an end grows by the day.
+float stalemate(const War& w, Tick now) {
+    const float days = (float)(now - w.since) / (float)kTicksPerDay;
+    return std::clamp(0.12f * (days - 6.0f), 0.0f, 1.2f);
+}
 // How tired of this war a polity is: its length, the dead, and hunger at home.
 float war_weariness(const Polity& p, const War& w, Tick now) {
     const float days = (float)(now - w.since) / (float)kTicksPerDay;
@@ -406,7 +411,8 @@ void Decisions::add_peace_offers(Decision& d, Polity& p, u16 enemy_id, bool plea
     };
     offer("offer_peace", "向「" + en + "」" + (pleading ? "求和" : "提出议和"), "停战，各自退兵。由对方决定。",
           {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kSelfPower, -0.3f}, {kMilitary, -0.5f}}, 0, 0, false,
-          weary + 0.15f * (float)w->refused);
+          weary + 0.15f * (float)w->refused + (p.stats.food_days < 1.0f ? 0.5f : 0.0f) + (p.stats.population < 8 ? 0.6f : 0.0f) +
+              stalemate(*w, now_));
     // Winning: they pay for it (less, after they have turned demands down).
     const float refused = (float)w->refused;
     if ((score >= 2.0f || as.ratio >= 1.6f) && their_food >= 10) {
@@ -509,6 +515,12 @@ void Decisions::build_peace_options(Decision& d, Polity& p, u16 from, const Json
         a.bias += std::clamp(-0.06f * w->score(), -0.4f, 0.5f) + (as.ratio < 0.7f ? 0.3f : 0.0f);
         // Whoever just started a war wants something out of it first.
         if (w->attacker && now_ - w->since < kTicksPerDay) a.bias -= payer == from && food > 0 ? 0.2f : 0.7f;
+        // A people starving or bled to a handful takes the terms, whatever its ruler's pride.
+        const float collapse = (p.stats.food_days < 1.0f ? 0.6f : 0.0f) + (p.stats.population < 8 ? 0.8f : 0.0f);
+        a.bias += collapse;
+        // A war that drags on without end: everyone longs for it to be over.
+        a.bias += stalemate(*w, now_);
+        if (collapse > 0.0f) a.facts.set("collapse", collapse);
         a.facts.set("war_days", (float)(now_ - w->since) / (float)kTicksPerDay);
         a.facts.set("losses", w->losses);
         a.facts.set("war_score", w->score());
@@ -767,6 +779,7 @@ bool Decisions::execute_war(Decision& d, const DecisionOption& o, Polity& p, Cha
             p.op.phase = 2;
             p.op.since = now_;
             p.op.event = cause;
+            ctx_.society->enlist_champions(p.id, cause);
             p.op.party = ctx_.society->soldiers(p.id);
         }
         return true;

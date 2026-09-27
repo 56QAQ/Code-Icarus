@@ -135,8 +135,22 @@ float Agents::pick_spell(Character& c, SpellPick& out, std::string& why) {
             }
         }
     }
-    // War: combat magic against the enemy's fighters.
-    if (Character* foe = nearest_enemy(c, 16.0f, true)) {
+    // War: combat magic against the enemy's fighters; an enemy magical girl first (a duel).
+    Character* foe = nullptr;
+    {
+        float bd = 16.0f * 16.0f;
+        for (auto& op : chars_) {
+            if (!op || !op->alive || op->departed || !op->is_girl() || op->polity == c.polity) continue;
+            if (!ctx_.society->at_war(c.polity, op->polity)) continue;
+            const float d = op->pos.dist_sq(c.pos);
+            if (d < bd) {
+                bd = d;
+                foe = op.get();
+            }
+        }
+    }
+    if (!foe) foe = nearest_enemy(c, 16.0f, true);
+    if (foe) {
         struct Combat {
             const char* effect;
             int code;
@@ -154,7 +168,8 @@ float Agents::pick_spell(Character& c, SpellPick& out, std::string& why) {
             if (s > best) {
                 best = s;
                 out = {k.code, foe->foot, foe->id, cost, sp->str("name")};
-                why = strfmt("敌人%s近在眼前，施展「%s」", foe->name.c_str(), sp->str("name").c_str());
+                why = foe->is_girl() ? strfmt("敌方魔法少女%s就在眼前，以「%s」与她对决", foe->name.c_str(), sp->str("name").c_str())
+                                     : strfmt("敌人%s近在眼前，施展「%s」", foe->name.c_str(), sp->str("name").c_str());
             }
         }
     }
@@ -309,6 +324,7 @@ bool Agents::task_cast(Character& c) {
             const EventId cause = pp && !pp->wars.empty() ? (pp->op.event ? pp->op.event : pp->wars.front().event) : 0;
             e.severity = 3;
             e.target = who->id;
+            if (who->girl) begin_duel(c, *who, cause);
             switch (t.count) {
                 case 3:
                 case 4:
@@ -366,6 +382,7 @@ bool Agents::task_cast(Character& c) {
             who->body.vitality = std::min(1.0f, who->body.vitality + 0.3f);
             who->needs.food = std::max(0.0f, who->needs.food - 0.0012f * (float)done * (limbs ? 1.6f : 1.0f));
             who->remember(now_, MemoryKind::Healed, c.id, 0.25f, 0);
+            if (who->girl) mark_girl(who->id, 0.0f, 0.25f, 0);  // cared for by another of her kind
             who->support_ref(c.id) = clampv(who->support_for(c.id) + 0.12f, -1.0f, 1.0f);
             who->affinity_ref(c.id) = clampv(who->affinity(c.id) + 0.2f, -1.0f, 1.0f);
             e.severity = 2;
@@ -394,6 +411,25 @@ bool Agents::task_cast(Character& c) {
         end_task(c, true);
     }
     return true;
+}
+
+void Agents::begin_duel(Character& a, Character& b, EventId cause) {
+    if (!a.girl || !b.girl) return;
+    // A new duel (not the same one going on): told once.
+    if (a.girl->duel == b.id && now_ - a.girl->duel_since < kTicksPerHour * 6) return;
+    a.girl->duel = b.id;
+    b.girl->duel = a.id;
+    a.girl->duel_since = b.girl->duel_since = now_;
+    Event e;
+    e.type = EventType::Battle;
+    e.severity = 4;
+    e.actor = a.id;
+    e.target = b.id;
+    e.polity = a.polity;
+    e.pos = a.foot;
+    e.causes[0] = cause;
+    e.text = strfmt("魔法少女%s与%s展开对决", a.name.c_str(), b.name.c_str());
+    ctx_.chron->emit(std::move(e));
 }
 
 void Agents::cast_ritual(Character& c, int code, const std::string& name, const Json* sp, const Vec3i& at, Character* who,

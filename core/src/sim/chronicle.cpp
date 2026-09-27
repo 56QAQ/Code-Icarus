@@ -15,7 +15,8 @@ const char* event_type_key(EventType t) {
                                   "project_completed", "project_abandoned", "support_shift", "protest", "punishment",
                                   "refusal", "rebellion", "secession", "coup", "ruler_changed", "war_declared",
                                   "battle", "peace", "tech_discovered", "level_up", "spell_cast", "migration", "theft",
-                                  "rescue", "construction", "info", "unification", "trade", "hunt", "life", "awakening"};
+                                  "rescue", "construction", "info", "unification", "trade", "hunt", "life", "awakening",
+                                  "bond", "drive_changed"};
     static_assert(sizeof(names) / sizeof(names[0]) == (size_t)EventType::Count, "event names out of sync");
     size_t i = (size_t)t;
     return i < (size_t)EventType::Count ? names[i] : "unknown";

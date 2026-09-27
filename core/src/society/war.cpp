@@ -95,6 +95,55 @@ void Society::start_operation(u16 id, u16 enemy, const std::string& aim, EventId
     a->op.phase = 0;
     a->op.since = ctx_.now;
     a->op.event = cause;
+    enlist_champions(id, cause);
+}
+
+int Society::enlist_champions(u16 id, EventId cause) {
+    Polity* p = polity(id);
+    if (!p) return 0;
+    // Battle magic: what a magical girl brings to a fight.
+    static const char* kBattle[] = {"strike", "ranged", "firebomb", "drain_strike", "terrify", "rally", "berserk"};
+    std::vector<std::pair<float, Character*>> pool;
+    for (const auto& cp : ctx_.agents->all()) {
+        Character* c = cp.get();
+        if (!c || !c->alive || c->departed || !c->is_girl() || c->polity != id || c->drafted) continue;
+        if (c->body.mobility() < 0.6f || !c->body.can_hold()) continue;
+        const Json* drive = nullptr;
+        for (const Json& d : ctx_.reg->doc("drives")["drives"].items())
+            if (d.str("key") == c->girl->drive) drive = &d;
+        if (!drive) continue;
+        int battle = 0;
+        for (const Json& sp : (*drive)["spells"].items())
+            for (const char* k : kBattle)
+                if (sp.str("effect") == k && sp.str("type") == "active" && c->girl->level >= sp.integer("level", 1)) ++battle;
+        const bool warrior = drive->str("category") == "combat";
+        // The ruler stays to govern unless war is her very nature.
+        if (battle == 0 || (c->id == p->ruler && !warrior)) continue;
+        const float fit = (float)battle + (warrior ? 1.0f : 0.0f) + 0.2f * (float)c->girl->level + c->pers.aggression +
+                          (c->girl->role == "general" ? 2.0f : 0.0f) - c->pers.caution;
+        pool.push_back({fit, c});
+    }
+    std::sort(pool.begin(), pool.end(), [](const auto& x, const auto& y) {
+        return x.first != y.first ? x.first > y.first : x.second->id < y.second->id;
+    });
+    int n = 0;
+    for (const auto& [fit, c] : pool) {
+        if (n >= 2) break;
+        (void)fit;
+        c->drafted = true;
+        c->task = Task{};
+        c->next_think = ctx_.now;
+        Event e;
+        e.type = EventType::Battle;
+        e.severity = 2;
+        e.actor = c->id;
+        e.polity = id;
+        e.causes[0] = cause;
+        e.text = strfmt("魔法少女%s随军出征", c->name.c_str());
+        ctx_.chron->emit(std::move(e));
+        ++n;
+    }
+    return n;
 }
 
 EventId Society::make_peace(u16 a, u16 b, const std::string& how, EventId cause) {
@@ -217,6 +266,11 @@ void Society::annex(u16 winner, u16 loser, EventId cause, const std::string& how
                          : strfmt("「%s」%s「%s」", old_title.c_str(), how.c_str(), title(winner).c_str());
     last_merge_ = ctx_.chron->emit(std::move(e));
     l->alive = false;
+    // The magical girls of a conquered people bear it hardest.
+    for (const auto& cp : ctx_.agents->all())
+        if (cp && cp->alive && cp->girl && cp->polity == winner && cp->girl->grudge == w->ruler)
+            ctx_.agents->mark_girl(cp->id, 0.6f, 0.0f, last_merge_);
+    ctx_.agents->mark_girl(w->ruler, 0.0f, 0.4f, last_merge_);
 }
 
 void Society::update_wars(Polity& p) {
@@ -283,7 +337,10 @@ void Society::update_wars(Polity& p) {
             e.text = op.aim == "defend"
                          ? strfmt("「%s」的守军伤亡惨重，溃散了（损失 %d 人）", title(p.id).c_str(), op.lost)
                          : strfmt("「%s」的军队伤亡惨重，撤退了（损失 %d 人）", title(p.id).c_str(), op.lost);
-            ctx_.chron->emit(std::move(e));
+            const EventId ev = ctx_.chron->emit(std::move(e));
+            // The magical girls who led them carry the defeat.
+            for (const auto& cp : ctx_.agents->all())
+                if (cp && cp->alive && cp->girl && cp->drafted && cp->polity == p.id) ctx_.agents->mark_girl(cp->id, 0.25f, 0.0f, ev);
         }
     }
     // Muster → march once most soldiers have gathered (or after two hours).

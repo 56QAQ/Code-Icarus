@@ -90,6 +90,8 @@ public:
     bool at_war(u16 a, u16 b) const;
     // Drafts up to n residents (strongest, most combative first); returns how many serve.
     int draft(u16 polity, int n, EventId cause);
+    // The magical girls with battle magic who go with the army (at most two).
+    int enlist_champions(u16 polity, EventId cause);
     void discharge(u16 polity);
     int soldiers(u16 polity) const;
     int draftable(u16 polity) const;  // residents fit to serve who are not yet soldiers

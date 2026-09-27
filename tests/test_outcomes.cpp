@@ -159,8 +159,12 @@ TEST("migration: hungry, resentful residents walk over to a neighbour that feeds
     const u16 nid = sim.society().create_polity("丰饶", 0x88AA66, 1);
     rival->polity = nid;
     sim.society().set_ruler(nid, rival->id, "secession", 0);
-    // The rival's seat: the old hall serves both for this test.
+    // The rival's seat: the old hall serves both for this test; its granary is full.
     sim.society().polity(nid)->seat = home->seat;
+    if (const Building* hall = sim.buildings().get(home->seat)) {
+        const StoreId granary = sim.economy().create_store(StoreKind::Stockpile, hall->entrance + Vec3i{2, 0, 0}, nid, kNoEntity, 2000.0f);
+        sim.economy().add(granary, reg.find_item("grain"), 300, "test");
+    }
     int n = 0;
     for (auto& cp : sim.agents().all())
         if (cp && !cp->is_girl() && (n++ % 3 == 0)) cp->polity = nid;
