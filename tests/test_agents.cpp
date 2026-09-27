@@ -97,6 +97,55 @@ TEST("village: save/load mid-run continues identically") {
     CHECK_EQ(b.state_hash(), c.state_hash());
 }
 
+TEST("survey: regions are built over several ticks and a save in the middle continues identically") {
+    const Registry& reg = test_registry();
+    GameConfig cfg;
+    cfg.world = WorldConfig::for_layout(WorldLayout::Continent, 5);
+    cfg.scenario = "three_realms";
+    Simulation a(reg), b(reg);
+    a.new_game(cfg);
+    b.new_game(cfg);
+    // The first survey starts at once and needs more than one tick on the big island.
+    int ticks = 0;
+    while (!b.agents().surveying() && ticks < 700) {
+        b.run(1);
+        ++ticks;
+    }
+    CHECK(b.agents().surveying());
+    b.run(2);
+    CHECK(b.agents().surveying());
+    ticks += 2;
+    std::vector<u8> blob = b.save();
+    Simulation c(reg);
+    c.load(blob);
+    CHECK(c.agents().surveying());
+    CHECK_EQ(c.state_hash(), b.state_hash());
+    int left = 0;
+    while (c.agents().surveying() && left < 200) {
+        c.run(1);
+        ++left;
+    }
+    CHECK(!c.agents().surveying());
+    // Every settlement seat stands in a surveyed region once it is done.
+    for (const Polity& p : c.society().polities())
+        if (p.alive)
+            if (const Building* s = c.buildings().get(p.seat)) {
+                Vec3i st = s->entrance;
+                bool labelled = c.agents().region_at(st) != 0;
+                for (int dy = -3; dy <= 3 && !labelled; ++dy)
+                    for (int dz = -3; dz <= 3 && !labelled; ++dz)
+                        for (int dx = -3; dx <= 3 && !labelled; ++dx)
+                            labelled = c.agents().region_at(st + Vec3i{dx, dy, dz}) != 0;
+                CHECK(labelled);
+            }
+    const int more = 1200 - ticks;
+    a.run(1200);
+    b.run(more);
+    c.run(more - left);
+    CHECK_EQ(a.state_hash(), b.state_hash());
+    CHECK_EQ(b.state_hash(), c.state_hash());
+}
+
 namespace {
 GameConfig med_village(u64 seed) {
     GameConfig c;

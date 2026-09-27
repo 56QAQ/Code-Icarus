@@ -29,6 +29,7 @@ void Agents::reset(u64 seed) {
     region_map_.clear();
     region_anchors_.clear();
     region_built_ = 0;
+    survey_ = Survey{};
     ctx_.nav->major_dirty = ctx_.nav->minor_dirty = true;
     day = {};
     fail_ring_.fill(0);
@@ -97,6 +98,39 @@ void Agents::place_at(Character& c, const Vec3i& foot) {
     if (Store* s = ctx_.econ->store(c.inv)) s->pos = foot;
 }
 
+namespace {
+
+// Region labels, sorted for a canonical encoding.
+void write_region_cells(BinWriter& w, const RegionMap& map) {
+    std::vector<std::pair<Vec3i, u16>> cells;
+    cells.reserve(map.size());
+    map.for_each([&](const Vec3i& p, u16 id) { cells.push_back({p, id}); });
+    std::sort(cells.begin(), cells.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    w.varu(cells.size());
+    Vec3i prev{0, 0, 0};
+    for (auto& [p, id] : cells) {
+        w.vari(p.x - prev.x);
+        w.vari(p.y - prev.y);
+        w.vari(p.z - prev.z);
+        w.varu(id);
+        prev = p;
+    }
+}
+
+void read_region_cells(BinReader& r, RegionMap& map) {
+    map.clear();
+    const u64 nc = r.varu();
+    map.reserve((size_t)nc);
+    Vec3i prev{0, 0, 0};
+    for (u64 k = 0; k < nc; ++k) {
+        Vec3i p{prev.x + (i32)r.vari(), prev.y + (i32)r.vari(), prev.z + (i32)r.vari()};
+        map.set(p, (u16)r.varu());
+        prev = p;
+    }
+}
+
+}  // namespace
+
 // ------------------------------------------------------------------------------ main loop
 
 void Agents::step(Tick now) {
@@ -111,6 +145,7 @@ void Agents::step(Tick now) {
         daily_life();
         daily_drama();
     }
+    if (survey_.active) survey_step();
     if (now % 600 == 0) refresh_water_spots();
     if (now % 50 == 0) {
         ctx_.jobs->expire(now);
@@ -846,21 +881,7 @@ void Agents::save(BinWriter& w) const {
     w.u64v(region_built_);
     w.varu(region_anchors_.size());
     for (const Vec3i& a : region_anchors_) w.vec3i(a);
-    {
-        std::vector<std::pair<Vec3i, u16>> cells;
-        cells.reserve(region_map_.size());
-        region_map_.for_each([&](const Vec3i& p, u16 id) { cells.push_back({p, id}); });
-        std::sort(cells.begin(), cells.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-        w.varu(cells.size());
-        Vec3i prev{0, 0, 0};
-        for (auto& [p, id] : cells) {
-            w.vari(p.x - prev.x);
-            w.vari(p.y - prev.y);
-            w.vari(p.z - prev.z);
-            w.varu(id);
-            prev = p;
-        }
-    }
+    write_region_cells(w, region_map_);
     // Carts and dressed wounds (added later; loaders of older saves skip it).
     std::vector<const Character*> extra;
     for (const auto& c : chars_)
@@ -922,6 +943,24 @@ void Agents::save(BinWriter& w) const {
         w.u64v(g.drive_changed);
         w.u32v(g.duel);
         w.u64v(g.duel_since);
+    }
+    // A region survey in progress (version 1).
+    w.varu(1);
+    w.boolean(survey_.active);
+    if (survey_.active) {
+        const Survey& s = survey_;
+        w.varu(s.anchors.size());
+        for (const Vec3i& a : s.anchors) w.vec3i(a);
+        w.varu(s.anchor);
+        w.varu(s.open.size());
+        for (u8 o : s.open) w.u8v(o);
+        write_region_cells(w, s.map);
+        w.varu(s.queue.size() - s.head);
+        for (size_t i = s.head; i < s.queue.size(); ++i) w.vec3i(s.queue[i]);
+        w.u32v(s.pushed);
+        w.vec3i(s.seed);
+        w.u16v(s.id);
+        w.boolean(s.cut);
     }
     w.end_section(sec);
 }
@@ -1092,15 +1131,7 @@ void Agents::load(BinReader& outer) {
     region_anchors_.clear();
     u64 na = r.varu();
     for (u64 k = 0; k < na; ++k) region_anchors_.push_back(r.vec3i());
-    region_map_.clear();
-    u64 nc = r.varu();
-    region_map_.reserve((size_t)nc);
-    Vec3i prev{0, 0, 0};
-    for (u64 k = 0; k < nc; ++k) {
-        Vec3i p{prev.x + (i32)r.vari(), prev.y + (i32)r.vari(), prev.z + (i32)r.vari()};
-        region_map_.set(p, (u16)r.varu());
-        prev = p;
-    }
+    read_region_cells(r, region_map_);
     if (!r.at_end()) {
         u64 ne = r.varu();
         for (u64 k = 0; k < ne; ++k) {
@@ -1192,6 +1223,26 @@ void Agents::load(BinReader& outer) {
             g.duel_since = r.u64v();
         }
     }
+    survey_ = Survey{};
+    if (!r.at_end()) {
+        r.varu();  // survey block version
+        if (r.boolean()) {
+            Survey& s = survey_;
+            s.active = true;
+            const u64 na = r.varu();
+            for (u64 k = 0; k < na; ++k) s.anchors.push_back(r.vec3i());
+            s.anchor = (size_t)r.varu();
+            const u64 no = r.varu();
+            for (u64 k = 0; k < no; ++k) s.open.push_back(r.u8v());
+            read_region_cells(r, s.map);
+            const u64 nq = r.varu();
+            for (u64 k = 0; k < nq; ++k) s.queue.push_back(r.vec3i());
+            s.pushed = r.u32v();
+            s.seed = r.vec3i();
+            s.id = r.u16v();
+            s.cut = r.boolean();
+        }
+    }
 }
 
 u64 Agents::hash() const {
@@ -1210,6 +1261,8 @@ u64 Agents::hash() const {
             h = fnv1a64(&c->girl->trauma, sizeof(float), h);
         }
     }
+    if (survey_.active)
+        h = hash_combine(h, ((u64)survey_.anchor << 48) ^ ((u64)survey_.pushed << 16) ^ (u64)survey_.map.size());
     return h;
 }
 

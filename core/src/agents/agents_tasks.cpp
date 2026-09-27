@@ -115,8 +115,10 @@ void Agents::refresh_water_spots() {
                 }
             }
     }
+    relabel_regions();
     // Regions: flood from settlement anchors (seats, farms). Characters elsewhere get
     // region 0 (unknown) and fall back to plain path searches.
+    if (survey_.active) return;  // one survey at a time; it finishes within a few ticks
     std::vector<Vec3i> anchors;
     for (const Vec3i& c : centers) anchors.push_back(c);
     for (const Farm& f : ctx_.farming->all())
@@ -141,34 +143,98 @@ void Agents::refresh_water_spots() {
     bool stale = moved || (nav.major_dirty && now_ >= region_built_ + kTicksPerHour * 6) ||
                  (nav.minor_dirty && now_ >= region_built_ + kTicksPerDay);
     if (stale) {
-        region_anchors_ = anchors;
         region_built_ = now_;
         nav.major_dirty = nav.minor_dirty = false;
-        region_map_.clear();
-        region_map_.reserve(1 << 16);
-        region_open_.assign(1, 0);
-        u16 next = 1;
-        for (const Vec3i& a : anchors) {
+        survey_ = Survey{};
+        survey_.active = true;
+        survey_.anchors = std::move(anchors);
+        survey_.map.reserve(1 << 16);
+        survey_.open.assign(1, 0);
+        survey_step();
+    }
+}
+
+namespace {
+constexpr int kSurveyRadius = 110;     // xz reach of one flood around its anchor
+constexpr u32 kSurveyFloodMax = 60000; // positions one flood may label
+constexpr int kSurveyTickNodes = 4000; // positions expanded per tick
+}  // namespace
+
+void Agents::survey_step() {
+    Survey& s = survey_;
+    if (!s.active) return;
+    Nav& nav = *ctx_.nav;
+    const i64 r2 = (i64)kSurveyRadius * kSurveyRadius;
+    int budget = kSurveyTickNodes;
+    Vec3i nb[8];
+    float nc[8];
+    while (budget > 0) {
+        if (s.id == 0) {
+            if (s.anchor >= s.anchors.size() || s.open.size() >= 65535) {
+                // Done: the new survey replaces the old one.
+                region_map_ = std::move(s.map);
+                region_open_ = std::move(s.open);
+                region_anchors_ = std::move(s.anchors);
+                survey_ = Survey{};
+                relabel_regions();
+                return;
+            }
+            const Vec3i a = s.anchors[s.anchor++];
             Vec3i st = a;
             if (!nav.standable(st) && !nav.find_standable_near(a, st, 3)) continue;
-            if (region_map_.count(st)) continue;
-            bool open = false;
-            if (nav.flood(st, R + 30, 90000, region_map_, next, &open) > 0 && next < 65535) {
-                region_open_.push_back(open ? 1 : 0);
-                ++next;
+            if (s.map.count(st)) continue;
+            s.id = (u16)s.open.size();
+            s.seed = st;
+            s.queue.assign(1, st);
+            s.head = 0;
+            s.pushed = 1;
+            s.cut = false;
+            s.map.emplace(st, s.id);
+            --budget;
+        }
+        while (budget > 0 && s.head < s.queue.size() && s.pushed < kSurveyFloodMax) {
+            const Vec3i p = s.queue[s.head++];
+            --budget;
+            const int n = nav.neighbors(p, nb, nc);
+            for (int i = 0; i < n; ++i) {
+                const Vec3i& q = nb[i];
+                const i64 dx = q.x - s.seed.x, dz = q.z - s.seed.z;
+                if (dx * dx + dz * dz > r2) {
+                    s.cut = true;
+                    continue;
+                }
+                if (s.map.emplace(q, s.id)) {
+                    s.queue.push_back(q);
+                    ++s.pushed;
+                }
             }
         }
+        if (s.head >= s.queue.size() || s.pushed >= kSurveyFloodMax) {
+            // This flood is finished; a flood stopped at its limit may reach further.
+            s.open.push_back(s.cut || s.head < s.queue.size() ? 1 : 0);
+            nav.stats.flood_nodes += s.pushed;
+            s.id = 0;
+            s.queue.clear();
+            s.head = 0;
+            s.pushed = 0;
+        } else if (s.head > 4096 && s.head * 2 > s.queue.size()) {
+            s.queue.erase(s.queue.begin(), s.queue.begin() + (long)s.head);
+            s.head = 0;
+        }
     }
-    const auto& label = region_map_;
+}
+
+void Agents::relabel_regions() {
+    water_regions_.clear();
     for (const Vec3i& s : water_spots_) {
-        auto it = label.find(s);
-        water_regions_.push_back(it == label.end() ? 0 : it->second);
+        auto it = region_map_.find(s);
+        water_regions_.push_back(it == region_map_.end() ? 0 : it->second);
     }
     for (size_t i = 1; i < chars_.size(); ++i) {
         Character* c = chars_[i].get();
         if (!c || !c->alive || c->departed) continue;
-        auto it = label.find(c->foot);
-        c->region = it == label.end() ? 0 : it->second;
+        auto it = region_map_.find(c->foot);
+        c->region = it == region_map_.end() ? 0 : it->second;
     }
 }
 

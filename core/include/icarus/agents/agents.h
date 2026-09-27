@@ -57,6 +57,13 @@ public:
     bool nearest_walkable(const Vec3i& p, int radius, Vec3i& out) const;
     // A hazard residents will run from for a while (explosions, a god's wrath).
     void add_danger(const Vec3f& p, float radius) { dangers_.push_back({p, radius}); }
+    // A walkable-region survey is being built (spread over a few ticks).
+    bool surveying() const { return survey_.active; }
+    // Walkable region of a position as of the last finished survey (0 = unknown).
+    u16 region_at(const Vec3i& p) const {
+        auto it = region_map_.find(p);
+        return it == region_map_.end() ? 0 : it->second;
+    }
 
     // Utility: random personality/appearance/skills.
     void randomize(Character& c, Rng& rng);
@@ -258,7 +265,26 @@ private:
     std::vector<u8> region_open_;  // per region id: 1 if its flood was cut short (may reach further)
     std::vector<Vec3i> region_anchors_;
     Tick region_built_ = 0;
+    // A survey in progress: floods are run a few thousand positions per tick into a
+    // staging table and swapped in when every anchor is done, so no single tick carries
+    // the whole island. Saved with the rest, so a reload continues it exactly.
+    struct Survey {
+        bool active = false;
+        std::vector<Vec3i> anchors;
+        size_t anchor = 0;           // next anchor to seed a flood from
+        RegionMap map;
+        std::vector<u8> open;        // per region id, as region_open_
+        std::vector<Vec3i> queue;    // the running flood's breadth-first frontier
+        size_t head = 0;
+        u32 pushed = 0;              // positions the running flood has labelled
+        Vec3i seed{0, 0, 0};
+        u16 id = 0;                  // running flood's region id (0 = none running)
+        bool cut = false;            // running flood met its radius
+    };
+    Survey survey_;
     void refresh_water_spots();
+    void survey_step();
+    void relabel_regions();
 };
 
 }  // namespace icarus
