@@ -346,9 +346,17 @@ void Decisions::build_war_options(Decision& d, Polity& p, War& w) {
         r.action.set("aim", "raid");
         r.action.set("soldiers", raiders);
         r.facts.set("fit_to_fight", fit);
+        // Raids beaten back one after another, with nothing to show for them, dampen the
+        // appetite for the next; against an enemy now clearly stronger they are folly.
+        const Society::Assessment as = ctx_.society->assess(p.id, w.enemy);
+        r.facts.set("strength_ratio", as.ratio);
+        if (w.loot == 0 && w.losses > w.kills + 1) r.bias -= std::min(0.8f, 0.15f * (float)(w.losses - w.kills));
         if (fit < 3) {
             r.feasible = false;
             r.why_not = "能上阵的人太少";
+        } else if (as.ratio < 0.7f) {
+            r.feasible = false;
+            r.why_not = strfmt("敌强我弱（我方 %.0f，对方连同盟友 %.0f）", as.ours, as.theirs);
         }
         O.push_back(r);
         const int army = std::max(4, ours / 3);
