@@ -91,33 +91,52 @@ bool Agents::task_escape(Character& c) {
             return true;
         }
     }
-    // On a ledge inside the region (it can be walked down to, not back up from): climb
-    // down to ground from which home can be reached, taking a knock from a long drop.
+    // On a ledge or in a hollow inside the region (walked down into, not back out of):
+    // climb up or down to nearby ground from which home can be reached — slowly up a wall,
+    // or down with a knock from a long drop.
     if (t.step == 0 && region_map_.count(c.foot)) {
         Path tmp;
-        Vec3i best;
-        int bcost = 1 << 30;
+        // The hollow itself: everywhere she can walk to from here nearby (no use climbing
+        // to another spot on the same floor).
+        std::vector<Vec3i> pocket{c.foot}, frontier{c.foot};
+        while (!frontier.empty() && pocket.size() < 400) {
+            const Vec3i p = frontier.back();
+            frontier.pop_back();
+            Vec3i nb[8];
+            float nc[8];
+            const int n = nav.neighbors(p, nb, nc);
+            for (int k = 0; k < n; ++k) {
+                if (std::max(std::abs(nb[k].x - c.foot.x), std::abs(nb[k].z - c.foot.z)) > 8) continue;
+                if (std::find(pocket.begin(), pocket.end(), nb[k]) != pocket.end()) continue;
+                pocket.push_back(nb[k]);
+                frontier.push_back(nb[k]);
+            }
+        }
+        std::sort(pocket.begin(), pocket.end());
+        std::vector<std::pair<int, Vec3i>> cands;
         for (int r = 1; r <= 6; ++r)
             for (int dz = -r; dz <= r; ++dz)
                 for (int dx = -r; dx <= r; ++dx) {
                     if (std::max(std::abs(dx), std::abs(dz)) != r) continue;
-                    for (int dy = -1; dy >= -12; --dy) {
+                    for (int dy = 8; dy >= -12; --dy) {
                         const Vec3i q = c.foot + Vec3i{dx, dy, dz};
-                        if (!nav.standable(q)) continue;
-                        const int cost = r * 2 - dy;
-                        if (cost < bcost && nav.find_path(q, seat->entrance, true, tmp, 30000)) {
-                            bcost = cost;
-                            best = q;
-                        }
-                        break;  // the first ground below is where she would land
+                        if (!nav.standable(q) || std::binary_search(pocket.begin(), pocket.end(), q)) continue;
+                        cands.push_back({r * 2 + (dy > 0 ? dy * 3 : -dy), q});
                     }
                 }
-        if (bcost < (1 << 30)) {
+        std::sort(cands.begin(), cands.end(), [](const auto& a, const auto& b) {
+            return a.first != b.first ? a.first < b.first : a.second < b.second;
+        });
+        for (size_t k = 0; k < cands.size() && k < 12; ++k) {
+            if (!nav.find_path(cands[k].second, seat->entrance, true, tmp, 30000)) continue;
+            const Vec3i best = cands[k].second;
+            const int up = best.y - c.foot.y;
             t.target2 = best;
-            t.until = now_ + 40;
+            t.until = now_ + 40 + (up > 0 ? 45 * up : 0);
             t.step = 4;
             c.yaw = std::atan2((float)(best.x - c.foot.x), (float)(best.z - c.foot.z));
-            say(c, "被困在崖上，小心地攀下去");
+            say(c, up > 0 ? "被困在坑里，手脚并用地往上爬" : "被困在崖上，小心地攀下去");
+            break;
         }
     }
     if (t.step == 4) {
@@ -130,6 +149,14 @@ bool Agents::task_escape(Character& c) {
         c.water_spot = {-1, -1, -1};
         end_task(c, true);
         return true;
+    }
+    // (Still in the region with no way found: the stairway below would count itself
+    // arrived at once. Give up here for now.)
+    if (t.step == 0 && region_map_.count(c.foot)) {
+        say(c, "四面都是绝壁，无路可走");
+        blacklist(c, c.foot, kTicksPerHour);
+        end_task(c, false);
+        return false;
     }
     if (t.step == 0) {
         int best = -1;

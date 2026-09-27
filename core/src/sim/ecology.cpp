@@ -29,6 +29,10 @@ bool Ecology::open_grass(const Vec3i& p, const Buildings& buildings) {
         !(continent && ground != M.air && (ground == M.dry_grass || ground == M.snow || ground == M.mud)))
         return false;
     if (mat(p) != M.air || mat(p + Vec3i{0, 1, 0}) != M.air) return false;
+    // Not at the lip of a pit, cut or cliff, where the crown would hang over the way down.
+    for (int dz = -2; dz <= 2; ++dz)
+        for (int dx = -2; dx <= 2; ++dx)
+            if (!reg_->mat(mat(p + Vec3i{dx, -1, dz})).solid && !reg_->mat(mat(p + Vec3i{dx, -2, dz})).solid) return false;
     // Not against houses, halls or storehouses (doors and walls stay clear).
     for (int dz = -2; dz <= 2; ++dz)
         for (int dx = -2; dx <= 2; ++dx)

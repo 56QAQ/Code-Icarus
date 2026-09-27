@@ -329,6 +329,10 @@ void Agents::production_jobs() {
                         if (!cc.land || std::abs((int)cc.top - (int)col.top) > 1) ok = false;
                         for (int y = col.top - 1; y <= col.top + 3 && ok; ++y)
                             if (ctx_.buildings->at({x0 + dx, y, z0 + dz})) ok = false;
+                        // Under open sky: a tree's crown over the cut would take the
+                        // headroom off the steps and shut the pit.
+                        for (int y = col.top + 2; y <= col.top + 6 && ok; ++y)
+                            if (reg.mat(vmat(w.peek({x0 + dx, y, z0 + dz}))).solid) ok = false;
                     }
                 if (!ok) continue;
                 Json cubes = Json::array();
