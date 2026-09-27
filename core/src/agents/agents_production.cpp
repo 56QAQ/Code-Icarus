@@ -149,8 +149,9 @@ void Agents::production_jobs() {
         }
 
         // Gathering: every 2.4 game hours, look for trees, stone and ore to take (each
-        // polity at its own moment, so the surveys do not pile into one tick).
-        if ((now_ + (Tick)pc.id * 197) % 600 != 0) continue;
+        // polity in its own slot of the job rounds, which come every 50 ticks, so the
+        // surveys do not pile into one tick).
+        if ((now_ / 50 + (Tick)pc.id * 5) % 12 != 0) continue;
         const Building* seat = ctx_.buildings->get(pc.seat);
         if (!seat) continue;
         World& w = *ctx_.world;

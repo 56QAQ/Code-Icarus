@@ -1,5 +1,6 @@
 // Starting eras (开局时代): a wild band around a campfire, a tribal camp, and how a band
 // lives by foraging and learns by doing.
+#include "icarus/agents/jobs.h"
 #include "icarus/decision/decisions.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/economy/farming.h"
@@ -257,4 +258,24 @@ TEST("eras: seed grain kept for sowing does not send the hungry to an empty lard
     sim.economy().add(seat->store, test_registry().find_item("grain"), 30, "test");
     CHECK(!sim.agents().seed_kept(*c));
     CHECK_EQ(sim.agents().find_food_store(*c, true, false), seat->store);
+}
+
+TEST("eras: a band that knows stone tools goes out for wood and stone") {
+    Simulation sim(test_registry());
+    GameConfig cfg = start("wild", 3);
+    cfg.scenario = "wild";
+    sim.new_game(cfg);
+    Polity& p = band(sim);
+    p.techs.push_back("stone_tools");
+    bool chop = false, mine = false;
+    for (int i = 0; i < 16 && !(chop && mine); ++i) {
+        sim.run(100);
+        for (const Job& j : sim.jobs().all())
+            if (j.alive && j.polity == p.id) {
+                chop = chop || j.type == JobType::Chop;
+                mine = mine || j.type == JobType::Mine;
+            }
+    }
+    CHECK(chop);
+    CHECK(mine);
 }

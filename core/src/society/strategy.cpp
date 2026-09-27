@@ -12,6 +12,7 @@
 #include "icarus/economy/buildings.h"
 #include "icarus/sim/clock.h"
 #include "icarus/society/society.h"
+#include "icarus/util/rng.h"
 #include "icarus/util/log.h"
 
 namespace icarus {
@@ -33,7 +34,9 @@ const Json* ruler_drive(const SimContext& ctx, const Polity* p) {
 }  // namespace
 
 float Society::settle_days(u16 id) const {
-    return kSettleDays + clampv(12.0f * (0.5f - war_appetite(id)), 0.0f, 9.0f);
+    // Each realm's own pace (a pure hash of the world and the realm): up to four days more.
+    const float own = (float)(hash3(ctx_.world->config().seed, (i32)id, 0x5E77, 1) & 0xFFFF) / 65535.0f;
+    return kSettleDays + clampv(12.0f * (0.5f - war_appetite(id)), 0.0f, 9.0f) + 4.0f * own;
 }
 
 float Society::war_appetite(u16 id) const {
