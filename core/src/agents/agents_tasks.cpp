@@ -101,9 +101,21 @@ void Agents::refresh_water_spots() {
         if (!p.alive) continue;
         if (const Building* b = ctx_.buildings->get(p.seat)) centers.push_back(b->entrance);
     }
+    // Water is sought around every place people live, not only the seats: a colony or a
+    // conquered village far from the hall drinks from its own lake.
+    std::vector<Vec3i> scan = centers;
+    for (const Polity& p : ctx_.society->polities())
+        if (p.alive)
+            for (const Vec3i& o : p.outposts) scan.push_back(o);
+    for (const Building& b : ctx_.buildings->all()) {
+        if (!b.alive || !b.complete || !b.polity || (b.beds <= 0 && b.def != "hall")) continue;
+        bool near = false;
+        for (const Vec3i& c : scan) near = near || c.dist2(b.entrance) < 70 * 70;
+        if (!near) scan.push_back(b.entrance);
+    }
     const int R = 110;
     std::unordered_set<Vec3i, Vec3iHash> seen;
-    for (const Vec3i& c : centers) {
+    for (const Vec3i& c : scan) {
         for (int dz = -R; dz <= R; dz += 2)
             for (int dx = -R; dx <= R; dx += 2) {
                 if (dx * dx + dz * dz > R * R) continue;
