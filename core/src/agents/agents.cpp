@@ -532,6 +532,9 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
                     if (auto it = region_map_.find(goal + Vec3i{0, dy, 0}); it != region_map_.end()) gl = it->second;
                 auto open = [&](u16 id) { return id < region_open_.size() && region_open_[id]; };
                 budget = !other ? 6000 : (open(rf->second) && (gl == 0 || open(gl)) ? 60000 : 0);
+                // A builder on a ladder reaches up past the regions the survey saw (a roof
+                // top can look like a separate, closed region): always search.
+                if (reach_up > 3) budget = std::max(budget, 20000);
             }
         }
         // Long searches are shared out over the ticks: when this tick's share is spent

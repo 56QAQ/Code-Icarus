@@ -285,7 +285,7 @@ void Agents::think(Character& c) {
         // Needs cannot be met from here; getting out comes first unless dying of thirst
         // right next to water.
         float need = std::max(1.0f - c.needs.food, 1.0f - c.needs.water);
-        add("设法脱困", 1.4f + 2.0f * need, "被困在无法走出的地方，只能挖出一条路");
+        add("设法脱困", 1.6f + 3.0f * need, "被困在无法走出的地方，只能设法出去");
     }
 
     SpellPick spell;

@@ -481,6 +481,9 @@ bool Buildings::find_site(const std::string& key, const Vec3i& near, int radius,
                 const Vec3i p = to_world(*d, o, rt, {door_x, 0, d->d + k});
                 if (!flat_dry(p.x, p.z, gy)) ok = false;
                 const int y = w_.surface_y(p.x, p.z);
+                // Never a step down into the doorway: under the lintel there is no headroom
+                // for it, and once the roof is on nobody could get in.
+                if (k == 0 && y > gy) ok = false;
                 for (int h = 0; h <= 3 && ok; ++h)
                     if (at({p.x, y + h, p.z})) ok = false;
             }

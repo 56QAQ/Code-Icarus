@@ -6,7 +6,10 @@
 #include <cmath>
 
 #include "icarus/agents/agents.h"
+#include "icarus/agents/nav.h"
+#include "icarus/economy/buildings.h"
 #include "icarus/sim/clock.h"
+#include "icarus/society/society.h"
 #include "icarus/util/log.h"
 
 namespace icarus {
@@ -18,10 +21,13 @@ const Vec3i kDirs[4] = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
 }  // namespace
 
 bool Agents::trapped(const Character& c) const {
+    if (!(c.needs.food < 0.8f || c.needs.water < 0.8f)) return false;
     // Outside every settlement's walkable region (as of the last survey) and here now,
-    // and unable to get anywhere (being far out in open country is not being trapped).
-    if (c.region != 0 || region_map_.empty() || region_map_.count(c.foot)) return false;
-    return (c.needs.food < 0.8f || c.needs.water < 0.8f) && c.unreachable.size() >= 3;
+    // and unable to get anywhere (being far out in open country is not being trapped)...
+    if (c.region == 0 && !region_map_.empty() && !region_map_.count(c.foot) && c.unreachable.size() >= 3) return true;
+    // ...or on a ledge that the region's paths lead down to but never back up from:
+    // nothing she tries to reach can be reached.
+    return c.unreachable.size() >= 10;
 }
 
 bool Agents::task_escape(Character& c) {
@@ -71,6 +77,54 @@ bool Agents::task_escape(Character& c) {
         return -1;
     };
 
+    // On a ledge inside the region (it can be walked down to, not back up from): first
+    // make sure she really cannot get home from here, then climb down to ground that
+    // can, taking a knock from a long drop.
+    if (t.step == 0 && region_map_.count(c.foot)) {
+        const Polity* pp = ctx_.society->polity(c.polity);
+        const Building* seat = pp ? ctx_.buildings->get(pp->seat) : nullptr;
+        Path tmp;
+        if (!seat || nav.find_path(c.foot, seat->entrance, true, tmp, 30000)) {
+            c.unreachable.clear();  // not stuck after all
+            end_task(c, true);
+            return true;
+        }
+        Vec3i best;
+        int bcost = 1 << 30;
+        for (int r = 1; r <= 6; ++r)
+            for (int dz = -r; dz <= r; ++dz)
+                for (int dx = -r; dx <= r; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dz)) != r) continue;
+                    for (int dy = -1; dy >= -12; --dy) {
+                        const Vec3i q = c.foot + Vec3i{dx, dy, dz};
+                        if (!nav.standable(q)) continue;
+                        const int cost = r * 2 - dy;
+                        if (cost < bcost && nav.find_path(q, seat->entrance, true, tmp, 30000)) {
+                            bcost = cost;
+                            best = q;
+                        }
+                        break;  // the first ground below is where she would land
+                    }
+                }
+        if (bcost < (1 << 30)) {
+            t.target2 = best;
+            t.until = now_ + 40;
+            t.step = 4;
+            c.yaw = std::atan2((float)(best.x - c.foot.x), (float)(best.z - c.foot.z));
+            say(c, "被困在崖上，小心地攀下去");
+        }
+    }
+    if (t.step == 4) {
+        if (now_ < t.until) return true;
+        const Vec3i q = t.target2;
+        const int drop = c.foot.y - q.y;
+        place_at(c, q);
+        if (drop > 3) damage(c, 0.04f * (float)(drop - 3), -1, "从崖上跌落", 0);
+        c.unreachable.clear();
+        c.water_spot = {-1, -1, -1};
+        end_task(c, true);
+        return true;
+    }
     if (t.step == 0) {
         int best = -1;
         Vec3i bdir{0, 0, 0};
