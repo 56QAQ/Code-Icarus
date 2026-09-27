@@ -225,3 +225,36 @@ TEST("eras: a new era is built on the old one — half of its techs first") {
     auto [known2, needed2] = v.society().era_foundation(band(v), 2);
     CHECK(known2 >= needed2);
 }
+
+TEST("eras: seed grain kept for sowing does not send the hungry to an empty larder") {
+    Simulation sim(test_registry());
+    GameConfig cfg = start("wild", 5);
+    cfg.scenario = "wild";
+    sim.new_game(cfg);
+    sim.run(5);
+    Polity& p = band(sim);
+    p.techs.push_back("stone_tools");
+    p.techs.push_back("farming");
+    const Building* seat = sim.buildings().get(p.seat);
+    std::vector<ItemStack> items = sim.economy().store(seat->store)->items;
+    for (const ItemStack& is : items)
+        if (test_registry().item(is.item).nutrition > 0) sim.economy().remove(seat->store, is.item, is.count, "test");
+    sim.economy().add(seat->store, test_registry().find_item("grain"), 20, "test");
+    Character* c = nullptr;
+    for (auto& cp : sim.agents().all())
+        if (cp && cp->alive && !cp->is_girl() && cp->polity == p.id) c = cp.get();
+    REQUIRE(c != nullptr);
+    // Hungry but not starving: the 20 grain are seed, so there is no meal in the store.
+    c->needs.food = 0.3f;
+    CHECK(sim.agents().seed_kept(*c));
+    CHECK_EQ(sim.agents().find_food_store(*c, true, false), kNoStore);
+    // Starving: seed or not, it is eaten.
+    c->needs.food = 0.1f;
+    CHECK(!sim.agents().seed_kept(*c));
+    CHECK_EQ(sim.agents().find_food_store(*c, true, false), seat->store);
+    // Enough seed put by: the rest is food again.
+    c->needs.food = 0.3f;
+    sim.economy().add(seat->store, test_registry().find_item("grain"), 30, "test");
+    CHECK(!sim.agents().seed_kept(*c));
+    CHECK_EQ(sim.agents().find_food_store(*c, true, false), seat->store);
+}

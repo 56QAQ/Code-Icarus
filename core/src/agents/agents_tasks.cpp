@@ -46,6 +46,16 @@ void Agents::run_task(Character& c) {
 
 // ------------------------------------------------------------------------------ helpers
 
+bool Agents::seed_kept(const Character& c) const {
+    // Farmers without enough seed keep the grain for sowing unless someone is starving.
+    const Polity* p = ctx_.society->polity(c.polity);
+    if (!p || !p->has_tech("farming") || c.needs.food <= 0.15f) return false;
+    const ItemId grain = ctx_.reg->find_item("grain");
+    i64 seed = 0;
+    for (StoreId sid : ctx_.society->public_stores(c.polity)) seed += ctx_.econ->available(sid, grain);
+    return seed < kSeedKept;
+}
+
 StoreId Agents::find_food_store(Character& c, bool public_only, bool allow_over_ration) {
     (void)public_only;
     Polity* p = ctx_.society->polity(c.polity);
@@ -58,12 +68,15 @@ StoreId Agents::find_food_store(Character& c, bool public_only, bool allow_over_
     }
     StoreId best = kNoStore;
     float bd = 1e30f;
+    // Seed grain kept for sowing is not food for this trip: a store holding nothing else
+    // is not worth the walk (the hungry forage instead).
+    const ItemId seed = seed_kept(c) ? ctx_.reg->find_item("grain") : kNoItem;
     for (StoreId sid : ctx_.society->public_stores(c.polity)) {
         const Store* s = ctx_.econ->store(sid);
         if (!s) continue;
         bool has = false;
         for (auto& st : s->items)
-            if (food_item(*ctx_.reg, st.item) && ctx_.econ->available(sid, st.item, c.id) > 0) has = true;
+            if (st.item != seed && food_item(*ctx_.reg, st.item) && ctx_.econ->available(sid, st.item, c.id) > 0) has = true;
         if (!has) continue;
         if (blacklisted(c, s->pos)) continue;
         float d = (float)c.foot.dist2(s->pos);
@@ -426,14 +439,10 @@ bool Agents::task_eat(Character& c) {
             }
         }
         std::vector<ItemStack> avail = s->items;
-        // Farmers without enough seed keep the grain for sowing unless someone is starving.
-        if (p && p->has_tech("farming") && c.needs.food > 0.15f) {
+        if (seed_kept(c)) {
             const ItemId grain = reg.find_item("grain");
-            i64 seed = 0;
-            for (StoreId sid : ctx_.society->public_stores(c.polity)) seed += ctx_.econ->available(sid, grain);
-            if (seed < 40)
-                avail.erase(std::remove_if(avail.begin(), avail.end(), [&](const ItemStack& is) { return is.item == grain; }),
-                            avail.end());
+            avail.erase(std::remove_if(avail.begin(), avail.end(), [&](const ItemStack& is) { return is.item == grain; }),
+                        avail.end());
         }
         std::stable_sort(avail.begin(), avail.end(), [&](const ItemStack& a, const ItemStack& b) {
             return reg.item(a.item).nutrition + reg.item(a.item).joy > reg.item(b.item).nutrition + reg.item(b.item).joy;

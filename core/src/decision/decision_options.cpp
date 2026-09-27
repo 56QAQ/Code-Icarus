@@ -253,13 +253,15 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
                 }
             }
             if (farm) {
-                int n = 20;
+                const bool band = ctx_.society->foraging_band(p);
+                const int grain = public_count(ctx_, p.id, "grain");
+                int n = band ? std::clamp(grain - 4, 4, 20) : 20;
                 DecisionOption o = make("expand_farms", strfmt("扩建田地（约 +%d 块）", n),
                                         strfmt("在灌溉渠附近开垦新田：每块要一份谷种（共约 %d 份），约 3 天后才有收成。", n),
                                         {{kFoodSecurity, 0.7f}, {kGrowth, 0.8f}, {kWelfare, 0.2f}, {kSpeed, -0.6f}, {kFrugality, -0.2f}},
                                         act("expand_farm"));
                 o.action.set("n", n);
-                if (public_count(ctx_, p.id, "grain") < n + 20) {
+                if (grain < (band ? 8 : n + 20)) {
                     o.feasible = false;
                     o.why_not = "存粮太少，拿不出谷种";
                 }
@@ -595,12 +597,19 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         }
     }
     if (polity_farm(ctx_, p.id)) {
-        DecisionOption o = make("expand_farms", "扩建田地", "为将来储备粮食；每块新田要一份谷种。",
-                                {{kFoodSecurity, 0.5f}, {kGrowth, 0.7f}, {kFrugality, -0.2f}, {kSpeed, -0.4f}}, act("expand_farm"));
-        o.action.set("n", 16);
-        if (p.stats.food_days < 2.0f || public_count(ctx_, p.id, "grain") < 40) {
+        // A band still living mostly from foraging never has days of food put by: its
+        // few fields grow by the seed it has gathered or harvested.
+        const bool band = ctx_.society->foraging_band(p);
+        const int grain = public_count(ctx_, p.id, "grain");
+        const int n = band ? std::clamp(grain - 4, 4, 16) : 16;
+        DecisionOption o = make("expand_farms", strfmt("扩建田地（约 +%d 块）", n),
+                                band ? strfmt("把存下的谷种（%d 份）种进新开的田里，少靠一点采集。", grain)
+                                     : std::string("为将来储备粮食；每块新田要一份谷种。"),
+                                {{kFoodSecurity, band ? 0.7f : 0.5f}, {kGrowth, 0.7f}, {kFrugality, -0.2f}, {kSpeed, -0.4f}}, act("expand_farm"));
+        o.action.set("n", n);
+        if (band ? grain < 8 : (p.stats.food_days < 2.0f || grain < 40)) {
             o.feasible = false;
-            o.why_not = "存粮不宽裕，现在扩田会吃掉口粮";
+            o.why_not = band ? "还没攒下足够的谷种" : "存粮不宽裕，现在扩田会吃掉口粮";
         }
         O.push_back(o);
     }

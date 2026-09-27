@@ -57,6 +57,11 @@ public:
     bool nearest_walkable(const Vec3i& p, int radius, Vec3i& out) const;
     // A hazard residents will run from for a while (explosions, a god's wrath).
     void add_danger(const Vec3f& p, float radius) { dangers_.push_back({p, radius}); }
+    // The public store a hungry resident would walk to for a meal (none: forage instead).
+    StoreId find_food_store(Character& c, bool public_only, bool allow_over_ration);
+    // Grain held back as seed (a farming people with less than this keeps it for sowing).
+    static constexpr i64 kSeedKept = 40;
+    bool seed_kept(const Character& c) const;
     // A walkable-region survey is being built (spread over a few ticks).
     bool surveying() const { return survey_.active; }
     // Walkable region of a position as of the last finished survey (0 = unknown).
@@ -230,7 +235,6 @@ private:
     bool blacklisted(Character& c, const Vec3i& p);
     void blacklist(Character& c, const Vec3i& p, Tick duration);
     // helpers
-    StoreId find_food_store(Character& c, bool public_only, bool allow_over_ration);
     StoreId nearest_storage(u16 polity, const Vec3i& from, ItemId item_for_capacity);
     float danger_at(const Character& c) const;
     bool is_work_time(const Character& c) const;
