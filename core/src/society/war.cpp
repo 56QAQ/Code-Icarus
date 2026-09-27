@@ -532,6 +532,8 @@ void Society::update_wars(Polity& p) {
                 e.text = strfmt("「%s」的守军解散回家（折损 %d 人）", p.name.c_str(), op.lost);
             e.data.set("loot", op.loot);
             ctx_.chron->emit(std::move(e));
+            if (War* wr = op.aim == "raid" ? p.war_with(op.enemy) : nullptr)
+                wr->repulsed = op.loot > 0 ? 0 : wr->repulsed + (op.lost > 0 ? 1 : 0);
             op.active = false;
             discharge(p.id);
         }

@@ -98,6 +98,7 @@ struct War {
     int loot = 0;            // food carried off from them
     int razed = 0;           // cubes of their buildings broken
     int refused = 0;         // our demands they turned down
+    int repulsed = 0;        // our raids beaten back in a row, with nothing carried off
     Tick last_offer = 0;     // our last offer of peace
     Tick active_at = 0;      // the last fighting, raiding or marching in this war
     // How the war stands for us: blood, plunder and ruin.

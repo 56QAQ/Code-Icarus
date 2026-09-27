@@ -922,6 +922,12 @@ void Society::save(BinWriter& w) const {
         w.vec3i(polities_[i].op.stage);
         w.u64v(polities_[i].op.staged_since);
     }
+    // Version 5: raids beaten back in each war.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) {
+        w.varu(polities_[i].wars.size());
+        for (const War& wr : polities_[i].wars) w.vari(wr.repulsed);
+    }
     w.end_section(sec);
 }
 
@@ -1148,6 +1154,16 @@ void Society::load(BinReader& outer) {
                     if (i < polities_.size()) {
                         polities_[i].op.stage = stage;
                         polities_[i].op.staged_since = since;
+                    }
+                }
+            }
+            if (!r.at_end()) {
+                const u64 np7 = r.varu();
+                for (size_t i = 1; i < (size_t)np7; ++i) {
+                    const u64 nw = r.varu();
+                    for (u64 k = 0; k < nw; ++k) {
+                        const int rep = (int)r.vari();
+                        if (i < polities_.size() && k < polities_[i].wars.size()) polities_[i].wars[k].repulsed = rep;
                     }
                 }
             }
