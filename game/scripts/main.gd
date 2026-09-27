@@ -9,6 +9,7 @@ extends Node3D
 
 var renderer: WorldRenderer
 var fx: FxRenderer
+var spells: SpellRenderer
 var chars: CharacterRenderer
 var animals: AnimalRenderer
 var rig: CameraRig
@@ -36,6 +37,8 @@ func _ready() -> void:
 	add_child(renderer)
 	fx = FxRenderer.new()
 	add_child(fx)
+	spells = SpellRenderer.new()
+	add_child(spells)
 	chars = CharacterRenderer.new()
 	add_child(chars)
 	animals = AnimalRenderer.new()
@@ -191,6 +194,34 @@ func _ready() -> void:
 		_shot_path = _cli["shot"]
 		_shot_frames = int(_cli.get("frames", "20"))
 		Game.paused = true
+
+
+## Screenshot helper: casts of the named spells (comma-separated effects) in a row in
+## front of the camera, from the girls of the world if there are any.
+func _spell_demo(list: String) -> void:
+	var effects := list.split(",")
+	var girls: Array = []
+	for c in Game.sim.characters():
+		if c.get("girl", false) and c["alive"]:
+			girls.append(c)
+	var right := rig.camera.global_transform.basis.x
+	right.y = 0
+	right = right.normalized()
+	var fwd := -rig.camera.global_transform.basis.z
+	fwd.y = 0
+	fwd = fwd.normalized()
+	var base := rig.target
+	var n := effects.size()
+	for i in n:
+		var off := (float(i) - (n - 1) * 0.5) * 9.0
+		var at := base + right * off
+		var ground := Game.sim.raycast(at + Vector3(0, 40, 0), Vector3.DOWN, 80.0)
+		if ground.get("hit", false):
+			at.y = float(Vector3i(ground["cube"]).y) + 2.0
+		var girl: Dictionary = girls[i % girls.size()] if not girls.is_empty() else {}
+		var accent: Color = girl.get("accent", Color(0.9, 0.6, 1.0)) if not girl.is_empty() else Color(0.9, 0.6, 1.0)
+		spells._spawn({"effect": effects[i], "name": effects[i], "drive": "", "caster": 0, "target": 0,
+			"from": at - fwd * 4.0 + Vector3(0, 1.3, 0), "to": at + fwd * 3.0, "radius": 6.0, "color": accent})
 
 
 func _parse_cli() -> Dictionary:
@@ -466,6 +497,7 @@ func _on_world_ready() -> void:
 	renderer.focus = Vector3(v)
 	renderer.setup(Game.sim, rig.camera)
 	fx.setup(Game.sim, rig.camera)
+	spells.setup(Game.sim, rig.camera)
 	chars.setup(Game.sim, rig.camera)
 	animals.focus = Vector3(v)
 	animals.setup(Game.sim, rig.camera)
@@ -549,6 +581,8 @@ func _screenshot_step() -> void:
 			Game.sim.step(int(_cli.get("late-ticks", "2")))
 		if _cli.has("late-run"):
 			Game.paused = false  # let the world move for the last frames
+		if _cli.has("spell-demo"):
+			_spell_demo(String(_cli["spell-demo"]))
 	if _shot_wait < _shot_frames:
 		return
 	var img := get_viewport().get_texture().get_image()

@@ -14,7 +14,7 @@ namespace icarus {
 
 namespace {
 // Per-character data added in version 2 (see Agents::save).
-constexpr u64 kCharBlockVersion = 2;  // 2: age, partner, parents, awakening
+constexpr u64 kCharBlockVersion = 3;  // 2: age, partner, parents, awakening; 3: empowerment
 }  // namespace
 
 Agents::Agents(SimContext& ctx) : ctx_(ctx) {}
@@ -878,6 +878,8 @@ void Agents::save(BinWriter& w) const {
         w.u32v(c.parents[1]);
         w.u64v(c.last_child);
         w.u64v(c.girl ? c.girl->awakened : 0);
+        w.u64v(c.empowered_until);
+        w.f32(c.empowered);
     }
     w.varu(region_open_.size());
     for (u8 o : region_open_) w.u8v(o);
@@ -1104,6 +1106,10 @@ void Agents::load(BinReader& outer) {
                 const Tick aw = r.u64v();
                 if (ch.girl) ch.girl->awakened = aw;
             }
+            if (version >= 3) {
+                ch.empowered_until = r.u64v();
+                ch.empowered = r.f32();
+            }
         }
     }
     region_open_.assign(1, 0);
@@ -1129,6 +1135,7 @@ u64 Agents::hash() const {
         h = hash_combine(h, (u64)c->body.total_alive());
         h = hash_combine(h, ((u64)c->partner << 32) ^ (u64)c->parents[0] ^ ((u64)c->parents[1] << 16));
         h = fnv1a64(&c->age0, sizeof(c->age0), h);
+        h = hash_combine(h, c->empowered_until);
     }
     return h;
 }

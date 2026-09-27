@@ -43,6 +43,7 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("render_cells"), &IcarusSim::render_cells);
     ClassDB::bind_method(D_METHOD("material_table"), &IcarusSim::material_table);
     ClassDB::bind_method(D_METHOD("take_fx"), &IcarusSim::take_fx);
+    ClassDB::bind_method(D_METHOD("take_spells"), &IcarusSim::take_spells);
     ClassDB::bind_method(D_METHOD("fire_spots", "max_count"), &IcarusSim::fire_spots);
     ClassDB::bind_method(D_METHOD("build_cell_mesh", "cell"), &IcarusSim::build_cell_mesh);
     ClassDB::bind_method(D_METHOD("build_lod_mesh", "column", "step"), &IcarusSim::build_lod_mesh);
@@ -267,6 +268,29 @@ Array IcarusSim::material_table() const {
         d["foliage"] = m.foliage;
         d["sprite"] = to_gd(m.sprite);
         d["sprite_layer"] = m.sprite_layer;
+        out.push_back(d);
+    }
+    return out;
+}
+
+Array IcarusSim::take_spells() {
+    Array out;
+    if (!sim_) return out;
+    for (const icarus::Agents::SpellFx& f : sim_->agents().take_spells()) {
+        Dictionary d;
+        d["effect"] = String(f.effect.c_str());
+        d["name"] = String::utf8(f.name.c_str());
+        d["drive"] = String(f.drive.c_str());
+        d["caster"] = (int64_t)f.caster;
+        d["target"] = (int64_t)f.target;
+        d["from"] = Vector3(f.from.x, f.from.y, f.from.z);
+        d["to"] = Vector3(f.to.x, f.to.y, f.to.z);
+        d["radius"] = f.radius;
+        // The caster's colours (her costume accent), for the light of the spell.
+        Color accent(0.9, 0.85, 1.0);
+        for (const icarus::Json& dd : reg_->doc("drives")["drives"].items())
+            if (dd.str("key") == f.drive) accent = Color::html(String(dd["costume"].str("accent", "#e8e0ff").c_str()));
+        d["color"] = accent;
         out.push_back(d);
     }
     return out;

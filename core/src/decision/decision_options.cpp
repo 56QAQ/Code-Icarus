@@ -1335,6 +1335,16 @@ void Decisions::execute(Decision& d) {
         } else {
             e.text = g->name + "施展了魔法";
         }
+        // Seen where it happens: the feast at her stores, growth over the fields, the song
+        // and the dread around her.
+        Vec3f at = g->pos + Vec3f(0.0f, 1.0f, 0.0f);
+        float radius = eff == "inspire" ? 14.0f : (eff == "terrify" ? 10.0f : 4.0f);
+        if (eff == "grow")
+            if (const Farm* f = ctx_.farming->get(polity_farm(ctx_, p->id))) {
+                at = Vec3f((float)f->center.x + 0.5f, (float)f->center.y + 1.0f, (float)f->center.z + 0.5f);
+                radius = 10.0f;
+            }
+        ctx_.agents->note_spell(*g, eff, a.str("name"), at, kNoEntity, radius);
         ctx_.chron->emit(std::move(e));
     } else if (what == "petition") {
         Character* ruler = ctx_.agents->get(p->ruler);

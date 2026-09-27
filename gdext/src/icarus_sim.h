@@ -44,6 +44,7 @@ public:
     PackedInt32Array render_cells() const;  // all cells that may contain matter
     Array material_table() const;           // by material id: key, name, colour, kind flags
     PackedInt32Array take_fx();             // [kind, x, y, z, material] per broken / landed cube
+    Array take_spells();                    // spells cast since the last call (effect, from, to, colours...)
     PackedVector3Array fire_spots(int64_t max_count) const;  // burning cubes
     Array build_cell_mesh(const Vector3i& cell);
     Array build_lod_mesh(const Vector2i& column, int step);

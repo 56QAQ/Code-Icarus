@@ -45,6 +45,7 @@ public:
     u32 create(u16 polity, const std::string& name, const std::vector<Vec3i>& grounds);
     Farm* get(u32 id) { return (id > 0 && id < farms_.size() && farms_[id].alive) ? &farms_[id] : nullptr; }
     const std::vector<Farm>& all() const { return farms_; }
+    std::vector<Farm>& all_mut() { return farms_; }
 
     PlotState state(const Plot& p);
     bool till(Plot& p, EventId cause);

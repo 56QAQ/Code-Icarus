@@ -105,6 +105,36 @@ public:
     // Diagnostics (not saved): recent failed routes (who, from, to).
     struct PathFail { EntityId who; Vec3i from, to; Tick tick; };
     std::vector<PathFail> debug_path_failures;
+    // Magic made visible: casts since the last take. Presentation only: not saved, never
+    // read by the simulation, and bounded when nobody takes them.
+    struct SpellFx {
+        std::string effect, name, drive;
+        EntityId caster = kNoEntity, target = kNoEntity;
+        Vec3f from, to;
+        float radius = 0;
+    };
+    void note_spell(const Character& caster, const std::string& effect, const std::string& name, const Vec3f& to,
+                    EntityId target = kNoEntity, float radius = 0);
+    std::vector<SpellFx> take_spells() {
+        std::vector<SpellFx> out;
+        out.swap(spell_fx_);
+        return out;
+    }
+    // Strength factor of a character's blows right now (war cry, frenzy).
+    float empowerment(const Character& c) const { return now_ < c.empowered_until ? c.empowered : 1.0f; }
+    // Magic cast on her own initiative (agents_magic.cpp): healing the injured, quenching
+    // fire, battle magic, and the rituals.
+    struct SpellPick {
+        int effect = 0;  // the spell's code while casting (Task::count)
+        Vec3i pos;
+        EntityId who = kNoEntity;
+        float mana = 0;
+        std::string name;
+    };
+    float pick_spell(Character& c, SpellPick& out, std::string& why);
+    // The rituals among her spells: war cry, frenzy, discord, withering, devouring.
+    void cast_ritual(Character& c, int code, const std::string& name, const Json* sp, const Vec3i& at, Character* who,
+                     Event& e);
     Rng& rng() { return rng_; }
     bool find_water(Character& c, Vec3i& stand, Vec3i& water);
 
@@ -152,15 +182,6 @@ private:
     bool task_protest(Character& c);
     bool task_steal(Character& c);
     bool task_govern(Character& c);
-    // Magic cast on her own initiative (healing the injured, quenching fire).
-    struct SpellPick {
-        int effect = 0;  // 1 heal, 2 quench
-        Vec3i pos;
-        EntityId who = kNoEntity;
-        float mana = 0;
-        std::string name;
-    };
-    float pick_spell(Character& c, SpellPick& out, std::string& why);
     bool task_cast(Character& c);
     // Trapped (e.g. fell into a ravine): dig a staircase toward reachable ground.
     bool trapped(const Character& c) const;
@@ -206,6 +227,7 @@ private:
     std::vector<std::unique_ptr<Character>> chars_ = std::vector<std::unique_ptr<Character>>(1);
     Tick now_ = 0;
     std::vector<std::pair<Vec3f, float>> dangers_;  // recent hazards (pos, radius)
+    std::vector<SpellFx> spell_fx_;
     std::array<int, 24> fail_ring_{};                // path failures per hour, last 24 h
     int fail_ring_pos_ = 0;
     std::vector<Vec3i> water_spots_;                // standable places next to drinkable water

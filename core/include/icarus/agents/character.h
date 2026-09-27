@@ -165,6 +165,8 @@ struct Character {
     u16 tool_wear = 0;          // uses of the tool in hand since it was taken up
     Tick treated_until = 0;     // wounds dressed: they heal faster until then
     bool treated_well = false;  // ...and faster still when treated at a 药庐
+    Tick empowered_until = 0;   // a war cry or battle frenzy: stronger and fearless until then
+    float empowered = 1.0f;     // strength factor while empowered
     u32 home = 0;               // building id
     std::string occupation;     // preferred work category
     Task task;
