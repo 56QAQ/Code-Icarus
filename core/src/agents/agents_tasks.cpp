@@ -806,6 +806,7 @@ bool Agents::task_social(Character& c) {
         if (!best) {
             end_task(c, false);
             c.task.type = TaskType::None;
+            c.last_social = now_;  // (nobody free to talk to: she does not look again at once)
             return false;
         }
         t.other = best->id;
@@ -855,7 +856,7 @@ bool Agents::task_social(Character& c) {
 
 bool Agents::task_wander(Character& c) {
     Task& t = c.task;
-    if (t.step == 0 && carried_weight(c) > 0 && nearest_storage(c.polity, c.foot, kNoItem)) {
+    if (t.step == 0 && carries_cargo(c) && nearest_storage(c.polity, c.foot, kNoItem)) {
         // Idle hands first return whatever they still carry.
         t.type = TaskType::Work;
         t.job = 0;
@@ -1078,7 +1079,7 @@ bool Agents::task_work(Character& c) {
     World& w = *ctx_.world;
     if (!j && t.step < 10) {
         // Job vanished (completed by the world or cancelled). If carrying things, deliver them.
-        if (carried_weight(c) > 0) {
+        if (carries_cargo(c)) {
             t.step = 10;
         } else {
             end_task(c, false);
@@ -1261,7 +1262,7 @@ bool Agents::task_work(Character& c) {
                                 ctx_.econ->add(c.inv, reg.find_item("grain"), 1, "unsown");
                         }
                         // Leftover seeds go back later.
-                        carrying = carried_weight(c) > 0;
+                        carrying = carries_cargo(c);
                         break;
                     case JobType::Harvest:
                         if (plot) {
@@ -1271,7 +1272,7 @@ bool Agents::task_work(Character& c) {
                                 day.harvested += n;
                             }
                         }
-                        carrying = carried_weight(c) > 0;
+                        carrying = carries_cargo(c);
                         break;
                     case JobType::Forage: {
                         const MatId fm = w.mat(j->pos);
@@ -1332,8 +1333,8 @@ bool Agents::task_work(Character& c) {
                             if (m.drop_item_id != kNoItem)
                                 ctx_.econ->add(c.inv, m.drop_item_id, std::max(1, m.drop_count), "mined");
                         }
-                        carrying = carried_weight(c) > 0 && j->type == JobType::Mine;
-                        if (j->type == JobType::Dig && carried_weight(c) > 0) drop_cargo(c);
+                        carrying = carries_cargo(c) && j->type == JobType::Mine;
+                        if (j->type == JobType::Dig && carries_cargo(c)) drop_cargo(c);
                         break;
                     }
                     default: break;
@@ -1385,7 +1386,7 @@ bool Agents::task_work(Character& c) {
                         return true;
                     }
                 }
-                if (carrying || carried_weight(c) > 0) {
+                if (carrying || carries_cargo(c)) {
                     // Leftovers (seed grain, harvest) go back to storage.
                     t.step = 10;
                     return true;
@@ -1405,7 +1406,7 @@ bool Agents::task_work(Character& c) {
                 ctx_.econ->release(j->from, c.id);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
-                if (carried_weight(c) > 0) {
+                if (carries_cargo(c)) {
                     t.step = 10;
                     return true;
                 }

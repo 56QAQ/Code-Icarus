@@ -755,6 +755,19 @@ float Agents::carried_weight(const Character& c) const {
     return s ? ctx_.econ->weight(*s) : 0.0f;
 }
 
+bool Agents::carries_cargo(const Character& c) const {
+    const Store* s = ctx_.econ->store(c.inv);
+    if (!s) return false;
+    for (const ItemStack& st : s->items) {
+        const i32 keep = (st.item == c.tool || st.item == c.weapon || st.item == c.armor || st.item == c.cart ||
+                          st.item == c.clothes)
+                             ? 1
+                             : 0;
+        if (st.count > keep + cargo_kept(c, st.item)) return true;
+    }
+    return false;
+}
+
 void Agents::deposit_all(Character& c, StoreId to) {
     Store* s = ctx_.econ->store(c.inv);
     if (!s || s->empty()) return;

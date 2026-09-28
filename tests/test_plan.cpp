@@ -18,7 +18,8 @@ TEST("steward: the island's index counts what is known once, wherever it is know
     cfg.civs = 2;
     cfg.scenario = "wild";
     sim.new_game(cfg);
-    sim.run(kTicksPerDay);
+    // To just past midnight, when the day's index is taken (and nothing learnt since).
+    sim.run(kTicksPerDay - sim.now() % kTicksPerDay + 1);
     const auto& isl = sim.society().island_history();
     REQUIRE(!isl.empty());
     float rest = 0.0f;

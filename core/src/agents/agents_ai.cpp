@@ -206,6 +206,9 @@ void Agents::think(Character& c) {
     float lonely = 1.0f - c.needs.social;
     float social = lonely * (0.25f + 0.75f * c.pers.sociability) * 0.9f;
     if (work_time) social *= 0.5f;
+    // (Just talked, or found nobody free to talk to: not again straight away — else the
+    // lonely try every moment of the working day and never get to work.)
+    if (now_ - c.last_social < kTicksPerHour) social *= 0.3f;
     add("交谈", social, strfmt("孤独 %s，社交性 %s", pct(lonely), pct(c.pers.sociability)));
 
     // Work (children play instead).

@@ -56,6 +56,9 @@ public:
     // What a character can carry: more with a cart.
     float carry_capacity(const Character& c) const;
     float carried_weight(const Character& c) const;
+    // Whether she carries anything to put away: more than her own equipment in use and
+    // a caravan's load.
+    bool carries_cargo(const Character& c) const;
     // A raider who can carry no more food.
     bool raider_laden(const Character& c) const;
     // A soldier hurt past a fifth of her body leaves the fight (true when sent home now).
