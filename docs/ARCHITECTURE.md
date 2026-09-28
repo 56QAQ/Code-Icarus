@@ -281,7 +281,10 @@ growth depends on irrigation from real water nearby.
   each day's exchanges are summed up in the chronicle; dealing slowly warms relations.
   A hungry neighbour cannot pay, so a ruler with food to spare may instead **send aid**:
   the same carriers take it over and ask nothing back (warm-hearted drives are drawn to
-  it; others would rather raid the full granary or let the neighbour starve).
+  it; others would rather raid the full granary or let the neighbour starve). A carrier
+  sees the errand through: the way already walked does not count against it, and one who
+  stops to eat, drink or sleep keeps the load in her pack (not hers to eat or store) and
+  goes on with it afterwards; a load too big for one carrier is split among several.
 * **Miracles** (`sim/simulation.cpp`, `apply_admin`): besides matter (dig, place,
   meteor, fire, water) the god can bless food (items enter the ledger as
   `admin_bless`), inspire or terrify (fear, memories, a hazard people flee), heal (lost
