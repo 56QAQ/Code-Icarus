@@ -80,8 +80,10 @@ Agents::Move Agents::use_slot(Character& c, const BuildingSlot& s) {
 
 void Agents::leave_furniture(Character& c) {
     const Material& m = ctx_.world->material(c.foot);
-    if (m.furniture.empty() || !m.solid) return;  // (a mat, a stool: she just gets up)
     Nav& nav = *ctx_.nav;
+    // (A mat or a stool with room overhead: she just gets up. Out of a bed, or from a mat
+    // under a low roof, back to where she got in.)
+    if (m.furniture.empty() || (!m.solid && nav.standable(c.foot))) return;
     // Back onto the floor she climbed in from, else any open floor beside the bed.
     if (const Building* b = ctx_.buildings->get(ctx_.buildings->at(c.foot)))
         if (const BuildingSlot* s = b->slot_at(c.foot); s && nav.standable(s->access)) {

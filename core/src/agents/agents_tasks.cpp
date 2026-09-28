@@ -691,7 +691,10 @@ Vec3i Agents::sleep_spot(const Character& c, const Building* home, const Vec3i& 
             bool kept = false;
             for (const BuildingSlot& s : home->slots) kept |= s.access == p || s.pos == p;
             if (!home->slots.empty() && p == home->inside) kept = true;
-            if (!kept && nav.standable(p)) spots.push_back(p);
+            // Under the roof (not the yard before an open shelter).
+            bool roofed = home->slots.empty();
+            for (int k = 1; k <= 5 && !roofed; ++k) roofed = ctx_.world->material(p + Vec3i{0, k, 0}).solid;
+            if (!kept && roofed && nav.standable(p)) spots.push_back(p);
         }
         std::sort(spots.begin(), spots.end(), [&](const Vec3i& a, const Vec3i& b) {
             const i64 da = a.dist2(home->entrance), db = b.dist2(home->entrance);

@@ -338,8 +338,10 @@ void Agents::update_physics(Character& c) {
     }
     // Buried (something solid now occupies the body space): step up / aside. (Not a
     // sleeper lying in her bed: the bed's cube is where she belongs.)
-    const bool abed = !w.material(c.foot).furniture.empty() && w.material(c.foot).solid;
-    if (abed && !c.sleeping) leave_furniture(c);  // (awake in bed: up and out)
+    // In a bed (or lying on a mat under a low roof): up and out once awake.
+    const Material& fm = w.material(c.foot);
+    const bool abed = !fm.furniture.empty() && (fm.solid || !nav.standable(c.foot));
+    if (abed && !c.sleeping) leave_furniture(c);
     if (!abed && (!nav.passable(c.foot) || !nav.passable(c.foot + Vec3i{0, 1, 0}))) {
         Vec3i np;
         if (nav.find_standable_near(c.foot + Vec3i{0, 1, 0}, np, 3)) place_at(c, np);

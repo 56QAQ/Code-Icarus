@@ -178,8 +178,7 @@ void push_furniture(const World& w, MatId mid, const Material& fm, int wx, int w
         const Vec3i head = run.head, foot = run.head == run.start ? run.end : run.start;
         FFrame f{(float)wx, (float)wy, (float)wz, run.axis.x != 0, run.head != run.start, false};
         const bool is_head = here == head, is_foot = here == foot;
-        const u64 hb = hash3(0xBEDull, head.x, head.y, head.z);
-        const RGBf cloth = kCloth[hb % 6];
+        const RGBf cloth = rgb(bed_blanket_rgb(head));
         if (kind == "bed") {
             // Frame: rails along both sides, legs and boards at the ends, slats under a
             // straw mattress; a pillow at the head and a blanket over the rest.
@@ -408,6 +407,12 @@ void push_furniture(const World& w, MatId mid, const Material& fm, int wx, int w
 }
 
 }  // namespace
+
+u32 bed_blanket_rgb(const Vec3i& head) {
+    const RGBf c = kCloth[hash3(0xBEDull, head.x, head.y, head.z) % 6];
+    auto b = [](float v) { return (u32)std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f); };
+    return (b(c.r) << 16) | (b(c.g) << 8) | b(c.b);
+}
 
 void Mesher::load_padded(const Vec3i& cc) {
     w_.peek_cell(cc, tmp_.data());

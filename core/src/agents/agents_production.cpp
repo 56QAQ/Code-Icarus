@@ -193,17 +193,22 @@ void Agents::production_jobs() {
         const bool toolmakers = pc.has_tech("stone_tools");
         const bool need_wood = stock(wood) < (toolmakers ? 40 : 12) + raw_short[wood];
         const bool need_stone = stock(stone) < (toolmakers ? 16 : 0) + raw_short[stone];
+        // Thatch for the roofs is cut from reeds and stripped from the crowns of felled
+        // trees: while the sites are short of it both are gathered, wood or no wood.
+        const ItemId fiber = reg.find_item("fiber");
+        const i64 fiber_short = fiber != kNoItem ? raw_short[fiber] : 0;
+        const bool need_fiber = fiber_short > 0;
         std::vector<std::pair<MatId, i64>> ores;  // ore material -> units short
         for (auto& [it, n] : raw_short) {
             if (n <= 0 || it == wood || it == stone) continue;
             for (size_t m = 0; m < reg.mat_count(); ++m)
                 if (reg.mat((MatId)m).drop_item_id == it && reg.mat((MatId)m).solid) ores.push_back({(MatId)m, n});
         }
-        if (!need_wood && !need_stone && ores.empty()) continue;
+        if (!need_wood && !need_stone && ores.empty() && !need_fiber) continue;
         struct Spot {
             i64 d;
             Vec3i p;
-            int kind;  // 0 tree, 1 stone, 2+ ore index
+            int kind;  // -1 reeds, 0 tree, 1 stone, 2+ ore index
         };
         std::vector<Spot> spots;
         std::vector<std::pair<i64, Vec3i>> buried;  // for ore kinds with nothing exposed
@@ -219,7 +224,11 @@ void Agents::production_jobs() {
                 ColumnInfo col = w.gen().column(x, z);
                 if (!col.land) continue;
                 i64 d = (i64)dx * dx + (i64)dz * dz;
-                if (need_wood && d > 12 * 12) {
+                if (need_fiber) {
+                    const Vec3i p{x, col.top + 1, z};
+                    if (reg.mat(vmat(w.peek(p))).forage_item == fiber && !ctx_.buildings->at(p)) spots.push_back({d, p, -1});
+                }
+                if ((need_wood || need_fiber) && d > 12 * 12) {
                     for (int y = col.top + 1; y <= col.top + 2; ++y) {
                         Vec3i p{x, y, z};
                         if (!reg.mat(vmat(w.peek(p))).trunk || reg.mat(vmat(w.peek(p + Vec3i{0, -1, 0}))).trunk) continue;
@@ -306,8 +315,17 @@ void Agents::production_jobs() {
         int chop = open_of(JobType::Chop), mine = open_of(JobType::Mine);
         int want_ore_jobs = 0;
         for (auto& [m, n] : ores) want_ore_jobs += (int)std::min<i64>(4, n);
+        int cutting = 0;  // reeds being cut already (three bundles each)
+        for (const Job& j : jobs.all())
+            if (j.alive && j.type == JobType::Forage && j.polity == pc.id && j.item == fiber) ++cutting;
+        const int want_cutting = (int)std::min<i64>(4, (fiber_short + 2) / 3);
         for (const Spot& sp : spots) {
-            if (sp.kind == 0 && need_wood && chop < 3) {
+            if (sp.kind == -1) {
+                if (cutting >= want_cutting || jobs.find(JobType::Forage, sp.p)) continue;
+                Job& j = add(JobType::Forage, pc.id, sp.p, 0.8f);
+                j.item = fiber;
+                ++cutting;
+            } else if (sp.kind == 0 && (need_wood || need_fiber) && chop < 3) {
                 if (jobs.find(JobType::Chop, sp.p)) continue;
                 add(JobType::Chop, pc.id, sp.p, 0.8f);
                 ++chop;

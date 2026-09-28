@@ -212,8 +212,13 @@ void Agents::drop_cargo(Character& c) {
 bool Agents::at_home(const Character& c) const {
     const Building* h = ctx_.buildings->get(c.home);
     if (!h || !h->functional) return false;
-    // A house furnished with beds: only within its walls.
-    if (!h->slots.empty()) return h->contains(c.foot);
+    // A house furnished with beds: only within its walls, under its roof.
+    if (!h->slots.empty()) {
+        if (!h->contains(c.foot)) return false;
+        for (int k = 1; k <= 5; ++k)
+            if (ctx_.world->material(c.foot + Vec3i{0, k, 0}).solid) return true;
+        return false;
+    }
     if (c.foot.chebyshev(h->inside) <= 3) return true;
     // A large house (a hall, a longhouse): anywhere within its walls.
     if (std::abs(c.foot.y - h->inside.y) > 1) return false;

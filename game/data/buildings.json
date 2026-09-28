@@ -23,14 +23,12 @@
       ]
     },
     {
-      "key": "lean_to", "name": "窝棚", "category": "housing", "tech": "shelter", "inside": [2, 2], "entrance": [2, 3],
-      "description": "茅草背墙、原木立柱撑起的斜顶棚，棚下铺着两张草席，两人可以躲风避雨。",
+      "key": "lean_to", "name": "窝棚", "category": "housing", "tech": "shelter", "inside": [1, 3], "entrance": [1, 4],
+      "description": "茅草背墙、一根原木立柱撑起的低矮斜棚，棚下铺着两张草席；人弯腰钻进去躺下，两人可以躲风避雨。",
       "layers": [
-        ["TTTTT", ".mmm.", "LmmmL"],
-        ["TTTTT", ".....", "L...L"],
-        ["TTTTT", ".....", "L...L"],
-        ["TTTTT", "TTTTT", "TTTTT"],
-        ["TTTTT", ".....", "....."]
+        ["TTTT", "mmm.", "mmmL", "...."],
+        ["TTTT", "....", "...L", "...."],
+        ["TTTT", "TTTT", "TTTT", "...."]
       ]
     },
     {
@@ -38,12 +36,10 @@
       "description": "木骨茅顶的小屋：屋里三张木床围着火塘，墙上开着小窗，可供三人居住。",
       "layers": [
         ["LLLLLLL", "Lcbbb.L", "Lb...bL", "Lb.f.bL", "Lb...bL", "LLLDLLL"],
-        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "P.....P", "LPPDPPL"],
         ["LPPPPPL", "P.....P", "P.....P", ".......", "P.....P", "LPPDPPL"],
-        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "L.....L", "LLLLLLL"],
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "L.....L", "LLLDLLL"],
         ["TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT"],
-        [".......", ".TTTTT.", ".TTTTT.", ".TTTTT.", ".TTTTT.", "......."],
-        [".......", ".......", "..TTT..", "..TTT..", ".......", "......."]
+        [".......", ".......", ".TTTTT.", ".TTTTT.", ".......", "......."]
       ]
     },
     {
@@ -51,12 +47,10 @@
       "description": "木板长屋：六张木床沿墙排开，中间是火塘和木箱，可供六人居住。",
       "layers": [
         ["LLLLLLLLLLL", "Lb.bc.cb.bL", "Lb.b.f.b.bL", "Lb.b...b.bL", "L.........L", "Lbbb...bbbL", "LLLLLDLLLLL"],
-        ["LPPPPPPPPPL", "P.........P", "P.........P", "P.........P", "P.........P", "P.........P", "LPPPPDPPPPL"],
         ["LPPPPPPPPPL", "P.........P", "P.........P", "...........", "P.........P", "P.........P", "LPPPPDPPPPL"],
-        ["LLLLLLLLLLL", "L.........L", "L.........L", "L.........L", "L.........L", "L.........L", "LLLLLLLLLLL"],
+        ["LLLLLLLLLLL", "L.........L", "L.........L", "L.........L", "L.........L", "L.........L", "LLLLLDLLLLL"],
         ["TTTTTTTTTTT", "TTTTTTTTTTT", "TTTTTTTTTTT", "TTTTTTTTTTT", "TTTTTTTTTTT", "TTTTTTTTTTT", "TTTTTTTTTTT"],
-        ["...........", ".TTTTTTTTT.", ".TTTTTTTTT.", ".TTTTTTTTT.", ".TTTTTTTTT.", ".TTTTTTTTT.", "..........."],
-        ["...........", "...........", "...........", "..TTTTTTT..", "...........", "...........", "..........."]
+        ["...........", "...........", ".TTTTTTTTT.", ".TTTTTTTTT.", ".TTTTTTTTT.", "...........", "..........."]
       ]
     },
     {
@@ -77,10 +71,9 @@
       "layers": [
         ["SSSSSSS", "SrrrrrS", "Sr...rS", "S.....S", "Sc...cS", "SSS.SSS"],
         ["CPPPPPC", "PrrrrrP", "Pr...rP", "P.....P", "P.....P", "CPP.PPC"],
-        ["CPPPPPC", "P.....P", "P.....P", "P.....P", "P.....P", "CPP.PPC"],
-        ["CCCCCCC", "C.....C", "C.....C", "C.....C", "C.....C", "CCCCCCC"],
+        ["CCCCCCC", "C.....C", "C.....C", "C.....C", "C.....C", "CCC.CCC"],
         ["TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT"],
-        [".......", ".TTTTT.", ".TTTTT.", ".TTTTT.", ".TTTTT.", "......."]
+        [".......", ".......", ".TTTTT.", ".TTTTT.", ".......", "......."]
       ]
     },
     {
@@ -129,7 +122,7 @@
         ["LLLLLLL", "L..k..L", ".......", "L.....L", "LLL.LLL"],
         ["LLLLLLL", "L.....L", "L.....L", "L.....L", "LLL.LLL"],
         ["TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT"],
-        [".......", ".TTTTT.", ".TTTTT.", ".TTTTT.", "......."]
+        [".......", ".......", ".TTTTT.", ".......", "......."]
       ]
     },
     {
@@ -138,11 +131,10 @@
       "description": "木板墙的讲习之所，三张书案一字排开，墙角立着书架；三名学者在这里演算、授业、钻研，比书写室更快。",
       "layers": [
         ["LLLLLLLLL", "Ld.d.d.kL", "Ls.s.s..L", "L.......L", "LLLL.LLLL"],
-        ["LPPPPPPPL", "P......kP", "P.......P", "P.......P", "LPPP.PPPL"],
-        ["LPPPPPPPL", "P.......P", ".........", "P.......P", "LPPP.PPPL"],
-        ["LLLLLLLLL", "L.......L", "L.......L", "L.......L", "LLLLLLLLL"],
+        ["LPPPPPPPL", "P......kP", ".........", "P.......P", "LPPP.PPPL"],
+        ["LLLLLLLLL", "L.......L", "L.......L", "L.......L", "LLLL.LLLL"],
         ["TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT", "TTTTTTTTT"],
-        [".........", ".TTTTTTT.", ".TTTTTTT.", ".TTTTTTT.", "........."]
+        [".........", ".........", ".TTTTTTT.", ".........", "........."]
       ]
     },
     {
@@ -164,11 +156,10 @@
       "description": "墙边的药架上晾着一束束草药，窗下一张病床；伤者躺在这里包扎治疗，痊愈得更快。",
       "layers": [
         ["LLLLLLL", "Lx.bbbL", "Lx....L", "Lc....L", "LLLDLLL"],
-        ["LPPPPPL", "P.....P", "P.....P", "P.....P", "LPPDPPL"],
         ["LPPPPPL", "P.....P", ".......", "P.....P", "LPPDPPL"],
-        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "LLLLLLL"],
+        ["LLLLLLL", "L.....L", "L.....L", "L.....L", "LLLDLLL"],
         ["TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT", "TTTTTTT"],
-        [".......", ".TTTTT.", ".TTTTT.", ".TTTTT.", "......."]
+        [".......", ".......", ".TTTTT.", ".......", "......."]
       ]
     },
     {

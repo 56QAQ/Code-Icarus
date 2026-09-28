@@ -434,14 +434,16 @@ func _update_cutaway(delta: float) -> void:
 			continue
 		var lo: Vector3i = b["min"]
 		var hi: Vector3i = b["max"]
-		if hi.y < lo.y + 3:
+		# (A lean-to is only two cubes high inside: its roof comes off above that.)
+		var cut_y := lo.y + (2 if String(b["def"]) == "lean_to" else 3)
+		if hi.y < cut_y:
 			continue
 		var cx := (lo.x + hi.x + 1) * 0.5
 		var cz := (lo.z + hi.z + 1) * 0.5
 		var near: bool = close and Vector2(cx - rig.target.x, cz - rig.target.z).length() < CUT_RADIUS
 		var holds := sel.x >= lo.x and sel.x <= hi.x + 1 and sel.z >= lo.z and sel.z <= hi.z + 1 and absf(sel.y - lo.y) < 2.0
 		if near or holds:
-			boxes.append([Vector3i(lo.x, lo.y + 3, lo.z), hi])
+			boxes.append([Vector3i(lo.x, cut_y, lo.z), hi])
 	renderer.remesh(Game.sim.set_cutaway(boxes))
 
 

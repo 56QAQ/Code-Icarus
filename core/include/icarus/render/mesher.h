@@ -69,6 +69,10 @@ private:
     std::vector<Voxel> tmp_ = std::vector<Voxel>(kCellVol);
 };
 
+// The colour (0xRRGGBB) of the blanket on the bed whose head is at `head` (the mesher
+// draws it; the renderer covers a sleeper with the same one).
+u32 bed_blanket_rgb(const Vec3i& head);
+
 // Body-part voxel mesh (character parts, debris). vox is sx*sy*sz palette indices
 // (0 = empty), palette holds 0xRRGGBB colors indexed by value-1.
 // `vary` (optional, per palette slot): how much each voxel's colour varies (a weave of

@@ -159,7 +159,7 @@ TEST("buildings: scholars sit on the stools at the desks, facing them, not in th
     CHECK_EQ(in_door, 0);
 }
 
-TEST("buildings: a lean-to has room to stand under its roof and its two mats are slept on") {
+TEST("buildings: a lean-to's two mats are crawled onto from the front and slept on, under its roof") {
     Simulation sim(test_registry());
     GameConfig c;
     c.world = WorldConfig::for_layout(WorldLayout::Continent, 5);
@@ -178,7 +178,10 @@ TEST("buildings: a lean-to has room to stand under its roof and its two mats are
     REQUIRE(b->beds == 2);
     for (const BuildingSlot& s : b->slots) {
         CHECK(s.what == "mat");
-        CHECK(sim.nav().standable(s.pos));  // three cubes of head room over each mat
+        // A low roof over each mat (lain on, not stood on), crawled onto from the open front.
+        CHECK(!sim.nav().standable(s.pos));
+        CHECK(sim.nav().standable(s.access));
+        CHECK(s.access != s.pos);
     }
     // Two of the band move in and sleep on the mats.
     sim.run(kTicksPerHour);
@@ -195,6 +198,10 @@ TEST("buildings: a lean-to has room to stand under its roof and its two mats are
         CHECK(sim.agents().at_home(*cp));
     }
     CHECK(on_mats >= 1);
+    // Up in the morning and out from under the roof.
+    sim.run(kTicksPerHour * 9);
+    for (const auto& cp : sim.agents().all())
+        if (cp && cp->alive && cp->home == id && !cp->sleeping) CHECK(sim.nav().standable(cp->foot) || cp->in_boat);
 }
 
 TEST("buildings: old saved houses without furniture still work (floor beds, near the door)") {

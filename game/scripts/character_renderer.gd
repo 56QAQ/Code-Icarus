@@ -153,6 +153,30 @@ func _create(c: Dictionary) -> Dictionary:
 	n["sack"] = sack
 	n["cart"] = _make_cart(root)
 	n["boat"] = _make_boat(root)
+	# Covers over a sleeper in bed (the bed's own blanket, a hide on a mat): a draped
+	# lower part and a rounded top, from the feet to the shoulders (she lies along the
+	# local x axis with her head toward -x).
+	var cover := Node3D.new()
+	cover.visible = false
+	root.add_child(cover)
+	var cmat := StandardMaterial3D.new()
+	cmat.roughness = 0.95
+	var low := MeshInstance3D.new()
+	var lm := BoxMesh.new()
+	lm.size = Vector3(1.9, 0.72, 1.0)
+	low.mesh = lm
+	low.material_override = cmat
+	low.position = Vector3(0.38, 0.36, 0.0)
+	cover.add_child(low)
+	var top := MeshInstance3D.new()
+	var tm := BoxMesh.new()
+	tm.size = Vector3(1.8, 0.4, 0.66)
+	top.mesh = tm
+	top.material_override = cmat
+	top.position = Vector3(0.4, 0.9, 0.0)
+	cover.add_child(top)
+	n["cover"] = cover
+	n["cover_mat"] = cmat
 	return n
 
 
@@ -294,6 +318,11 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	# 2.6 cubes long and one wide, as the kernel lays the beds out), the dead fallen.
 	body.rotation.z = lerpf(body.rotation.z, PI / 2.0 if lying else 0.0, ks)
 	var rest := Vector3(1.32, 0.62 + seat_h, 0.0) if sleeping else (Vector3(0.0, 0.6, 0.0) if lying else Vector3.ZERO)
+	var cover: Node3D = n["cover"]
+	cover.visible = sleeping and fpose == "bed" and c.has("blanket")
+	if cover.visible:
+		(n["cover_mat"] as StandardMaterial3D).albedo_color = c["blanket"]
+		cover.position = Vector3(0.0, seat_h, 0.0)
 	# Seated on a stool or bench: the hips come down onto the seat.
 	var sitting := fpose == "sit" and alive and not lying
 	body.position = body.position.lerp(rest, ks)

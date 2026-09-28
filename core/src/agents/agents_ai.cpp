@@ -27,6 +27,8 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     const Polity* p = ctx_.society->polity(c.polity);
     const Policies pol = p ? p->policies : Policies{};
     std::string cat = job_category(j.type);
+    // (Reeds cut for thatch are materials, not food.)
+    if (j.type == JobType::Forage && j.item != kNoItem && ctx_.reg->item(j.item).key == "fiber") cat = "gather";
     float cat_w = 1.0f;
     if (cat == "food") {
         cat_w = pol.pri_food;
@@ -145,10 +147,10 @@ void Agents::end_task(Character& c, bool success) {
     ctx_.econ->release_agent(c.id);
     land(c);  // (an errand afloat that ends out on the water ends ashore)
     if (!success) c.task.fails++;
-    // A task that failed the moment it was begun (the water out of reach, no way out of a
-    // hollow) is not weighed again at once: someone stuck would otherwise go over the same
-    // hopeless options every tick. A short pause first.
-    const bool at_once = !success && now_ - c.task.started <= 1;
+    // Someone stuck (many places out of reach) whose task failed the moment it was begun
+    // (the water out of reach, no way out of a hollow) does not weigh her options again at
+    // once: she would go over the same hopeless ones every tick. A short pause first.
+    const bool at_once = !success && now_ - c.task.started <= 1 && c.unreachable.size() >= 8;
     c.task = Task{};
     c.task.type = TaskType::None;
     if (at_once) c.task.until = now_ + 20;

@@ -64,9 +64,12 @@ std::vector<BuildingSlot> derive_slots(const Registry& reg, const std::vector<Ve
             s.axis = r.axis;
             s.face = r.head;
             s.pos = r.start + r.axis * (r.length / 2);
-            s.access = s.pos;  // a mat is stepped onto
-            if (f == "bed") {
-                // Climbed into from beside its middle, else beside it anywhere, else past its foot.
+            s.access = s.pos;  // a mat with head room over it is stepped onto
+            const bool low = solid(s.pos + Vec3i{0, 1, 0}) || solid(s.pos + Vec3i{0, 2, 0});
+            if (f == "bed" || low) {
+                // Climbed into from beside its middle, else beside it anywhere, else past its
+                // foot; a mat under a low roof is crawled onto from the open side (over the
+                // mat in front of it if need be).
                 const Vec3i side{r.axis.z, 0, r.axis.x};
                 std::vector<Vec3i> cand{s.pos + side, s.pos - side};
                 for (int k = 0; k < r.length; ++k) {
@@ -74,6 +77,10 @@ std::vector<BuildingSlot> derive_slots(const Registry& reg, const std::vector<Ve
                     cand.push_back(r.start + r.axis * k - side);
                 }
                 cand.push_back(r.head == r.start ? r.end + r.axis : r.start - r.axis);
+                if (f == "mat") {
+                    cand.push_back(s.pos + side * 2);
+                    cand.push_back(s.pos - side * 2);
+                }
                 bool found = false;
                 for (const Vec3i& q : cand)
                     if (floor(q)) {
