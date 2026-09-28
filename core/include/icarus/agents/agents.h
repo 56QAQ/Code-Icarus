@@ -283,6 +283,9 @@ private:
     bool is_work_time(const Character& c) const;
     // Set down everything carried except what is worn or held as equipment.
     void drop_cargo(Character& c);
+    // How much of an item in c's pack is a caravan's load she is carrying on (not hers to
+    // eat, store or set down).
+    i32 cargo_kept(const Character& c, ItemId item) const;
     void deposit_all(Character& c, StoreId to);
     // Keeps tool/weapon/armour slots consistent with the inventory and picks up better
     // gear from nearby public stores (weapons and armour only when drafted).

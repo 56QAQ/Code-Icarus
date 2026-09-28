@@ -188,6 +188,13 @@ void Agents::wear_tool(Character& c) {
     c.tool_wear = 0;
 }
 
+i32 Agents::cargo_kept(const Character& c, ItemId item) const {
+    i32 n = 0;
+    for (const Job& j : ctx_.jobs->all())
+        if (j.alive && j.type == JobType::Trade && j.claimed_by == c.id && j.from == c.inv && j.item == item) n += j.count;
+    return n;
+}
+
 void Agents::drop_cargo(Character& c) {
     const Store* s = ctx_.econ->store(c.inv);
     if (!s) return;
@@ -195,7 +202,7 @@ void Agents::drop_cargo(Character& c) {
     StoreId pile = kNoStore;
     for (const ItemStack& st : items) {
         const i32 keep = (st.item == c.tool) + (st.item == c.weapon) + (st.item == c.armor) + (st.item == c.cart) +
-                         (st.item == c.clothes);
+                         (st.item == c.clothes) + cargo_kept(c, st.item);
         if (st.count <= keep) continue;
         if (!pile) pile = ctx_.econ->pile_at(c.foot);
         ctx_.econ->transfer(c.inv, pile, st.item, st.count - keep);

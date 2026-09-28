@@ -302,3 +302,62 @@ TEST("aid: food to spare goes to a starving neighbour, carried over and asked no
     CHECK(sim.society().polity(1)->pact_with(nid) == nullptr);
     check_ledger(sim);
 }
+
+TEST("aid: carriers who stop on the way (to drink) go on with their load, and it all arrives") {
+    Simulation sim(test_registry());
+    sim.new_game(village(6));
+    sim.run(kTicksPerHour);
+    const u16 nid = make_neighbour(sim, 60);
+    REQUIRE(nid != 0);
+    const ItemId grain = sim.reg().find_item("grain");
+    sim.economy().add(store_of(sim, 1), grain, 400, "admin_bless");
+    sim.society().polity(1)->attitude_ref(nid) = 0.3f;
+    sim.society().polity(nid)->attitude_ref(1) = 0.3f;
+    sim.decisions().mode = "remote";
+    std::string err;
+    u32 chosen = 0;
+    for (int h = 0; h < 24 * 4 && !chosen; ++h) {
+        sim.run(kTicksPerHour);
+        for (u32 id : sim.decisions().awaiting_remote()) {
+            const Decision* d = sim.decisions().get(id);
+            if (d->kind != "diplomacy" || d->polity != 1) continue;
+            for (const DecisionOption& o : d->options)
+                if (o.key == "send_aid" && o.feasible) {
+                    REQUIRE(sim.decisions().submit(id, o.key, "邻人挨饿", "remote", err));
+                    chosen = id;
+                    break;
+                }
+            if (chosen) break;
+        }
+    }
+    REQUIRE(chosen != 0);
+    sim.decisions().mode = "local";
+    // Every carrier gets thirsty on the road and goes for a drink first.
+    std::vector<EntityId> made_thirsty;
+    for (int t = 0; t < kTicksPerDay * 2; ++t) {
+        sim.step();
+        for (auto& cp : sim.agents().all()) {
+            if (!cp || !cp->alive || cp->task.type != TaskType::Work || cp->task.step != 2) continue;
+            const Job* j = sim.jobs().get(cp->task.job);
+            if (!j || j->type != JobType::Trade || j->plot != 1) continue;
+            if (std::find(made_thirsty.begin(), made_thirsty.end(), cp->id) != made_thirsty.end()) continue;
+            if (cp->foot.chebyshev(sim.economy().store(store_of(sim, 1))->pos) < 20) continue;
+            cp->needs.water = 0.05f;
+            made_thirsty.push_back(cp->id);
+        }
+    }
+    CHECK(!made_thirsty.empty());
+    auto total = [&](const char* what) {
+        long n = 0;
+        for (const Event& e : sim.chronicle().events()) {
+            if (e.text.find(what) == std::string::npos) continue;
+            const size_t x = e.text.rfind("×");
+            if (x != std::string::npos) n += std::atol(e.text.c_str() + x + std::string("×").size());
+        }
+        return n;
+    };
+    const long sent = total("送出援粮"), delivered = total("援粮送抵");
+    CHECK(sent > 0);
+    CHECK(delivered * 10 >= sent * 9);
+    check_ledger(sim);
+}

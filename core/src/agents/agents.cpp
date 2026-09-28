@@ -743,6 +743,7 @@ void Agents::deposit_all(Character& c, StoreId to) {
                     st.item == c.clothes)
                        ? 1
                        : 0;
+        keep += cargo_kept(c, st.item);
         if (st.count > keep) ctx_.econ->transfer(c.inv, to, st.item, st.count - keep);
     }
     // What the store could not take is set down here.
@@ -753,6 +754,7 @@ void Agents::deposit_all(Character& c, StoreId to) {
                     st.item == c.clothes)
                        ? 1
                        : 0;
+        keep += cargo_kept(c, st.item);
         if (st.count > keep) leftovers = true;
     }
     if (leftovers) {
@@ -763,6 +765,7 @@ void Agents::deposit_all(Character& c, StoreId to) {
                         st.item == c.clothes)
                            ? 1
                            : 0;
+            keep += cargo_kept(c, st.item);
             if (st.count > keep) ctx_.econ->transfer(c.inv, pile, st.item, st.count - keep);
         }
     }

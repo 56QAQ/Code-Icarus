@@ -46,8 +46,14 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     motivation *= 0.5f + 0.5f * c.needs.rest;
     float skill = c.skills[job_skill(j.type)];
     float skill_f = 0.8f + 0.4f * skill;
-    float dist = std::sqrt((float)c.foot.dist2(j.pos));
+    // (The way to a job counts against taking it up, not against going on with it — nor
+    // against a caravan's errand she carries on from her own pack.)
+    const bool doing = c.task.type == TaskType::Work && c.task.job == j.id;
+    float dist = doing || j.from == c.inv ? 0.0f : std::sqrt((float)c.foot.dist2(j.pos));
     float score = motivation * j.priority * cat_w * skill_f - dist / 260.0f;
+    // A caravan under way (the goods in hand, or picked up again from her own pack after
+    // a rest) is seen through: only a pressing need interrupts it.
+    if (j.type == JobType::Trade && ((doing && c.task.step >= 2) || j.from == c.inv)) score += 0.5f;
     if (!c.occupation.empty() && c.occupation == cat) score += 0.08f;
     // Scholars are there to study in working hours (unless the larder is emptying).
     if (cat == "research" && c.occupation == "research" && is_work_time(c) &&
@@ -119,8 +125,10 @@ u32 Agents::best_job(Character& c, float& best, std::string& why) {
             if (const Building* b = ctx_.buildings->get(j.building))
                 if (const BuildingDef* d = ctx_.buildings->def(b->def); d && d->scholars > 0) continue;
         if (blacklisted(c, j.pos)) continue;
-        // Cheap straight-line cut-off before scoring.
-        if (c.foot.chebyshev(j.pos) > 240) continue;
+        // Cheap straight-line cut-off before scoring (not for what she is already about:
+        // a caravan far from the store it set out from).
+        const bool mine = (c.task.type == TaskType::Work && c.task.job == j.id) || j.from == c.inv;
+        if (!mine && c.foot.chebyshev(j.pos) > 240) continue;
         std::string w;
         float s = work_score(c, j, w);
         if (s > best) {
@@ -144,8 +152,19 @@ void Agents::start_task(Character& c, TaskType t, float utility, const std::stri
 
 void Agents::end_task(Character& c, bool success) {
     if (c.task.job) {
-        if (success) ctx_.jobs->complete(c.task.job);
-        else ctx_.jobs->release(c.task.job, c.id);
+        Job* j = ctx_.jobs->get(c.task.job);
+        const Store* inv = ctx_.econ->store(c.inv);
+        if (success) {
+            ctx_.jobs->complete(c.task.job);
+        } else if (j && j->type == JobType::Trade && c.task.step == 2 && inv && inv->count(j->item) > 0) {
+            // A carrier stopping on the way (to eat, drink or sleep) keeps her load and the
+            // errand: the goods are now picked up from her own pack when she goes on.
+            j->from = c.inv;
+            j->count = std::min(j->count, inv->count(j->item));
+            ctx_.jobs->claim(j->id, c.id, now_ + kTicksPerHour * 16);
+        } else {
+            ctx_.jobs->release(c.task.job, c.id);
+        }
     }
     ctx_.econ->release_agent(c.id);
     if (!success) c.task.fails++;

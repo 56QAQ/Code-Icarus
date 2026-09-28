@@ -365,7 +365,7 @@ bool Agents::task_eat(Character& c) {
         const Store* s = ctx_.econ->store(c.inv);
         if (!s) return false;
         for (auto& st : s->items)
-            if (food_item(reg, st.item)) return true;
+            if (food_item(reg, st.item) && st.count > cargo_kept(c, st.item)) return true;
         return false;
     };
     if (t.step == 0) {
@@ -491,7 +491,8 @@ bool Agents::task_eat(Character& c) {
         for (auto& st : items) {
             const ItemDef& d = reg.item(st.item);
             if (d.nutrition <= 0) continue;
-            while (c.needs.food < target - 0.02f && ctx_.econ->store(c.inv)->count(st.item) > 0) {
+            const i32 kept = cargo_kept(c, st.item);  // (a caravan's load is not hers to eat)
+            while (c.needs.food < target - 0.02f && ctx_.econ->store(c.inv)->count(st.item) > kept) {
                 ctx_.econ->remove(c.inv, st.item, 1, "eaten");
                 c.needs.food = std::min(1.0f, c.needs.food + d.nutrition);
                 joy += d.joy + ctx_.society->passive(c.polity, "meal_joy");
@@ -1339,6 +1340,18 @@ bool Agents::task_work(Character& c) {
                 end_task(c, false);
                 return false;
             }
+            if (t.step == 0 && j->from == c.inv) {
+                // Going on after a rest on the way: the load is already in her pack.
+                const Store* inv = ctx_.econ->store(c.inv);
+                t.count = inv ? std::min(j->count, inv->count(j->item)) : 0;
+                if (t.count <= 0) {
+                    ctx_.jobs->complete(t.job);
+                    t.job = 0;
+                    end_task(c, false);
+                    return false;
+                }
+                t.step = 2;
+            }
             if (t.step == 0) {
                 if (!ctx_.econ->store(j->from) || ctx_.econ->available(j->from, j->item, c.id) <= 0) {
                     ctx_.jobs->complete(t.job);
@@ -1357,11 +1370,24 @@ bool Agents::task_work(Character& c) {
                 Move m = move_to(c, src->pos, true);
                 if (m == Move::Failed) return fail("到不了仓库");
                 if (m != Move::Arrived) return true;
+                // Hands free for the load: what else she carries stays in this store.
+                if (src->kind == StoreKind::Stockpile) deposit_all(c, j->from);
                 float unit = std::max(0.01f, reg.item(j->item).weight);
                 i32 cap = (i32)std::floor((carry_capacity(c) - carried_weight(c)) / unit);
                 i32 k = ctx_.econ->transfer(j->from, c.inv, j->item, std::min(j->count, cap));
                 ctx_.econ->release(j->from, c.id);
                 if (k <= 0) return fail("货已经被拿走了");
+                if (k < j->count) {
+                    // More than she can carry: the rest waits for another carrier.
+                    Job rest = *j;
+                    rest.count = j->count - k;
+                    rest.claimed_by = kNoEntity;
+                    rest.claim_expiry = 0;
+                    j->count = k;
+                    const u32 me = t.job;
+                    ctx_.jobs->add(rest);
+                    j = ctx_.jobs->get(me);
+                }
                 t.count = k;
                 t.step = 2;
             }
