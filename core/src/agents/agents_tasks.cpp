@@ -1308,7 +1308,9 @@ bool Agents::task_work(Character& c) {
                     case JobType::Mine:
                     case JobType::Dig: {
                         const Material& m = reg.mat(w.mat(j->pos));
-                        if (m.solid && m.diggable) {
+                        // (Quarrying leaves a bank that holds water back; digging ordered by the
+                        // ruler — a spring, a channel — goes ahead.)
+                        if (m.solid && m.diggable && !(j->type == JobType::Mine && holds_water(j->pos))) {
                             w.set(j->pos, make_voxel(0), j->cause);
                             if (m.drop_item_id != kNoItem)
                                 ctx_.econ->add(c.inv, m.drop_item_id, std::max(1, m.drop_count), "mined");

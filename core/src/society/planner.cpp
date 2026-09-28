@@ -415,6 +415,14 @@ void Society::draw_plan(Polity& p) {
                 }
             }
             if (u > 0.0f) advise("avoid_war", u, why);
+            // Stores well past their target while a neighbour has run out: a gift feeds them
+            // and takes away their reason to come and take it.
+            if (P.need > 0.0f && P.stock > 1.5f * P.target_days * P.need && P.balance >= 0.0f)
+                for (const Polity& o : polities_)
+                    if (o.alive && o.id != p.id && !p.war_with(o.id) && o.stats.food_days < 1.0f && o.stats.population > 0) {
+                        advise("send_aid", 0.45f, strfmt("「%s」已经断粮，我们的存粮有余，送去一些既救人，也免得他们来抢", o.name.c_str()));
+                        break;
+                    }
         } else {
             int losses = 0;
             float days = 0.0f;

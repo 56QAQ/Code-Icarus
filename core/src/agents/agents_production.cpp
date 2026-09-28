@@ -16,6 +16,15 @@
 
 namespace icarus {
 
+bool Agents::holds_water(const Vec3i& p) const {
+    const MatId water = ctx_.reg->m().water;
+    const World& w = *ctx_.world;
+    if (vmat(w.peek(p + Vec3i{0, 1, 0})) == water) return true;
+    for (int d = 0; d < 4; ++d)
+        if (vmat(w.peek(p + kDir4H[d])) == water) return true;
+    return false;
+}
+
 namespace {
 constexpr int kGatherRadius = 90;
 
@@ -281,7 +290,10 @@ void Agents::production_jobs() {
                     }
             return false;
         };
-        spots.erase(std::remove_if(spots.begin(), spots.end(), [&](const Spot& sp) { return !workable(sp.p); }),
+        // (Nor a cube that holds water back: the bank of a river or lake, cut open, lets it
+        // run away and leaves the fields beside it dry.)
+        spots.erase(std::remove_if(spots.begin(), spots.end(),
+                                   [&](const Spot& sp) { return !workable(sp.p) || (sp.kind >= 1 && holds_water(sp.p)); }),
                     spots.end());
         // Gathering jobs nobody took for half a day are probably out of reach: retire them.
         for (const Job& j : jobs.all())
@@ -323,6 +335,14 @@ void Agents::production_jobs() {
                 // An open-cast cut, 8 long and 3 wide, stepping down one cube every two:
                 // always walkable, nobody gets stuck at the bottom.
                 bool ok = true;
+                // (Well away from any water: a pit cut into a river's bank drains it.)
+                for (int dz = -5; dz <= 7 && ok; ++dz)
+                    for (int dx = -5; dx <= 12 && ok; ++dx) {
+                        const ColumnInfo cc = w.gen().column(x0 + dx, z0 + dz);
+                        if (cc.water_top >= 0) ok = false;
+                        for (int y = col.top - 5; y <= col.top + 1 && ok; ++y)
+                            if (vmat(w.peek({x0 + dx, y, z0 + dz})) == M.water) ok = false;
+                    }
                 for (int dz = -2; dz <= 4 && ok; ++dz)
                     for (int dx = -2; dx <= 9 && ok; ++dx) {
                         ColumnInfo cc = w.gen().column(x0 + dx, z0 + dz);

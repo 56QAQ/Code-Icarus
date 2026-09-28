@@ -133,6 +133,17 @@ void Physics::step_evaporation() {
             MatId m = vmat(v);
             if (m == M.air) continue;
             bool open_sky = vmat(w_.get(p + Vec3i{0, 1, 0})) == M.air;
+            if (m == M.water && open_sky && w_.config().layout == WorldLayout::Random) {
+                // A random island's river or lake sunk below its level (drained through a
+                // breach since mended) fills up again from upstream, a unit at a time.
+                const ColumnInfo col = w_.gen().column(x, z);
+                if (!col.sea && col.water_top >= 0 && y <= col.water_top && (vlevel(v) < kFluidFull || y < col.water_top)) {
+                    if (vlevel(v) < kFluidFull) w_.set(p, make_voxel(M.water, (u8)(vlevel(v) + 1)));
+                    else w_.set(p + Vec3i{0, 1, 0}, make_voxel(M.water, 1));
+                    stats_.water_units_sea_out++;
+                    break;
+                }
+            }
             if (m == M.water && open_sky) {
                 if (rain) {
                     if (vlevel(v) < kFluidFull) {

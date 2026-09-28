@@ -60,6 +60,9 @@ public:
     bool raider_laden(const Character& c) const;
     // A soldier hurt past a fifth of her body leaves the fight (true when sent home now).
     bool discharge_if_hurt(Character& c);
+    // A solid cube with fresh or salt water beside it or on top: taking it away would let
+    // the water out.
+    bool holds_water(const Vec3i& p) const;
     // The nearest cube within `radius` that residents can walk to from a settlement.
     bool nearest_walkable(const Vec3i& p, int radius, Vec3i& out) const;
     // A hazard residents will run from for a while (explosions, a god's wrath).
