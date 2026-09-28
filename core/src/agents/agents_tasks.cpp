@@ -282,6 +282,11 @@ bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
             }
         return false;
     };
+    // Fresh water right beside her: drink here (someone stuck in a hollow by a lake too).
+    if (nav.standable(c.foot) && water_next_to(c.foot, water)) {
+        stand = c.foot;
+        return true;
+    }
     if (water_spots_.empty()) refresh_water_spots();
     // The remembered spot is kept only while it is about as close as the best candidate.
     if (c.water_spot.y > 0 && !blacklisted(c, c.water_spot) && nav.standable(c.water_spot) &&

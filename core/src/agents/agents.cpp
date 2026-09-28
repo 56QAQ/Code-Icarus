@@ -176,7 +176,8 @@ void Agents::step(Tick now) {
         update_health(c);
         if (!c.alive) continue;
         if ((now + c.id) % kTicksPerHour == 0) hourly(c);
-        if (now >= c.next_think || c.task.type == TaskType::None) think(c);
+        // (Someone whose last task failed the moment it began pauses before thinking again.)
+        if (now >= c.next_think || (c.task.type == TaskType::None && now >= c.task.until)) think(c);
         run_task(c);
     }
     keep_apart();
@@ -353,7 +354,8 @@ void Agents::assign_homes() {
     // home of their own polity move into the nearest one with a free bed.
     std::vector<Building*> homes;
     for (const Building& bc : ctx_.buildings->all()) {
-        if (!bc.alive || !bc.complete || bc.beds <= 0) continue;
+        // (The hall's beds are the magical girls'.)
+        if (!bc.alive || !bc.complete || bc.beds <= 0 || bc.def == "hall") continue;
         Building* b = ctx_.buildings->get(bc.id);
         b->residents.clear();
         homes.push_back(b);

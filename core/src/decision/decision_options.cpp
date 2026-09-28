@@ -499,7 +499,7 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
     O.push_back(make("keep", "维持现行政策", "一切照旧。", {{kOrder, 0.3f}, {kFrugality, 0.3f}}, act("wait")));
     int beds = 0, residents = 0;
     for (const Building& b : ctx_.buildings->all())
-        if (b.alive && b.polity == p.id && b.functional) beds += b.beds;
+        if (b.alive && b.polity == p.id && b.functional && b.def != "hall") beds += b.beds;  // (the hall's are the girls')
     for (auto& rp : ctx_.agents->all())
         if (rp && rp->alive && !rp->is_girl() && rp->polity == p.id) ++residents;
     // The best home the polity knows how to build.

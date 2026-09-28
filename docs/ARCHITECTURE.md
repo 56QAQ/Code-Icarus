@@ -155,7 +155,18 @@ events) and a decision trace (the scored options behind the current activity).
 * **Jobs** (`agents_jobs.cpp`) appear where the world needs them: fields to till, sow
   and harvest; piles to store; construction/repair sites to supply and build; dig
   projects; kitchens; crafting on demand (recipes in `data/recipes.json`, produced at a
-  public store and logged in the ledger); foraging under scarcity. Materials go to the
+  public store and logged in the ledger); foraging under scarcity.
+* **Using buildings** (`agents_furniture.cpp`): each member of a household has a bed of
+  her own (by rank; the magical girls sleep in the hall's) — she walks to the floor
+  beside it, climbs over onto it and lies down with her head on the pillow, and gets
+  out on the same side when she wakes or is called away; the overflow sleeps on the
+  floor inside, never where furniture is used from. Scholars take a free stool and sit
+  facing their desk; cooks stand at the hearth; crafters carry the materials from the
+  store to a free workbench and leave what they make in the workshop's store; the
+  wounded lie on the herbalist's cot; the ruler sits at the head of the hall's table.
+  Who uses which slot is read off what people are heading for, so two never share one.
+  "At home" means within the walls. Someone arriving where another already stands
+  steps aside to a free cube within reach. Materials go to the
   site begun first, crafting leaves alone what sites wait for, and builders lay roofs
   from a ladder (up to seven cubes up and two to the side). Rulers begin no new
   building while two sites stand unfinished, nor one whose materials cannot be made
@@ -243,6 +254,22 @@ pile, character inventory, construction site, home). Sources and sinks (harvest,
 mining, crafting, cooking, eating, spoilage, construction, spells) are explicit and
 counted by reason, so conservation is tested. Buildings are real cubes placed from
 blueprints; integrity is derived from the world, so damage degrades function.
+
+* **Furniture** (beds, straw mats, desks, stools, bookshelves, workbenches, hearths,
+  shelves, herb racks, tables, benches, chests, fire pits) is made of cubes in the
+  blueprints (`data/buildings.json`, lower-case legend letters), built from real
+  materials (`made_of`), and burns or breaks like any cube. Beds, desks and stations
+  block the way; mats, stools and benches can be stepped on; nothing can be stood on top
+  of. Every floor people walk or stand on has three cubes of head room (they are about
+  2.6 cubes tall) and doors are three cubes high.
+* **Use slots** (`derive_slots`, recomputed from the plan on placing and loading, never
+  saved): a bed or mat (a run of like cubes, its head against a wall, worked out by
+  `economy/furniture.h` so the mesher draws it the same way) with the floor beside it;
+  a seat (a stool or bench beside a desk or table) facing it; a work place on the floor
+  before a workbench, hearth or herb rack; a storage place before a shelf or chest. The
+  doorway and the cube inside it are never slots. A house has as many beds as its
+  blueprint draws; a store sits at the shelf nearest the middle. Old saved buildings
+  without furniture have no slots and keep the old ways.
 Bridges follow a span rule and fail as real debris. Farms are plots of farmland whose
 growth depends on irrigation from real water nearby.
 
@@ -420,8 +447,16 @@ meteors.
   in flight, slashes, rings over the ground, pillars of light, embers and motes.
 * **Villages** (`scripts/village_renderer.gd`): goods on the ground and in storehouse
   yards are drawn by kind (logs, sacks, baskets, ore, jars, tool racks...), and the
-  things of daily life stand around each building (woodpiles, jars, barrels, hearth and
-  pot, workbench, banners and braziers at the hall). Presentation only. The UI is built in code (`ui/ui_theme.gd`) as floating cards over the world —
+  things of daily life stand around each building (woodpiles, jars, barrels, meat
+  drying, a saw horse, banners and braziers at the hall); the fires inside light the
+  rooms. Presentation only.
+* **Furniture and rooms**: the mesher models each piece in its own frame (a bed's
+  frame, straw mattress, pillow and blanket; bamboo slips, a scroll, inkstone and brush
+  on a desk; scrolls on the shelves; a glowing hearth mouth with a pot). Sleepers lie at
+  the mattress's height with the head at the pillow, scholars sit bent over their desks.
+  When the camera comes close, the roofs of the buildings around it (and of the one the
+  selected figure is in) are cut away — the mesher leaves those cubes out, as if they
+  were air, and the cells are meshed again — so the rooms and the people in them show. The UI is built in code (`ui/ui_theme.gd`) as floating cards over the world —
 time pill, civilisation card with polity switcher, tool dock, toasts, contextual
 selection card with tabs (a girl's card adds her ties, drive history and **传记**, her
 life's great moments) — plus centred overlays: **议事录** (decisions), **编年史**

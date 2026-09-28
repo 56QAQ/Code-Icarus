@@ -145,14 +145,17 @@ void Agents::end_task(Character& c, bool success) {
     ctx_.econ->release_agent(c.id);
     land(c);  // (an errand afloat that ends out on the water ends ashore)
     if (!success) c.task.fails++;
-    TaskType prev = c.task.type;
+    // A task that failed the moment it was begun (the water out of reach, no way out of a
+    // hollow) is not weighed again at once: someone stuck would otherwise go over the same
+    // hopeless options every tick. A short pause first.
+    const bool at_once = !success && now_ - c.task.started <= 1;
     c.task = Task{};
     c.task.type = TaskType::None;
+    if (at_once) c.task.until = now_ + 20;
     c.sleeping = false;
     leave_furniture(c);
     c.path.clear();
-    c.next_think = now_;  // choose something new right away
-    (void)prev;
+    c.next_think = at_once ? c.task.until : now_;  // choose something new right away (or after the pause)
 }
 
 void Agents::think(Character& c) {

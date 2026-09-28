@@ -85,9 +85,9 @@
     },
     {
       "key": "hall", "name": "议事厅", "category": "civic", "seat": true, "tech": "carpentry",
-      "description": "统治者议政之所：长桌两侧摆着长凳，上首一张木凳，墙边立着书架。魔法少女在此制定政策。",
+      "description": "统治者议政之所：长桌两侧摆着长凳，上首一张木凳，墙边立着书架，靠门两侧是魔法少女们的床。魔法少女在此制定政策。",
       "layers": [
-        ["SSSSSSSSS", "Sk..s..kS", "S..ntn..S", "S..ntn..S", "S..ntn..S", "S.......S", "S.......S", "SSSS.SSSS"],
+        ["SSSSSSSSS", "Sk..s..kS", "S..ntn..S", "S..ntn..S", "Sb.ntn.bS", "Sb.....bS", "Sb.....bS", "SSSS.SSSS"],
         ["LPPPPPPPL", "Pk.....kP", "P.......P", "P.......P", "P.......P", "P.......P", "P.......P", "LPPP.PPPL"],
         ["LPPGPGPPL", "P.......P", "G.......G", "P.......P", "P.......P", "G.......G", "P.......P", "LPPP.PPPL"],
         ["LPPPPPPPL", "P.......P", "P.......P", "P.......P", "P.......P", "P.......P", "P.......P", "LPPPPPPPL"],
