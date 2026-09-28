@@ -736,6 +736,23 @@ bool Agents::task_sleep(Character& c) {
                 c.needs.rest > 0.15f)
                 near = seat->inside;
         }
+        // Food still in the pack from the day's work goes to the store first when it is
+        // hardly out of the way: whoever wakes hungry in the night finds it there.
+        if (c.needs.rest > 0.12f) {
+            int food = 0;
+            if (const Store* inv = ctx_.econ->store(c.inv))
+                for (const ItemStack& st : inv->items)
+                    if (food_item(*ctx_.reg, st.item)) food += st.count;
+            if (food >= 3)
+                if (const Store* s = ctx_.econ->store(nearest_storage(c.polity, c.foot, kNoItem)))
+                    if (c.foot.chebyshev(s->pos) + s->pos.chebyshev(near) <= c.foot.chebyshev(near) + 30) {
+                        t.type = TaskType::Work;
+                        t.job = 0;
+                        t.step = 10;
+                        t.label = "睡前先把随身的粮食送回仓库";
+                        return true;
+                    }
+        }
         t.target = sleep_spot(c, go_home ? h : nullptr, near, t.target2);
         t.step = 1;
     }
