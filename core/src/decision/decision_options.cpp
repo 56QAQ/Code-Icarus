@@ -673,6 +673,14 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         o.action.set("n", n);
         if (fid) o.action.set("farm", (double)fid);
         if (short_fields) o.bias += p.stats.food_days < 3.0f ? 0.35f : 0.2f;
+        // What more fields are worth: much while there are too few to feed everyone, little
+        // once there are more than enough (then the hands, the homes, the stores are what
+        // is short — and a new field every day would crowd them all out).
+        const float marginal = band ? 1.0f
+                                    : clampv(0.25f + 2.0f * (float)(p.plan.plots_needed - plots) /
+                                                         (float)std::max(1, p.plan.plots_needed),
+                                             0.25f, 1.0f);
+        for (float& f : o.f) f *= marginal;
         if (plots >= 3 * std::max(4, p.stats.population)) {
             o.feasible = false;
             o.why_not = "田地已多到种不过来";
@@ -699,6 +707,7 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
                                      act("found_farm"));
             nf.action.set("n", m);
             nf.bias += p.stats.food_days < 3.0f ? 0.35f : 0.2f;
+            for (float& f : nf.f) f *= marginal;
             if (grain < m + keep) {
                 nf.feasible = false;
                 nf.why_not = "还没攒下足够的谷种";
