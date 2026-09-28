@@ -101,3 +101,31 @@ TEST("steward: fields that have filled the ground their water reaches are not 'e
     }
     CHECK(offered > 0);
 }
+
+TEST("steward: emergency measures lapse after their days; building and full portions resume") {
+    Simulation sim(test_registry());
+    GameConfig cfg;
+    cfg.world.seed = 1;
+    cfg.scenario = "village";
+    sim.new_game(cfg);
+    sim.run(kTicksPerHour);
+    Polity* p = sim.society().polity(1);
+    REQUIRE(p != nullptr);
+    // "Everyone to the food": what a famine decision orders.
+    p->policies.pri_food = 1.8f;
+    p->policies.pri_build = 0.5f;
+    p->policies.pri_gather = 0.5f;
+    p->policies.ration = 0.7f;
+    p->emergency_until = sim.now() + kTicksPerHour * 2;
+    sim.run(kTicksPerHour);
+    CHECK(p->policies.pri_build < 1.0f);  // still in force
+    sim.run(kTicksPerHour * 2);
+    CHECK(p->policies.pri_food <= 1.0f);
+    CHECK(p->policies.pri_build == 1.0f);
+    CHECK(p->policies.ration >= 1.0f);
+    CHECK_EQ(p->emergency_until, (Tick)0);
+    bool told = false;
+    for (const Event& e : sim.chronicle().events())
+        if (e.polity == 1 && e.text.find("应急措施到期") != std::string::npos) told = true;
+    CHECK(told);
+}

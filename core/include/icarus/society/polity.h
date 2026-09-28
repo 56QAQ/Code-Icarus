@@ -179,6 +179,7 @@ struct Polity {
     std::vector<CivIndex> civ_history;  // the civilisation index, one a day
     int deaths_total = 0;
     Tick forage_until = 0;   // organised foraging campaign
+    Tick emergency_until = 0;  // emergency work priorities or rations lapse then
     // Passive spells of the polity's magical girls, summed by effect (refreshed hourly).
     std::vector<std::pair<std::string, float>> passives;
     float passive(const std::string& effect) const {

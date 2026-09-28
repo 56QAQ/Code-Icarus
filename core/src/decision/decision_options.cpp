@@ -1136,6 +1136,10 @@ void Decisions::execute(Decision& d) {
     };
     auto apply_policy = [&](const Json& j) {
         Policies& q = p->policies;
+        // Emergency measures hold for two days (see Society::update_crises).
+        if ((j.has("pri_food") && j.flt("pri_food") > 1.0f) || (j.has("pri_build") && j.flt("pri_build") < 1.0f) ||
+            (j.has("ration") && j.flt("ration") < 1.0f))
+            p->emergency_until = now_ + 2 * kTicksPerDay;
         if (j.has("ration")) q.ration = j.flt("ration");
         if (j.has("punishment")) q.punishment = j.flt("punishment");
         if (j.has("work_hours")) q.work_hours = j.flt("work_hours");
@@ -1274,6 +1278,7 @@ void Decisions::execute(Decision& d) {
         if (Project* pr = ctx_.society->project((u32)a.num("project"))) {
             pr->priority = std::max(pr->priority, 2.0f);
             p->policies.pri_build = std::max(p->policies.pri_build, 1.5f);
+            p->emergency_until = now_ + 2 * kTicksPerDay;
             policy_event("加紧推进：" + pr->title);
         }
     } else if (what == "found_farm") {

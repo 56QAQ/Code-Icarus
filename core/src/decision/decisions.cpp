@@ -125,7 +125,9 @@ void Decisions::gate_construction(Decision& d) const {
         if (!o.feasible) continue;
         const std::string what = o.action.str("do");
         if (what != "build" && what != "found_outpost") continue;
-        if (unfinished >= 2) {
+        // (What the steward presses for — the study the research waits on, a store for
+        // food going bad — may be started beside two other undertakings.)
+        if (unfinished >= (p->plan.backing(o.key) > 0.0f ? 3 : 2)) {
             o.feasible = false;
             o.why_not = strfmt("还有 %d 处工地尚未完工", unfinished);
             continue;
@@ -141,25 +143,37 @@ void Decisions::gate_construction(Decision& d) const {
 }
 
 // What the polity tried lately and came to nothing (no site, no land left by the fields)
-// is not tried again at once: the option rests two days, with the reason shown.
-void Decisions::recall_fruitless(Decision& d) const {
+// is not tried again at once: the option rests two days, with the reason shown. Nor is a
+// policy just changed turned straight back (rewards by work, then equal shares, then by
+// work again): orders that flip every other day unsettle everyone and settle nothing.
+void Decisions::recall_recent(Decision& d) const {
+    static const char* const kOpposite[][2] = {{"merit", "equal"}, {"harsher", "gentler"}, {"longer_hours", "shorter_hours"}};
+    auto opposite = [](const std::string& a, const std::string& b) {
+        for (const auto& pr : kOpposite)
+            if ((a == pr[0] && b == pr[1]) || (a == pr[1] && b == pr[0])) return true;
+        return false;
+    };
     const size_t start = list_.size() > 256 ? list_.size() - 256 : 1;
     for (size_t i = start; i < list_.size(); ++i) {
         const Decision& past = list_[i];
-        if (past.polity != d.polity || past.fruitless.empty() || past.chosen < 0 || now_ > past.answered + 2 * kTicksPerDay)
-            continue;
+        if (past.polity != d.polity || past.chosen < 0 || past.status != DecisionStatus::Executed) continue;
         const DecisionOption& po = past.options[(size_t)past.chosen];
-        for (DecisionOption& o : d.options)
-            if (o.feasible && o.key == po.key && o.action.str("def") == po.action.str("def")) {
+        const Tick since = now_ - past.answered;
+        for (DecisionOption& o : d.options) {
+            if (!o.feasible) continue;
+            if (!past.fruitless.empty() && since <= 2 * kTicksPerDay && o.key == po.key && o.action.str("def") == po.action.str("def")) {
                 o.feasible = false;
                 o.why_not = "前不久试过，" + past.fruitless;
+            } else if (since <= 4 * kTicksPerDay && opposite(o.key, po.key)) {
+                o.bias -= 0.6f * (1.0f - (float)since / (float)(4 * kTicksPerDay));
             }
+        }
     }
 }
 
 u32 Decisions::open(Decision d) {
     gate_construction(d);
-    recall_fruitless(d);
+    recall_recent(d);
     d.id = (u32)list_.size();
     d.created = now_;
     d.status = DecisionStatus::Pending;

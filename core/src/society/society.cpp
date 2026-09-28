@@ -648,7 +648,34 @@ void Society::update_crises(Polity& p) {
                 s.food_access < 0.95f ? strfmt("粮食短缺：公共存粮仅够 %.1f 天，%.0f%% 的居民吃不饱", s.food_days, (1.0f - s.food_access) * 100.0f)
                                       : strfmt("粮食短缺：公共存粮仅够 %.1f 天", s.food_days));
     } else if (s.food_days > ok_days && s.food_access > 0.85f) {
+        const Crisis* fc = p.crisis(CrisisKind::Food);
+        const bool was = fc && fc->active;
         resolve(CrisisKind::Food, "粮食短缺缓解");
+        // The emergency measures end with the emergency.
+        if (was && p.emergency_until) p.emergency_until = ctx_.now;
+    }
+    // Emergency measures (everyone to the food, building halted, short rations; a
+    // foraging campaign; a rush on a site) are for days, not for good: then the usual
+    // division of work and full portions again, until the ruler orders otherwise.
+    Policies& q = p.policies;
+    if ((p.emergency_until && ctx_.now >= p.emergency_until) || (p.forage_until && ctx_.now >= p.forage_until)) {
+        const bool lifted = q.pri_food > 1.0f || q.pri_build != 1.0f || q.pri_gather != 0.7f || q.ration < 1.0f;
+        q.pri_food = std::min(q.pri_food, 1.0f);
+        q.pri_build = 1.0f;
+        q.pri_gather = 0.7f;
+        q.ration = std::max(q.ration, 1.0f);
+        p.emergency_until = 0;
+        p.forage_until = 0;
+        if (lifted) {
+            Event e;
+            e.type = EventType::PolicyChanged;
+            e.severity = 2;
+            e.polity = p.id;
+            const Crisis* fc = p.crisis(CrisisKind::Food);
+            e.causes[0] = fc ? fc->event : 0;
+            e.text = "应急措施到期：人手回到平常的分工，口粮恢复足额";
+            ctx_.chron->emit(std::move(e));
+        }
     }
 
     // Water: people thirsting, a sealed spring feeding the land, or fields losing irrigation.
@@ -1040,6 +1067,9 @@ void Society::save(BinWriter& w) const {
     // Version 8: whether the plan calls for children to replace the old.
     w.varu(polities_.size());
     for (size_t i = 1; i < polities_.size(); ++i) w.boolean(polities_[i].plan.renewing);
+    // Version 9: when emergency measures lapse.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) w.u64v(polities_[i].emergency_until);
     w.end_section(sec);
 }
 
@@ -1307,6 +1337,13 @@ void Society::load(BinReader& outer) {
                 for (size_t i = 1; i < (size_t)np10; ++i) {
                     const bool renewing = r.boolean();
                     if (i < polities_.size()) polities_[i].plan.renewing = renewing;
+                }
+            }
+            if (!r.at_end()) {
+                const u64 np11 = r.varu();
+                for (size_t i = 1; i < (size_t)np11; ++i) {
+                    const Tick until = r.u64v();
+                    if (i < polities_.size()) polities_[i].emergency_until = until;
                 }
             }
         }
