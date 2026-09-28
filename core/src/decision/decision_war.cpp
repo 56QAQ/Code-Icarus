@@ -429,10 +429,15 @@ void Decisions::add_peace_offers(Decision& d, Polity& p, u16 enemy_id, bool plea
         }
         O.push_back(o);
     };
+    // A war nobody is fighting (no army out, nobody hurt for days) only keeps the guards
+    // from their work: the sooner it is ended the better.
+    const War* back = enemy->war_with(p.id);
+    const float quiet = (float)(now_ - std::max(w->active_at, back ? back->active_at : (Tick)0)) / (float)kTicksPerDay;
+    const float lull = p.op.active || enemy->op.active ? 0.0f : std::min(1.0f, 0.4f * quiet);
     offer("offer_peace", "向「" + en + "」" + (pleading ? "求和" : "提出议和"), "停战，各自退兵。由对方决定。",
           {{kCooperation, 0.8f}, {kWelfare, 0.5f}, {kRisk, -0.5f}, {kSelfPower, -0.3f}, {kMilitary, -0.5f}}, 0, 0, false,
           weary + 0.15f * (float)w->refused + (p.stats.food_days < 1.0f ? 0.5f : 0.0f) + (p.stats.population < 8 ? 0.6f : 0.0f) +
-              stalemate(*w, now_));
+              stalemate(*w, now_) + lull);
     // Winning: they pay for it (less, after they have turned demands down).
     const float refused = (float)w->refused;
     if ((score >= 2.0f || as.ratio >= 1.6f) && their_food >= 10) {
@@ -539,8 +544,13 @@ void Decisions::build_peace_options(Decision& d, Polity& p, u16 from, const Json
         const float collapse = (p.stats.food_days < 1.0f ? 0.6f : 0.0f) + (p.stats.population < 8 ? 0.8f : 0.0f);
         a.bias += collapse;
         // A war that drags on without end: everyone longs for it to be over (all the more
-        // after the last one).
+        // after the last one) — and one nobody is fighting any more is easily ended.
         a.bias += stalemate(*w, now_) + 0.5f * p.weary;
+        if (other && !p.op.active && !other->op.active) {
+            const War* back = other->war_with(p.id);
+            const float quiet = (float)(now_ - std::max(w->active_at, back ? back->active_at : (Tick)0)) / (float)kTicksPerDay;
+            a.bias += std::min(1.2f, 0.4f * quiet);
+        }
         if (collapse > 0.0f) a.facts.set("collapse", collapse);
         a.facts.set("war_days", (float)(now_ - w->since) / (float)kTicksPerDay);
         a.facts.set("losses", w->losses);
