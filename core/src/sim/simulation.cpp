@@ -27,6 +27,12 @@ Json config_to_json(const GameConfig& c) {
     w.set("island_radius", c.world.island_radius);
     w.set("base_height", c.world.base_height);
     w.set("islet_count", c.world.islet_count);
+    w.set("sea", c.world.sea);
+    w.set("richness", c.world.richness);
+    w.set("relief", c.world.relief);
+    w.set("climate", c.world.climate);
+    w.set("size", c.world.size);
+    w.set("sea_level", c.world.sea_level);
     j.set("world", w);
     j.set("scenario", c.scenario);
     j.set("era", c.era);
@@ -54,6 +60,12 @@ GameConfig config_from_json(const Json& j) {
     c.world.island_radius = w.flt("island_radius", 112.0f);
     c.world.base_height = w.integer("base_height", 160);
     c.world.islet_count = w.integer("islet_count", 4);
+    c.world.sea = w.boolean("sea", true);
+    c.world.richness = w.integer("richness", 1);
+    c.world.relief = w.integer("relief", 1);
+    c.world.climate = w.integer("climate", 0);
+    c.world.size = w.integer("size", 1);
+    c.world.sea_level = w.integer("sea_level", 140);
     c.scenario = j.str("scenario", "village");
     c.era = j.str("era", "village");
     c.civs = j.integer("civs", 1);

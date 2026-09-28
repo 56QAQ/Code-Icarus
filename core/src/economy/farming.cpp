@@ -91,7 +91,7 @@ bool Farming::check_irrigation(const Plot& p, int bonus) {
             for (int dx = -R; dx <= R; ++dx) {
                 Vec3i q{p.ground.x + dx, p.ground.y + dy, p.ground.z + dz};
                 Voxel v = w_.get(q);
-                if (vmat(v) == M.water && vlevel(v) >= 2) return true;
+                if (vmat(v) == M.water && vlevel(v) >= 2 && !w_.gen().salt(q.x, q.z)) return true;  // (not sea water)
             }
     return false;
 }

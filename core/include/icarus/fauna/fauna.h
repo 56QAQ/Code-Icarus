@@ -36,6 +36,8 @@ struct SpeciesDef {
     bool tall = false;  // needs two cubes of headroom
     bool aquatic = false;       // lives in water (fish): swims in lakes, dies stranded
     float water_density = 0.0f; // aquatic: chance of a school per 8x8 patch of deep water
+    bool marine = false;        // lives in the sea (habitat "sea"), not in fresh water
+    float coast_density = 0.0f, open_density = 0.0f;  // marine: schools near the coast / out at sea
     std::vector<std::pair<Biome, float>> biomes;
     int herd_min = 1, herd_max = 1, litter_min = 1, litter_max = 1;
     float lifespan_days = 100.0f, breed_days = 10.0f;
@@ -88,11 +90,14 @@ struct FishGround {
     int cap = 0;       // fish the ground carries
     int stock = 0;     // fish living there now (counted, not saved)
     Vec3i center;      // where they are swimming now (counted with the stock)
+    bool offshore = false;  // out at sea, beyond reach from the shore (a boat's ground; derived)
 };
 
 class Fauna {
 public:
     static constexpr Tick kFarStep = 20;
+    // A sea ground farther than this from dry land can only be fished from a boat.
+    static constexpr int kOffshore = 14;
 
     explicit Fauna(SimContext& ctx) : ctx_(ctx) {}
 
@@ -101,6 +106,8 @@ public:
     // Herds for the whole world at the start of a game (away from settlement sites).
     void populate();
     void step(Tick now);
+    // How far a point at sea lies from dry land (in cubes, up to max + 1).
+    int coast_distance(const Vec3i& at, int max) const;
 
     const std::vector<SpeciesDef>& species() const { return species_; }
     const SpeciesDef& spec(u16 s) const { return species_[s]; }

@@ -1,7 +1,8 @@
 extends Node3D
 ## Scene root: builds the environment, renderer, camera and HUD, routes input to the
 ## active tool, and supports scripted screenshots for automated visual checks:
-##   godot --path game -- --shot out.png [--seed N | --load FILE] [--layout classic|continent] [--scenario key]
+##   godot --path game -- --shot out.png [--seed N | --load FILE] [--layout classic|continent|random] [--scenario key]
+##        [--sea 0|1] [--richness 0-2] [--relief 0-2] [--climate 0-4] [--size 0|1] [--civs N] [--era key]
 ##        [--ticks N] [--cam x,y,z,yaw,pitch,dist]
 ##        [--admin type:{json}|break_bridge] [--council [id]] [--tech [key]] [--ui-scale f] [--ending] [--menu] [--civ-detail] [--tool id] [--focus-soldiers [dist]] [--focus-army dist[,polity]] [--select id [--focus dist]]
 ##        [--focus-job job[,dist]] [--focus-animal species[,dist]]
@@ -81,6 +82,11 @@ func _ready() -> void:
 		config["era"] = String(_cli["era"])
 	if _cli.has("civs"):
 		config["civs"] = int(_cli["civs"])
+	for key in ["richness", "relief", "climate", "size"]:
+		if _cli.has(key):
+			config[key] = int(_cli[key])
+	if _cli.has("sea"):
+		config["sea"] = int(_cli["sea"]) != 0
 	if not Game.start_new_game(config):
 		push_error("could not start game")
 		return

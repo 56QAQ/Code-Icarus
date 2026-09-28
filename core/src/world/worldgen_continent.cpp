@@ -600,7 +600,7 @@ bool WorldGen::continent_tree(int sx, int sz, TreeSpec& t) const {
         case Biome::Islet: p = 0.30f, kind = r2 < 0.8f ? 0 : 2; break;
         default: p = 0.0f;
     }
-    if (roll >= p) return false;
+    if (roll >= p * rich_trees_) return false;
     t.x = tx;
     t.z = tz;
     t.ground = col.top;
@@ -739,7 +739,7 @@ void WorldGen::place_plants_continent(const Vec3i& cc, Voxel* out) const {
             float acc = 0.0f;
             auto chance = [&](float p, MatId what) {
                 if (m != air) return;
-                acc += p;
+                acc += p * rich_plants_;
                 if (r < acc) m = what;
             };
             switch (col.biome) {

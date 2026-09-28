@@ -122,7 +122,7 @@ void Agents::refresh_water_spots() {
                 if (dx * dx + dz * dz > R * R) continue;
                 int x = c.x + dx, z = c.z + dz;
                 ColumnInfo col = w.gen().column(x, z);
-                if (!col.land) continue;
+                if (!col.land || col.sea) continue;  // (the sea is salt)
                 for (int y = col.top + 4; y >= col.top - 4; --y) {
                     Voxel v = w.get({x, y, z});
                     if (vmat(v) == 0) continue;
@@ -273,7 +273,7 @@ bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
             for (int d = 0; d < 5; ++d) {
                 Vec3i q = p + (d < 4 ? kDir4H[d] : Vec3i{0, 0, 0}) + Vec3i{0, dy, 0};
                 Voxel v = w.get(q);
-                if (vmat(v) == WATER && vlevel(v) >= 2) {
+                if (vmat(v) == WATER && vlevel(v) >= 2 && !w.gen().salt(q.x, q.z)) {
                     out = q;
                     return true;
                 }
@@ -545,14 +545,14 @@ bool Agents::task_drink(Character& c) {
             for (int d = 0; d < 5 && found.y < 0; ++d) {
                 Vec3i q = c.foot + (d < 4 ? kDir4H[d] : Vec3i{0, 0, 0}) + Vec3i{0, dy, 0};
                 Voxel v = w.get(q);
-                if (vmat(v) == WATER && vlevel(v) >= 1) found = q;
+                if (vmat(v) == WATER && vlevel(v) >= 1 && !w.gen().salt(q.x, q.z)) found = q;
             }
         for (int dy = -2; dy <= 0 && found.y < 0; ++dy)
             for (int dz = -2; dz <= 2 && found.y < 0; ++dz)
                 for (int dx = -2; dx <= 2 && found.y < 0; ++dx) {
                     const Vec3i q = c.foot + Vec3i{dx, dy, dz};
                     const Voxel v = w.get(q);
-                    if (vmat(v) == WATER && vlevel(v) >= 1) found = q;
+                    if (vmat(v) == WATER && vlevel(v) >= 1 && !w.gen().salt(q.x, q.z)) found = q;
                 }
         if (found.y < 0) {
             // The shallows here are drunk dry: another spot on the shore.

@@ -56,8 +56,13 @@ void Fauna::load_species(const Registry& reg) {
         const Json& sz = e["size"];
         if (sz.is_array() && sz.size() >= 3) s.size = {(float)sz[0].as_num(), (float)sz[1].as_num(), (float)sz[2].as_num()};
         s.tall = s.size.y > 1.1f;
-        s.aquatic = e.str("habitat", "land") == "water";
+        s.aquatic = e.str("habitat", "land") == "water" || e.str("habitat", "land") == "sea";
+        s.marine = e.str("habitat", "land") == "sea";
         s.water_density = e.flt("water_density", 0.0f);
+        if (const Json& sd = e["sea_density"]; sd.is_array() && sd.size() >= 2) {
+            s.coast_density = (float)sd[0].as_num();
+            s.open_density = (float)sd[1].as_num();
+        }
         s.speed = e.flt("speed", 0.2f);
         s.run = e.flt("run", 0.5f);
         s.stamina = e.integer("stamina", 300);
@@ -229,7 +234,11 @@ void Fauna::populate() {
     const World& w = *ctx_.world;
     const WorldGen& gen = w.gen();
     const IslandFeatures& f = gen.features();
-    const bool continent = w.config().layout == WorldLayout::Continent;
+    const bool continent = w.config().layout != WorldLayout::Classic;
+    // Resource richness (the random layout's option) thins or thickens wildlife.
+    const float rich = w.config().layout == WorldLayout::Random
+                           ? (w.config().richness <= 0 ? 0.6f : (w.config().richness == 1 ? 1.0f : 1.4f))
+                           : 1.0f;
     constexpr int G = 8;
     const int W = w.size_x(), D = w.size_z();
     std::vector<int> spawned(species_.size(), 0);
@@ -244,9 +253,9 @@ void Fauna::populate() {
             if (!near_island) continue;
             const ColumnInfo col = gen.column_uncached(x, z);
             // Fish: schools in deep water (lakes, ponds, the village's spring).
-            if (col.water_top >= 0 && col.water_top - col.top >= 2)
+            if (col.water_top >= 0 && !col.sea && col.water_top - col.top >= 2)
                 for (const SpeciesDef& s : species_) {
-                    if (!s.aquatic || s.water_density <= 0.0f || !rng_.chance(s.water_density)) continue;
+                    if (!s.aquatic || s.marine || s.water_density <= 0.0f || !rng_.chance(s.water_density * rich)) continue;
                     const int n = rng_.range(s.herd_min, s.herd_max);
                     const size_t before = animals_.size();
                     spawn_herd(s.id, Vec3i{x, col.water_top, z}, n, 0);
@@ -263,7 +272,7 @@ void Fauna::populate() {
                 // The classic island is small and peaceful; beasts keep well away from homes.
                 if (fierce && (!continent || site_d < 110.0f)) continue;
                 if (site_d < 40.0f) continue;
-                const float p = s.density(col.biome) * (float)(G * G);
+                const float p = s.density(col.biome) * (float)(G * G) * rich;
                 if (p <= 0.0f || !rng_.chance(p)) continue;
                 const int n = rng_.range(s.herd_min, s.herd_max);
                 const size_t before = animals_.size();
@@ -271,9 +280,57 @@ void Fauna::populate() {
                 spawned[s.id] += (int)(animals_.size() - before);
             }
         }
+    // The sea: schools along the coast and out in open water (within a boat's reach).
+    // (Sampled every 16 cubes near the coast, every 32 out at sea.)
+    if (gen.sea_level() >= 0) {
+        constexpr int S = 16;
+        for (int z = S / 2; z < D; z += S)
+            for (int x = S / 2; x < W; x += S) {
+                const ColumnInfo col = gen.column_uncached(x, z);
+                if (!col.sea || col.water_top - col.top < 2) continue;
+                const bool coarse = (x / S) % 2 == 0 && (z / S) % 2 == 0;
+                const int coast = coast_distance(Vec3i{x, col.water_top, z}, coarse ? 140 : kOffshore);
+                const bool open = coast > kOffshore;
+                if (coast < 4 || coast > 140 || (open && !coarse)) continue;
+                for (const SpeciesDef& s : species_) {
+                    if (!s.marine) continue;
+                    const float p = (open ? s.open_density : s.coast_density) * rich;
+                    if (p <= 0.0f || !rng_.chance(p)) continue;
+                    const Vec3i at{x, col.water_top, z};
+                    const size_t before = animals_.size();
+                    spawn_herd(s.id, at, rng_.range(s.herd_min, s.herd_max), 0);
+                    spawned[s.id] += (int)(animals_.size() - before);
+                    if (animals_.size() > before) {
+                        FishGround g{at, s.id, s.herd_max * 2, 0, at, open};
+                        grounds_.push_back(g);
+                    }
+                }
+            }
+    }
     for (size_t s = 0; s < species_.size(); ++s)
         capacity_[s] = std::max(spawned[s] > 0 ? 4 : 0, (int)std::ceil((float)spawned[s] * 1.25f));
     refresh_grounds();
+}
+
+int Fauna::coast_distance(const Vec3i& at, int max) const {
+    // Out from a point at sea in sixteen directions: how far to the nearest land that
+    // is not sea floor.
+    const WorldGen& gen = ctx_.world->gen();
+    int best = max + 1;
+    for (int k = 0; k < 16; ++k) {
+        const float a = 6.2831853f * (float)k / 16.0f;
+        const float dx = std::cos(a), dz = std::sin(a);
+        for (int r = 2; r < best; r += 2) {
+            const int x = at.x + (int)std::lround(dx * (float)r), z = at.z + (int)std::lround(dz * (float)r);
+            if (gen.sea_wall(x, z)) break;
+            const ColumnInfo c = gen.column(x, z);
+            if (c.land && !c.sea) {
+                best = r;
+                break;
+            }
+        }
+    }
+    return best;
 }
 
 int Fauna::ground_of(const Animal& a) const {
@@ -913,9 +970,12 @@ void Fauna::daily() {
         }
     }
     // A ground fished out (or never refilled) is found again, now and then, by a pair
-    // swimming in from the rest of the water.
+    // swimming in from the rest of the water. The sea is wide: its grounds, when thin,
+    // are made up from the open water more often.
     for (size_t g = 0; g < grounds_.size(); ++g) {
-        if (stock[g] > 0 || !rng_.chance(1.0f / 6.0f)) continue;
+        const bool marine = species_[grounds_[g].species].marine;
+        if (marine ? (stock[g] * 2 >= grounds_[g].cap || !rng_.chance(0.5f)) : (stock[g] > 0 || !rng_.chance(1.0f / 6.0f)))
+            continue;
         const SpeciesDef& s = species_[grounds_[g].species];
         rough_ = !people_near(grounds_[g].at, kNearPeople);
         for (int k = 0; k < 2; ++k) {
@@ -1055,6 +1115,8 @@ void Fauna::load(BinReader& outer) {
             if (!have) grounds_.push_back({a.home, a.species, s.herd_max * 2, 0});
         }
     }
+    for (FishGround& g : grounds_)
+        g.offshore = species_[g.species].marine && coast_distance(g.at, kOffshore) > kOffshore;
     refresh_grounds();
     people_.clear();
     people_at_ = ~0ull;

@@ -342,6 +342,14 @@ void World::save(BinWriter& w) const {
     w.vari(cfg.base_height);
     // The layout rides in the high bits of the islet count (older saves: classic).
     w.vari(cfg.islet_count | ((int)cfg.layout << 16));
+    if (cfg.layout == WorldLayout::Random) {  // (no older save has this layout)
+        w.boolean(cfg.sea);
+        w.vari(cfg.richness);
+        w.vari(cfg.relief);
+        w.vari(cfg.climate);
+        w.vari(cfg.size);
+        w.vari(cfg.sea_level);
+    }
     w.u64v(now_);
 
     std::vector<const Cell*> stored;
@@ -403,6 +411,14 @@ void World::load(BinReader& outer) {
     const int islets = (int)r.vari();
     cfg.islet_count = islets & 0xFFFF;
     cfg.layout = (WorldLayout)((islets >> 16) & 0xFF);
+    if (cfg.layout == WorldLayout::Random) {
+        cfg.sea = r.boolean();
+        cfg.richness = (int)r.vari();
+        cfg.relief = (int)r.vari();
+        cfg.climate = (int)r.vari();
+        cfg.size = (int)r.vari();
+        cfg.sea_level = (int)r.vari();
+    }
     Tick now = r.u64v();
     init(cfg);
     now_ = now;

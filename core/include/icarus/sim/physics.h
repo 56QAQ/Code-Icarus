@@ -71,6 +71,7 @@ struct PhysicsStats {
     size_t water_active = 0, fire_active = 0, granular_active = 0, support_checks = 0;
     size_t debris = 0, meteors = 0;
     i64 water_units_to_void = 0, water_units_spring = 0, water_units_evaporated = 0, water_units_rain = 0;
+    i64 water_units_sea_in = 0, water_units_sea_out = 0;  // drained into / drawn from the sea
     // Diagnostics (not saved): accumulated microseconds per sub-step since reset.
     double us_water = 0, us_evaporation = 0, us_fire = 0, us_granular = 0, us_support = 0, us_other = 0;
 };

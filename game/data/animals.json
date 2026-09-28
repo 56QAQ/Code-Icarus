@@ -12,6 +12,9 @@
 //   chance of a school per 8x8 patch of water at least two cubes deep), dart away from
 //   anyone at the water's edge within `flee`, die stranded if their water is drained, and
 //   are caught from the shore by fishers (yield).
+//   habitat "sea": sea fish, only in the sea around a random island. sea_density: the
+//   chance of a school per 16x16 patch of coastal sea, or 32x32 patch of open sea [near the coast, out at sea]; schools out
+//   at sea are reached only by boat. A thinned sea ground is made up from the open water.
 {
   "species": [
     {"key": "crucian", "name": "鲫鱼", "habitat": "water", "size": [0.5, 0.2, 0.1], "speed": 0.08, "run": 0.32, "stamina": 200, "hp": 0.06,
@@ -20,6 +23,15 @@
     {"key": "carp", "name": "鲤鱼", "habitat": "water", "size": [0.8, 0.28, 0.16], "speed": 0.07, "run": 0.28, "stamina": 260, "hp": 0.12,
      "temper": "shy", "flee": 2, "herd": [2, 4], "lifespan_days": 90, "litter": [1, 3], "breed_days": 6, "water_density": 0.15,
      "yield": {"fish": 3}, "colors": ["#c9803a", "#f0d49a", "#8a4a22"], "look": ["fins", "barbels"]},
+    {"key": "mackerel", "name": "鲭鱼", "habitat": "sea", "size": [0.6, 0.18, 0.1], "speed": 0.1, "run": 0.4, "stamina": 260, "hp": 0.06,
+     "temper": "shy", "flee": 2, "herd": [4, 7], "lifespan_days": 40, "litter": [2, 4], "breed_days": 4, "sea_density": [0.22, 0.08],
+     "yield": {"fish": 2}, "colors": ["#3f6e8c", "#dfe8ee", "#23384a"], "look": ["fins"]},
+    {"key": "sea_bream", "name": "鲷鱼", "habitat": "sea", "size": [0.7, 0.34, 0.12], "speed": 0.08, "run": 0.3, "stamina": 240, "hp": 0.1,
+     "temper": "shy", "flee": 2, "herd": [2, 4], "lifespan_days": 80, "litter": [1, 3], "breed_days": 6, "sea_density": [0.14, 0.02],
+     "yield": {"fish": 3}, "colors": ["#c96a5a", "#f3d6c8", "#7a3a30"], "look": ["fins"]},
+    {"key": "tuna", "name": "金枪鱼", "habitat": "sea", "size": [1.6, 0.5, 0.36], "speed": 0.14, "run": 0.5, "stamina": 400, "hp": 0.4,
+     "temper": "shy", "flee": 3, "herd": [2, 4], "lifespan_days": 120, "litter": [1, 2], "breed_days": 10, "sea_density": [0.0, 0.07],
+     "yield": {"fish": 7}, "colors": ["#2c3f5a", "#c8d3dc", "#141e2c"], "look": ["fins"]},
     {"key": "rabbit", "name": "野兔", "size": [0.6, 0.5, 0.4], "speed": 0.18, "run": 0.55, "stamina": 260, "hp": 0.12,
      "temper": "shy", "flee": 9, "herd": [1, 2], "lifespan_days": 60, "litter": [2, 4], "breed_days": 5,
      "biomes": {"grassland": 0.0016, "forest": 0.0008, "savanna": 0.0012, "taiga": 0.0006, "islet": 0.0015},

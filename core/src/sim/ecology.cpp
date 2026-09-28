@@ -24,7 +24,7 @@ bool Ecology::open_grass(const Vec3i& p, const Buildings& buildings) {
     auto mat = [&](const Vec3i& q) { return vmat(w_.peek(q)); };
     if (!w_.in_bounds(p) || !w_.in_bounds(p + Vec3i{0, 6, 0})) return false;
     const MatId ground = mat(p + Vec3i{0, -1, 0});
-    const bool continent = w_.config().layout == WorldLayout::Continent;
+    const bool continent = w_.config().layout != WorldLayout::Classic;
     if (ground != M.grass &&
         !(continent && ground != M.air && (ground == M.dry_grass || ground == M.snow || ground == M.mud)))
         return false;
@@ -46,7 +46,7 @@ void Ecology::grow_tree(const Vec3i& base) {
     MatId trunk = M.log, leaf = M.leaves, fruit = M.leaves;
     int height = 4 + rng_.range(0, 2);
     bool conifer = false, flat = false;
-    if (w_.config().layout == WorldLayout::Continent) {
+    if (w_.config().layout != WorldLayout::Classic) {
         // The species of the place.
         const Biome b = w_.gen().column(base.x, base.z).biome;
         if (b == Biome::Taiga || b == Biome::Snowfield || b == Biome::Highland) {
@@ -100,7 +100,7 @@ void Ecology::grow_tree(const Vec3i& base) {
 // Which wild plant comes back at p (continent: by biome; classic: berry bushes).
 MatId Ecology::wild_plant_for(const Vec3i& p) {
     const CoreMats& M = reg_->m();
-    if (w_.config().layout != WorldLayout::Continent) return M.berry_bush;
+    if (w_.config().layout == WorldLayout::Classic) return M.berry_bush;
     auto pick = [&](MatId m) { return m != M.air ? m : M.berry_bush; };
     const int r = rng_.range(0, 9);
     switch (w_.gen().column(p.x, p.z).biome) {

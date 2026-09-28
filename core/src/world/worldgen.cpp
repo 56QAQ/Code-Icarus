@@ -46,6 +46,8 @@ const char* biome_key(Biome b) {
         case Biome::Desert: return "desert";
         case Biome::Savanna: return "savanna";
         case Biome::Wetland: return "wetland";
+        case Biome::Ocean: return "ocean";
+        case Biome::Beach: return "beach";
         default: return "unknown";
     }
 }
@@ -65,13 +67,18 @@ const char* biome_name_zh(Biome b) {
         case Biome::Desert: return "荒漠";
         case Biome::Savanna: return "稀树草原";
         case Biome::Wetland: return "沼泽";
+        case Biome::Ocean: return "海洋";
+        case Biome::Beach: return "海滩";
         default: return "未知";
     }
 }
 
-const char* layout_key(WorldLayout l) { return l == WorldLayout::Continent ? "continent" : "classic"; }
+const char* layout_key(WorldLayout l) {
+    return l == WorldLayout::Continent ? "continent" : (l == WorldLayout::Random ? "random" : "classic");
+}
 
 WorldLayout layout_from_key(const std::string& k) {
+    if (k == "random") return WorldLayout::Random;
     return (k == "continent" || k == "large") ? WorldLayout::Continent : WorldLayout::Classic;
 }
 
@@ -84,8 +91,21 @@ WorldConfig WorldConfig::for_layout(WorldLayout l, u64 seed) {
         c.island_radius = 330.0f;
         c.base_height = 150;
         c.islet_count = 6;
+    } else if (l == WorldLayout::Random) {
+        c.sized();
     }
     return c;
+}
+
+void WorldConfig::sized() {
+    // Medium: a little larger than the continent; large: half as wide again. The sea
+    // (when there is one) fills the ring between the island and the world's edge.
+    const int cells = size <= 0 ? 40 : 48;
+    cells_x = cells_z = cells;
+    cells_y = 10;
+    base_height = sea_level + 10;
+    island_radius = (float)(cells * kCellSize) * (sea ? 0.31f : 0.36f);
+    islet_count = 5;
 }
 
 void WorldGen::init(const WorldConfig& cfg, const Registry& reg) {
@@ -98,8 +118,15 @@ void WorldGen::init(const WorldConfig& cfg, const Registry& reg) {
     peaks_.clear();
     site_climate_.clear();
     feat_ = IslandFeatures{};
+    rnd_.reset();
+    has_sea_ = false;
+    rich_trees_ = rich_plants_ = rich_ores_ = 1.0f;
     if (cfg.layout == WorldLayout::Continent) {
         init_continent();
+        return;
+    }
+    if (cfg.layout == WorldLayout::Random) {
+        init_random();
         return;
     }
 
@@ -211,6 +238,7 @@ float WorldGen::ravine_center_u(float lv) const {
 
 ColumnInfo WorldGen::compute_column(int xi, int zi) const {
     if (cfg_.layout == WorldLayout::Continent) return compute_column_continent(xi, zi);
+    if (cfg_.layout == WorldLayout::Random) return compute_column_random(xi, zi);
     ColumnInfo c;
     const float x = (float)xi + 0.5f, z = (float)zi + 0.5f;
     for (size_t ii = 0; ii < islands_.size(); ++ii) {
@@ -379,7 +407,9 @@ bool WorldGen::cell_maybe_nonempty(const Vec3i& cc) const {
         float rr = is.radius * 1.3f + 6.0f;
         if (is.cx + rr < x0 || is.cx - rr > x1 || is.cz + rr < z0 || is.cz - rr > z1) continue;
         float ylo = is.base_h - is.thickness - 20.0f;
-        float yhi = is.base_h + (cfg_.layout == WorldLayout::Continent && is.main ? 100.0f : 60.0f);
+        float yhi = is.base_h + (cfg_.layout == WorldLayout::Random && is.main
+                                     ? 125.0f
+                                     : (cfg_.layout == WorldLayout::Continent && is.main ? 100.0f : 60.0f));
         if (yhi < y0 || ylo > y1) continue;
         return true;
     }
@@ -417,6 +447,10 @@ void WorldGen::generate_cell(const Vec3i& cc, Voxel* out) const {
     }
     if (cfg_.layout == WorldLayout::Continent) {
         generate_cell_continent(cc, out);
+        return;
+    }
+    if (cfg_.layout == WorldLayout::Random) {
+        generate_cell_random(cc, out);
         return;
     }
     const ColumnBlock& cb = column_block(cc.x, cc.z);
@@ -503,7 +537,7 @@ void WorldGen::place_ores(const Vec3i& cc, Voxel* out) const {
     constexpr int G = 12;
     const int bx0 = cc.x * kCellSize, by0 = cc.y * kCellSize, bz0 = cc.z * kCellSize;
     const float base = (float)cfg_.base_height;
-    const bool continent = cfg_.layout == WorldLayout::Continent;
+    const bool continent = cfg_.layout != WorldLayout::Classic;
     auto rock = [&](MatId m) {
         return m == M.stone || (m != M.air && (m == M.granite || m == M.limestone || m == M.sandstone));
     };
@@ -520,10 +554,11 @@ void WorldGen::place_ores(const Vec3i& cc, Voxel* out) const {
                 float pz = gz * G + hash_to_unit(splitmix64(h + 3)) * G;
                 float rad = 1.4f + hash_to_unit(splitmix64(h + 4)) * 1.6f;
                 MatId ore;
-                if (py > base - 40.0f && roll < 0.14f) ore = M.copper_ore;
-                else if (py < base - 22.0f && roll < 0.22f) ore = M.iron_ore;
-                else if (continent && py > base + 12.0f && roll < 0.24f) ore = M.iron_ore;  // in the mountains
-                else if (roll > 0.90f) ore = M.coal;
+                const float k = rich_ores_;
+                if (py > base - 40.0f && roll < 0.14f * k) ore = M.copper_ore;
+                else if (py < base - 22.0f && roll < 0.22f * k) ore = M.iron_ore;
+                else if (continent && py > base + 12.0f && roll < 0.24f * k) ore = M.iron_ore;  // in the mountains
+                else if (roll > 1.0f - 0.10f * k) ore = M.coal;
                 else continue;
                 int x0 = (int)std::floor(px - rad), x1 = (int)std::ceil(px + rad);
                 int y0 = (int)std::floor(py - rad), y1 = (int)std::ceil(py + rad);
@@ -549,7 +584,7 @@ std::vector<Vec3i> WorldGen::tree_bases() const {
     std::vector<Vec3i> out;
     const int S = kTreeSlot;
     const int nx = cfg_.cells_x * kCellSize / S + 1, nz = cfg_.cells_z * kCellSize / S + 1;
-    if (cfg_.layout == WorldLayout::Continent) {
+    if (cfg_.layout != WorldLayout::Classic) {
         TreeSpec t;
         for (int sz = 0; sz < nz; ++sz)
             for (int sx = 0; sx < nx; ++sx)

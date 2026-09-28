@@ -237,6 +237,12 @@ void Physics::step_springs(Tick now) {
 
 void Physics::step_water() {
     const CoreMats& M = w_.reg().m();
+    // The sea (random layout): an invisible wall at its rim, and a level that never
+    // changes — water rising above it on the sea drains away, water running out of it
+    // (into a hole in its floor) is made up at once.
+    const WorldGen& gen = w_.gen();
+    const int sea_level = gen.sea_level();
+    auto walled = [&](const Vec3i& n) { return !w_.in_bounds(n) || (sea_level >= 0 && gen.sea_wall(n.x, n.z)); };
     std::vector<Vec3i> list = water_.take();
     if ((int)list.size() > water_budget) {
         for (size_t i = (size_t)water_budget; i < list.size(); ++i) water_.push(list[i]);
@@ -249,6 +255,15 @@ void Physics::step_water() {
         if (level <= 0) {
             w_.set(p, make_voxel(M.air));
             continue;
+        }
+        bool sea_source = false;
+        if (sea_level >= 0 && gen.column(p.x, p.z).sea) {
+            if (p.y > sea_level) {
+                stats_.water_units_sea_in += level;
+                w_.set(p, make_voxel(M.air));
+                continue;
+            }
+            sea_source = true;
         }
         bool moved = false;
         // 1) Fall.
@@ -277,10 +292,7 @@ void Physics::step_water() {
                 for (int k = 0; k < 4; ++k) {
                     int d = (start + k) & 3;
                     Vec3i n = p + kDir4H[d];
-                    if (!w_.in_bounds(n)) {
-                        // Water flowing off the edge of the world is lost.
-                        continue;
-                    }
+                    if (walled(n)) continue;  // the world's edge, the sea's wall
                     Voxel nv = w_.get(n);
                     if (!water_can_enter(nv)) continue;
                     int nl = vmat(nv) == M.water ? vlevel(nv) : 0;
@@ -305,7 +317,7 @@ void Physics::step_water() {
                     bool downhill = false;
                     for (int k = 0; k < 4 && !downhill; ++k) {
                         Vec3i m = n + kDir4H[k];
-                        if (m == p || !w_.in_bounds(m)) continue;
+                        if (m == p || walled(m)) continue;
                         Voxel mv = w_.get(m);
                         if (!water_can_enter(mv)) continue;
                         int ml = vmat(mv) == M.water ? vlevel(mv) : 0;
@@ -326,6 +338,10 @@ void Physics::step_water() {
         // and then (step_puddles) until they dry or something around them changes.
         if (!moved && level <= 2) puddles_.push(p);
         if (moved) {
+            if (sea_source) {
+                stats_.water_units_sea_out += kFluidFull - level;
+                level = kFluidFull;
+            }
             w_.set(p, level > 0 ? make_voxel(M.water, (u8)level) : make_voxel(M.air));
             water_.push(p);
         }

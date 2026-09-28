@@ -18,6 +18,8 @@ enum class Biome : u8 {
     Sky = 0, Grassland, Forest, Highland, Lakeshore, Ravine, Underside, Islet,
     // Version 2 (continent layout).
     Taiga, Snowfield, Desert, Savanna, Wetland,
+    // Version 3 (random layout): the sea around the island and its beaches.
+    Ocean, Beach,
     Count
 };
 const char* biome_key(Biome b);
@@ -26,7 +28,9 @@ const char* biome_name_zh(Biome b);
 // Classic: the first version's small island (village plateau, ravine and bridge).
 // Continent: a much larger island with a mountain spine, lakes and climate-driven
 // biomes, laid out for up to three civilisations.
-enum class WorldLayout : u8 { Classic = 0, Continent = 1 };
+// Random: an island generated from the seed and the new-game options (terrain, rivers,
+// lakes, an optional sea around it, resources, up to four sites).
+enum class WorldLayout : u8 { Classic = 0, Continent = 1, Random = 2 };
 const char* layout_key(WorldLayout l);
 WorldLayout layout_from_key(const std::string& k);
 
@@ -37,9 +41,19 @@ struct WorldConfig {
     float island_radius = 112.0f;                  // main island radius in cubes
     int base_height = 160;                         // main island surface height
     int islet_count = 4;
+    // Random layout options (新游戏选项).
+    bool sea = true;      // a sea around the island, held in by an invisible wall at its rim
+    int richness = 1;     // 资源丰富度: 0 poor, 1 normal, 2 rich
+    int relief = 1;       // 地形: 0 gentle, 1 rolling, 2 rugged
+    int climate = 0;      // 气候: 0 varied, 1 temperate, 2 cold, 3 hot and dry, 4 wet
+    int size = 1;         // 大小: 0 medium, 1 large
+    int sea_level = 140;  // y of the topmost sea cube
 
-    // Defaults for a layout (the classic values above, or the continent's).
+    // Defaults for a layout (the classic values above, or the continent's). For the
+    // random layout the extent follows `size` (see sized()).
     static WorldConfig for_layout(WorldLayout l, u64 seed);
+    // The random layout's world extent and island radius for the current options.
+    void sized();
 };
 
 struct IslandDef {
@@ -62,6 +76,8 @@ struct ColumnInfo {
     bool ravine = false;
     bool reserved = false;  // keep clear of trees (village, farms, bridge)
     bool frozen = false;    // water surface is ice
+    bool sea = false;       // the water here is the sea's: salt, not for drinking or fields
+    bool weir = false;      // a stone step holding a river reach (walkable ford)
     u8 temp = 128;          // climate (continent): 0 cold .. 255 hot
     u8 moist = 128;         // 0 dry .. 255 wet
 };
@@ -117,6 +133,20 @@ public:
     Biome cell_biome(const Vec3i& cc) const;
     bool cell_maybe_nonempty(const Vec3i& cc) const;
 
+    // The sea (random layout with a sea): its level, and the invisible wall at its rim
+    // that water cannot pass. Always false/-1 for the other layouts.
+    int sea_level() const { return has_sea_ ? cfg_.sea_level : -1; }
+    // Water at (x, z) is the sea's (salt: not for drinking or watering fields).
+    bool salt(int x, int z) const { return has_sea_ && column(x, z).sea; }
+    bool sea_wall(int x, int z) const {
+        if (!has_sea_) return false;
+        const float dx = (float)x + 0.5f - sea_cx_, dz = (float)z + 0.5f - sea_cz_;
+        return dx * dx + dz * dz > sea_r2_;
+    }
+    // A top-down picture of the island from column information alone (no cubes are
+    // generated): `px` pixels on a side, RGB 0xRRGGBB, sites marked. For previews.
+    std::vector<u32> preview(int px) const;
+
 private:
     struct Lake {
         float x = 0, z = 0, r = 0;
@@ -156,6 +186,16 @@ private:
     bool continent_tree(int sx, int sz, TreeSpec& t) const;
     void place_trees_continent(const Vec3i& cc, Voxel* out) const;
     void place_plants_continent(const Vec3i& cc, Voxel* out) const;
+    // Random layout (worldgen_random.cpp).
+    struct RandomIsland;
+    void init_random();
+    ColumnInfo compute_column_random(int x, int z) const;
+    void generate_cell_random(const Vec3i& cc, Voxel* out) const;
+    std::shared_ptr<const RandomIsland> rnd_;
+    // Resource richness (random layout; 1 elsewhere): trees, wild plants, ore bodies.
+    float rich_trees_ = 1.0f, rich_plants_ = 1.0f, rich_ores_ = 1.0f;
+    bool has_sea_ = false;
+    float sea_cx_ = 0, sea_cz_ = 0, sea_r2_ = 0;
 
     WorldConfig cfg_;
     const Registry* reg_ = nullptr;

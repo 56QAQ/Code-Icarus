@@ -32,7 +32,9 @@ struct Args {
     std::string scenario = "village";
     std::string era;  // 开局时代 override (wild / tribal / village)
     int civs = 0;
-    std::string layout = "classic";  // classic | continent
+    std::string layout = "classic";  // classic | continent | random
+    // Random layout options.
+    int sea = 1, richness = 1, relief = 1, climate = 0, size = 1;
     std::string save;
     std::string load;              // run: continue from a save instead of a new game
     bool verbose = false;
@@ -58,6 +60,11 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--era") a.era = next();
         else if (k == "--civs") a.civs = std::stoi(next());
         else if (k == "--layout" || k == "--island") a.layout = next();
+        else if (k == "--sea") a.sea = std::stoi(next());
+        else if (k == "--richness") a.richness = std::stoi(next());
+        else if (k == "--relief") a.relief = std::stoi(next());
+        else if (k == "--climate") a.climate = std::stoi(next());
+        else if (k == "--size") a.size = std::stoi(next());
         else if (k == "--save") a.save = next();
         else if (k == "--load") a.load = next();
         else if (k == "-v" || k == "--verbose") a.verbose = true;
@@ -70,11 +77,24 @@ Args parse_args(int argc, char** argv) {
     return a;
 }
 
+WorldConfig world_config(const Args& a, u64 seed) {
+    WorldConfig c = WorldConfig::for_layout(layout_from_key(a.layout), seed);
+    if (c.layout == WorldLayout::Random) {
+        c.sea = a.sea != 0;
+        c.richness = a.richness;
+        c.relief = a.relief;
+        c.climate = a.climate;
+        c.size = a.size;
+        c.sized();
+    }
+    return c;
+}
+
 int cmd_map(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
     World w(reg);
-    WorldConfig cfg = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
+    WorldConfig cfg = world_config(a, a.seed);
     w.init(cfg);
     const int W = w.size_x(), D = w.size_z();
     Image img(W, D);
@@ -165,6 +185,32 @@ int cmd_map(const Args& a) {
     return 0;
 }
 
+// A fast top-down preview from column information alone (what the new-game menu shows).
+int cmd_preview(const Args& a) {
+    Registry reg;
+    reg.load_from_dir(a.data);
+    WorldGen gen;
+    const auto t0 = std::chrono::steady_clock::now();
+    gen.init(world_config(a, a.seed), reg);
+    const auto t1 = std::chrono::steady_clock::now();
+    const int px = a.scale > 1 ? a.scale : 512;
+    const std::vector<u32> pix = gen.preview(px);
+    const auto t2 = std::chrono::steady_clock::now();
+    Image img(px, px);
+    for (int y = 0; y < px; ++y)
+        for (int x = 0; x < px; ++x) img.set(x, y, pix[(size_t)(y * px + x)]);
+    if (!write_png(a.out, img)) {
+        std::fprintf(stderr, "cannot write %s\n", a.out.c_str());
+        return 1;
+    }
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    std::printf("preview %s: init %.0f ms, picture %.0f ms\n", a.out.c_str(), ms(t1 - t0), ms(t2 - t1));
+    for (const Site& s : gen.features().sites)
+        std::printf("site %s (%s) farms=%s water=%s\n", s.center.str().c_str(), biome_name_zh(s.biome), s.farms.str().c_str(),
+                    s.water.str().c_str());
+    return 0;
+}
+
 // Scheduled administrator interventions. Shortcuts target the island's features.
 struct Scheduled {
     Tick at = 0;
@@ -233,7 +279,7 @@ int cmd_meshbench(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
     World w(reg);
-    w.init(WorldConfig::for_layout(layout_from_key(a.layout), a.seed));
+    w.init(world_config(a, a.seed));
     Mesher mesher(w);
     CellMesh out;
     int cells = 0, nonempty = 0;
@@ -268,7 +314,7 @@ int cmd_meshbench(const Args& a) {
 int cmd_sites(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
-    WorldConfig wc = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
+    WorldConfig wc = world_config(a, a.seed);
     World w(reg);
     w.init(wc);
     const IslandFeatures& f = w.gen().features();
@@ -297,7 +343,7 @@ int cmd_waterdump(const Args& a) {
     Registry reg;
     reg.load_from_dir(a.data);
     GameConfig cfg;
-    cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
+    cfg.world = world_config(a, a.seed);
     cfg.scenario = a.scenario;
     if (!a.era.empty()) cfg.era = a.era;
     if (a.civs > 0) cfg.civs = a.civs;
@@ -365,7 +411,7 @@ int cmd_run(const Args& a) {
     reg.load_from_dir(a.data);
     Simulation sim(reg);
     GameConfig cfg;
-    cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), a.seed);
+    cfg.world = world_config(a, a.seed);
     cfg.scenario = a.scenario;
     if (!a.era.empty()) cfg.era = a.era;
     if (a.civs > 0) cfg.civs = a.civs;
@@ -540,7 +586,7 @@ int cmd_experiment(const Args& a) {
     for (u64 seed : parse_seeds(a.seeds)) {
         Simulation sim(reg);
         GameConfig cfg;
-        cfg.world = WorldConfig::for_layout(layout_from_key(a.layout), seed);
+        cfg.world = world_config(a, seed);
         cfg.scenario = a.scenario;
         if (!a.era.empty()) cfg.era = a.era;
         if (a.civs > 0) cfg.civs = a.civs;
@@ -679,6 +725,7 @@ int main(int argc, char** argv) {
     Args a = parse_args(argc, argv);
     try {
         if (a.cmd == "map") return cmd_map(a);
+        if (a.cmd == "preview") return cmd_preview(a);
         if (a.cmd == "meshbench") return cmd_meshbench(a);
         if (a.cmd == "waterdump") return cmd_waterdump(a);
         if (a.cmd == "sites") return cmd_sites(a);

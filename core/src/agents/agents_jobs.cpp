@@ -62,7 +62,7 @@ bool Agents::wild_water_near(const Vec3i& from, int radius, Vec3i& stand) {
             for (int dx = -r; dx <= r; dx += (std::abs(dz) == r ? stride : 2 * r)) {
                 const int x = from.x + dx, z = from.z + dz;
                 const ColumnInfo col = w.gen().column(x, z);
-                if (!col.land && col.water_top < 0) continue;
+                if ((!col.land && col.water_top < 0) || col.sea) continue;  // (the sea is salt)
                 for (int y = from.y + 3; y >= from.y - 6; --y) {
                     const Voxel v = w.peek({x, y, z});
                     if (vmat(v) == 0) continue;

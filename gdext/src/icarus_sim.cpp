@@ -132,6 +132,14 @@ bool IcarusSim::new_game(const Dictionary& config) {
         icarus::GameConfig cfg;
         cfg.world = icarus::WorldConfig::for_layout(icarus::layout_from_key(j.str("layout", "classic")),
                                                     (uint64_t)j.num("seed", 1));
+        if (cfg.world.layout == icarus::WorldLayout::Random) {
+            cfg.world.sea = j.boolean("sea", cfg.world.sea);
+            cfg.world.richness = j.integer("richness", cfg.world.richness);
+            cfg.world.relief = j.integer("relief", cfg.world.relief);
+            cfg.world.climate = j.integer("climate", cfg.world.climate);
+            cfg.world.size = j.integer("size", cfg.world.size);
+            cfg.world.sized();
+        }
         cfg.world.island_radius = j.flt("island_radius", cfg.world.island_radius);
         cfg.scenario = j.str("scenario", cfg.scenario);
         cfg.era = j.str("era", cfg.era);
