@@ -1,5 +1,7 @@
 // icarus_cli: headless runner for the Code:Icarus simulation kernel.
 //   icarus_cli map  --seed N [--layout continent] --out map.png   top-down map of the generated world
+//   icarus_cli trend --layout random --civs 4 --scenario wild --era wild --seed N --days 64
+//                                                  a line a day: the island's civilisation index
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -590,8 +592,6 @@ int cmd_experiment(const Args& a) {
         cfg.scenario = a.scenario;
         if (!a.era.empty()) cfg.era = a.era;
         if (a.civs > 0) cfg.civs = a.civs;
-    if (!a.era.empty()) cfg.era = a.era;
-    if (a.civs > 0) cfg.civs = a.civs;
         sim.new_game(cfg);
         std::vector<Scheduled> sched = parse_admin(a, sim);
         RunSummary r;
@@ -719,6 +719,69 @@ int cmd_experiment(const Args& a) {
     return 0;
 }
 
+// ------------------------------------------------------------------------------ trend
+// One long run, a line a day: the island's civilisation index, births, migrations, wars
+// and peaces, every people (people, days of food in store, fields, beds, techs, era,
+// index, at war) and the day's deaths by cause. tools/v3_acceptance.sh runs it on many
+// seeds at once and tools/v3_acceptance.py sums the runs up.
+int cmd_trend(const Args& a) {
+    Registry reg;
+    reg.load_from_dir(a.data);
+    Simulation sim(reg);
+    GameConfig cfg;
+    cfg.world = world_config(a, a.seed);
+    cfg.scenario = a.scenario;
+    if (!a.era.empty()) cfg.era = a.era;
+    if (a.civs > 0) cfg.civs = a.civs;
+    sim.new_game(cfg);
+    std::map<std::string, int> causes_all;
+    size_t ev_seen = 0;
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int d = 1; d <= (int)a.days; ++d) {
+        const Tick day_start = sim.now();
+        sim.run(kTicksPerDay);
+        const auto& isl = sim.society().island_history();
+        std::map<std::string, int> causes;
+        for (const auto& cp : sim.agents().all())
+            if (cp && !cp->alive && cp->died > day_start) {
+                causes[cp->death_cause]++;
+                causes_all[cp->death_cause]++;
+            }
+        int births = 0, wars = 0, migr = 0, peace = 0;
+        const auto& evs = sim.chronicle().events();
+        for (size_t k = ev_seen; k < evs.size(); ++k) {
+            const Event& e = evs[k];
+            if (e.type == EventType::Life && e.text.find("出生") != std::string::npos) ++births;
+            if (e.type == EventType::Migration) ++migr;
+            if (e.type == EventType::WarDeclared) ++wars;
+            if (e.type == EventType::Peace) ++peace;
+        }
+        ev_seen = evs.size();
+        const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::printf("D %d isl %.1f births %d migr %d wars %d peace %d t %.0fs |", d, isl.empty() ? 0.0f : isl.back(), births, migr,
+                    wars, peace, secs);
+        for (const Polity& p : sim.society().polities()) {
+            if (!p.alive) continue;
+            const PolityPlan& P = p.plan;
+            std::printf(" %s:%dp %.1fd f%d b%d/%d t%zu e%d i%.0f%s;", p.name.c_str(), P.people, P.need > 0 ? P.stock / P.need : 0.0f,
+                        P.plots, P.beds, P.beds_needed, p.techs.size(), sim.society().era(p),
+                        p.civ_history.empty() ? 0.0f : p.civ_history.back().total, p.wars.empty() ? "" : "⚔");
+        }
+        std::printf(" | deaths:");
+        for (const auto& [k, v] : causes) std::printf(" %s×%d", k.c_str(), v);
+        std::printf("\n");
+        std::fflush(stdout);
+    }
+    std::printf("TOTAL deaths:");
+    for (const auto& [k, v] : causes_all) std::printf(" %s×%d", k.c_str(), v);
+    std::printf("\n");
+    if (!a.save.empty()) {
+        const std::vector<u8> bytes = sim.save();
+        write_file(a.save, bytes.data(), bytes.size());
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -731,10 +794,11 @@ int main(int argc, char** argv) {
         if (a.cmd == "sites") return cmd_sites(a);
         if (a.cmd == "run") return cmd_run(a);
         if (a.cmd == "experiment") return cmd_experiment(a);
+        if (a.cmd == "trend") return cmd_trend(a);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "error: %s\n", e.what());
         return 2;
     }
-    std::fprintf(stderr, "usage: icarus_cli <map|run> [--seed N] [--out FILE] [--data DIR]\n");
+    std::fprintf(stderr, "usage: icarus_cli <map|run|experiment|trend> [--seed N] [--out FILE] [--data DIR]\n");
     return 1;
 }
