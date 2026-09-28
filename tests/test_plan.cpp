@@ -156,3 +156,39 @@ TEST("steward: a war leaves a people tired of fighting for a while, and the stew
     sim.run(kTicksPerDay * 3);
     CHECK(a->weary < w0);
 }
+
+TEST("steward: rewards by work never starve children, the old, soldiers or the wounded") {
+    Simulation sim(test_registry());
+    GameConfig cfg;
+    cfg.world.seed = 1;
+    cfg.scenario = "village";
+    sim.new_game(cfg);
+    sim.run(kTicksPerHour);
+    Polity* p = sim.society().polity(1);
+    REQUIRE(p != nullptr);
+    p->policies.distribution = 1;  // rewards by work
+    p->stats.food_days = 1.0f;     // (scarcity: shirkers go without)
+    Character* idler = nullptr;
+    Character* soldier = nullptr;
+    for (auto& cp : sim.agents().all()) {
+        if (!cp || !cp->alive || cp->is_girl() || cp->polity != 1 || sim.agents().is_child(*cp)) continue;
+        if (!idler) idler = cp.get();
+        else if (!soldier) soldier = cp.get();
+    }
+    REQUIRE(idler != nullptr && soldier != nullptr);
+    idler->work_debt = 6.0f;
+    soldier->work_debt = 6.0f;
+    soldier->drafted = true;
+    CHECK(sim.agents().find_food_store(*idler, true, false) == kNoStore);  // a shirker goes without
+    CHECK(sim.agents().find_food_store(*soldier, true, false) != kNoStore);
+    // A child playing all day owes no work in the first place.
+    Character* child = nullptr;
+    for (auto& cp : sim.agents().all())
+        if (cp && cp->alive && !cp->is_girl() && cp->polity == 1 && cp.get() != idler && cp.get() != soldier) child = cp.get();
+    REQUIRE(child != nullptr);
+    child->age0 = 5.0f;
+    child->born = sim.now();
+    child->work_debt = 0.0f;
+    sim.run(kTicksPerHour * 4);
+    CHECK(child->work_debt == 0.0f);
+}

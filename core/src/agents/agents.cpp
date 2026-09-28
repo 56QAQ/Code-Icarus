@@ -448,8 +448,12 @@ void Agents::hourly(Character& c) {
     c.unreachable.erase(std::remove_if(c.unreachable.begin(), c.unreachable.end(),
                                        [&](const std::pair<Vec3i, Tick>& u) { return u.second <= now_; }),
                         c.unreachable.end());
-    // Duty: during work hours, time not spent working accrues as shirked duty.
-    if (is_work_time(c) && c.task.type != TaskType::Work && c.task.type != TaskType::Eat &&
+    // Duty: during work hours, time not spent working accrues as shirked duty — for the
+    // grown folk fit to work (not children, the old, soldiers or the wounded seeing to
+    // their wounds, nor anyone running from danger).
+    const bool owes_work = !(c.age0 < 14.0f && is_child(c)) && !is_elder(c) && !c.drafted && c.task.type != TaskType::Fight &&
+                           c.task.type != TaskType::Heal && c.task.type != TaskType::Flee && c.task.type != TaskType::Escape;
+    if (owes_work && is_work_time(c) && c.task.type != TaskType::Work && c.task.type != TaskType::Eat &&
         c.task.type != TaskType::Drink && c.task.type != TaskType::Sleep && c.task.type != TaskType::Govern)
         c.work_debt = std::min(12.0f, c.work_debt + 1.0f);
     else if (c.task.type == TaskType::Work)

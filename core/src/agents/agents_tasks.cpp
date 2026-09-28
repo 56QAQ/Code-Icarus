@@ -64,7 +64,9 @@ StoreId Agents::find_food_store(Character& c, bool public_only, bool allow_over_
     // Distribution policy can deny access under scarcity.
     if (!allow_over_ration && !c.is_girl()) {
         float fd = p->stats.food_days;
-        if (p->policies.distribution == 1 && fd < 4.0f && c.work_debt > 3.0f) return kNoStore;
+        // (Children, the old, soldiers and the badly hurt are fed whatever they have done.)
+        const bool held_to_work = !(c.age0 < 14.0f && is_child(c)) && !is_elder(c) && !c.drafted && c.hurt() < 0.2f;
+        if (p->policies.distribution == 1 && fd < 4.0f && c.work_debt > 3.0f && held_to_work) return kNoStore;
         (void)fd;
     }
     StoreId best = kNoStore;
