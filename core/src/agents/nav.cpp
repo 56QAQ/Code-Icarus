@@ -258,6 +258,7 @@ bool Nav::find_path(const Vec3i& start, const Vec3i& goal, bool adjacent_ok, Pat
         }
     }
     stats.expansions += (u64)expansions;
+    if (debug_search) debug_search(debug_user, start, goal, max_expansions, ok, expansions);
     if (!ok) {
         stats.failures++;
         return false;

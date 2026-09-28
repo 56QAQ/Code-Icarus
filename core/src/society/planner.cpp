@@ -267,7 +267,14 @@ void Society::draw_plan(Polity& p) {
     const float W = (float)std::max(1, workers);
     // With a day or two in store, building and gathering keep a third of the hands at
     // least; only a larder about to run dry takes (nearly) everyone.
-    const float food = clampv(food_hands / W, 0.15f, stock_days >= 1.5f ? 0.65f : (stock_days >= 0.7f ? 0.78f : 0.9f));
+    // The stores tell whether that reckoning is right (it cannot see everyone who picks a
+    // berry on the way): below the target the share leans up a little each time the plan
+    // is drawn, above it back down.
+    const float err = clampv((P.target_days - stock_days) / std::max(1.0f, P.target_days), -1.0f, 1.0f);
+    // (Only once the ledger is trusted: the first days' shortfall is the start, not a lesson.)
+    P.food_lean = clampv(P.food_lean + 0.03f * err * warm, -0.2f, 0.35f);
+    const float food = clampv(food_hands / W + P.food_lean, 0.15f,
+                              stock_days >= 1.5f ? 0.7f : (stock_days >= 0.7f ? 0.8f : 0.9f));
     // Building: what is under way (and a little for repairs); gathering: the materials
     // the sites still lack, plus a standing supply.
     float build = sites ? clampv(0.08f + 0.05f * (float)sites + (float)cubes_left / (W * 60.0f), 0.1f, 0.5f) : 0.06f;
@@ -325,7 +332,9 @@ void Society::draw_plan(Polity& p) {
                strfmt("周边野外可持续养活约 %.0f 人（现有 %d 人），要长远发展，得学会种地", P.capacity, people));
     }
     if (farming && fs.plots == 0)
-        advise("found_farm", 0.9f, strfmt("已经会种地却还没有一块田（谷种 %.0f 份）", P.seed));
+        advise("found_farm", 0.9f,
+               P.seed >= 6.0f ? strfmt("已经会种地却还没有一块田（谷种 %.0f 份）", P.seed)
+                              : std::string("已经会种地，却还没有谷种：派人去长野麦的地方采集，攒够了就开第一片田"));
     else if (farming && fs.plots < P.plots_needed)
         advise("expand_farms", clampv((float)(P.plots_needed - fs.plots) / (float)std::max(1, P.plots_needed) * 1.3f, 0.25f, 0.9f),
                strfmt("要养活 %d 人约需 %d 块能灌溉的田，现在只有 %d 块", people, P.plots_needed, fs.irrigated));
@@ -351,6 +360,45 @@ void Society::draw_plan(Polity& p) {
     if (farming && P.capacity < 0.9f * (float)people && fs.plots >= P.plots_needed * 3 / 4)
         advise("found_outpost", 0.45f,
                strfmt("这里的土地只够养活约 %.0f 人，现有 %d 人，分出一部分人去开拓新的村落", P.capacity, people));
+    // War and peace as the steward reckons them: a war is paid for in people, the very
+    // thing the plan runs short of while the land at home could still feed more. (A
+    // people that cannot feed itself for good and is running out may see plunder as the
+    // lesser evil: then the steward keeps quiet.)
+    {
+        const float room = P.capacity / std::max(1.0f, (float)people) - 1.0f;
+        const bool desperate = room < -0.1f && P.days_left < 3.0f && P.balance < 0.0f;
+        if (p.wars.empty()) {
+            float u = 0.0f;
+            std::string why;
+            if (people < 14 && !desperate) {
+                u = 0.55f;
+                why = strfmt("我们只有 %d 人，经不起战争的折损", people);
+            }
+            if (room > 0.1f && !desperate) {
+                const float v = 0.35f + std::min(0.3f, 0.3f * room);
+                if (v > u) {
+                    u = v;
+                    why = strfmt("周边的土地还能多养活约 %.0f 人，与其打仗折损人手，不如埋头发展", P.capacity - (float)people);
+                }
+            }
+            if (u > 0.0f) advise("avoid_war", u, why);
+        } else {
+            int losses = 0;
+            float days = 0.0f;
+            for (const War& w : p.wars) {
+                losses += w.losses;
+                days = std::max(days, (float)(now - w.since) / (float)kTicksPerDay);
+            }
+            const float u = clampv(0.25f + 0.12f * (float)losses + 0.05f * days + (P.days_left < 2.0f ? 0.2f : 0.0f) -
+                                       (desperate ? 0.25f : 0.0f),
+                                   0.1f, 0.9f);
+            const std::string why = strfmt("战事已持续 %.0f 天，折损 %d 人，这些人手本该用来养家和营建", days, losses);
+            advise("accept_peace", std::min(1.0f, u + 0.15f), why);
+            advise("offer_peace", u, why);
+            if (p.op.active && p.op.lost > 0) advise("withdraw", 0.8f * u, why);
+            if (!p.op.active) advise("hold", 0.5f * u, why);
+        }
+    }
     // Studies past the wild era need scholars at a study: build one first (and before
     // that, learn to write).
     {
@@ -400,9 +448,10 @@ CivIndex Society::civ_index(const Polity& p) const {
     for (const std::string& t : p.techs)
         if (const Json* tj = tech(t)) ci.known += 1.0f + (float)tj->integer("era", 0);
     ci.content = clampv(0.5f * s.mood + 0.5f * s.stability, 0.0f, 1.0f);
-    // People living well count most; what they have built and learnt adds up over time.
+    // People living well count most (a people that shrinks or goes hungry cannot make up
+    // for it with what it has built and learnt, which only adds a little over time).
     ci.total = people * (0.35f + 0.35f * ci.fed + 0.15f * ci.secure + 0.15f * ci.housed) * (0.6f + 0.4f * ci.content) +
-               0.5f * ci.built + 1.5f * ci.known;
+               0.3f * ci.built + 0.8f * ci.known;
     return ci;
 }
 

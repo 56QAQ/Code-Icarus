@@ -538,8 +538,13 @@ void Decisions::gather_proposals(Decision& d, Polity& p) {
     // the ruler still weigh them by their own values), and speaks first in the council.
     const PolityPlan& plan = p.plan;
     int backed = -1;
+    // Counsel against war weighs on every way of starting or widening one (and leaves the
+    // peaceful options — trade, aid, alliances — as they were).
+    const float against_war = plan.backing("avoid_war");
     for (size_t i = 0; i < d.options.size(); ++i) {
         DecisionOption& o = d.options[i];
+        if (against_war > 0.0f && (o.key == "raid" || o.key == "conquest" || o.key == "raid_again" || o.key == "assault"))
+            o.bias -= 0.9f * against_war;
         const float u = plan.backing(o.key);
         if (u <= 0.0f) continue;
         o.bias += 0.9f * u;

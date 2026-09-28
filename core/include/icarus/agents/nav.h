@@ -64,6 +64,10 @@ public:
     float soft_cost(const Vec3i& p) const;
 
     NavStats stats;
+    // Debugging aid (tools and tests only; never set by the simulation): told of every
+    // search with its ends, budget, result and cost.
+    void (*debug_search)(void* user, const Vec3i& from, const Vec3i& to, int budget, bool found, int expansions) = nullptr;
+    void* debug_user = nullptr;
 
 private:
     struct Node {

@@ -74,6 +74,25 @@ bool Agents::task_fight(Character& c) {
         end_task(c, true);
         return true;
     }
+    // A soldier hurt this badly is sent back from the fight: no longer under arms, and so
+    // no longer anyone's target (a band's feud should not go on to the last man).
+    if (!c.is_girl() && c.hurt() > 0.22f) {
+        c.drafted = false;
+        c.path.clear();
+        c.moving = false;
+        say(c, "负伤退出战斗");
+        Event e;
+        e.type = EventType::Battle;
+        e.severity = 2;
+        e.actor = c.id;
+        e.polity = c.polity;
+        e.pos = c.foot;
+        e.causes[0] = p->op.active ? p->op.event : p->wars.front().event;
+        e.text = strfmt("%s身负重伤，退出了战斗", c.name.c_str());
+        ctx_.chron->emit(std::move(e));
+        end_task(c, false);
+        return false;
+    }
     const Operation& op = p->op;
     const EventId cause = op.active ? op.event : (p->wars.empty() ? 0 : p->wars.front().event);
     const ItemDef* weapon = c.weapon != kNoItem ? &ctx_.reg->item(c.weapon) : nullptr;

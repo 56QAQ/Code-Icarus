@@ -53,6 +53,22 @@ simulation depends on the camera, frame rate or scene tree.
   broadleaf and conifer forest, snowy highland, red desert, marsh, lakeshore, rock);
   wild resources (fruit trees, wild grain, mushrooms, reeds, herbs, flint nodules, peat,
   ores) and a *site* per civilisation (a plateau by a lake, in different biomes).
+* **Random layout** (`worldgen_random.cpp`, the third version): an island made from the
+  seed and the new-game options (`WorldConfig::sea/richness/relief/climate/size`).
+  A coarse grid (4 cubes a node) carries height (domain-warped noise, ridges, a coast
+  shaped by several lobes), temperature and moisture; a priority flood drains it, closed
+  depressions become lakes, and rivers follow the drainage from springs to the coast or
+  the sea. Rivers are cut at full resolution as **stepped reaches**: each reach holds its
+  water level, a weir (a stone lip) separates it from the next, and neighbour rules make
+  every bank at least as high as the water beside it, so all still water stands still
+  from the first tick. With a sea, the island sits in a ring of salt water (level
+  `sea_level()`) inside an invisible circular **wall** (`sea_wall`); without one, the
+  edge falls away to the sky. Four sites (flat, fertile, a short walk from fresh water,
+  far apart, in different climates; with a sea, one near the coast) are levelled as
+  plateaus with terraces for the first fields. Columns are worked out per cell column
+  with a one-column rim cached, so the neighbour rules do not redo the noise; open sky
+  beyond a sealess island skips the noise altogether. `WorldGen::preview` draws the
+  island from the coarse fields for the new-game menu.
 
 ## 4. Matter (core/sim/physics)
 
@@ -74,6 +90,10 @@ simulation depends on the camera, frame rate or scene tree.
 * **Meteors**: fall along a trajectory, carve a jagged crater, scorch/ignite the rim,
   leave meteoric iron + basalt, and queue area damage.
 * Physics never touches characters directly; it queues `AreaDamage` for the agents.
+* **The sea** (random islands): an infinite reservoir held at `sea_level()`. Water that
+  runs into a sea column above that level is taken off (`water_units_sea_out`); a sea
+  column below it is topped up (`water_units_sea_in`); nothing flows through the wall.
+  Sea water is salt: nobody drinks it or waters fields with it.
 
 **Ecology** (`sim/ecology.cpp`): once a day, near trees still standing in places the
 simulation has touched, saplings take root on open grass (not against buildings) and
@@ -96,7 +116,9 @@ knows fishing (捕鱼), fishers go to the fullest ground within reach (leaving a
 two fifths of its capacity to recover), stand on the shore nearest to where the school
 swims, follow the fish along the shore if none are near, and cast — the more fish about,
 the likelier a catch (spear, or with weaving a net); a catch is two or three fish, eaten
-raw or roasted at a campfire or kitchen.
+raw or roasted at a campfire or kitchen. The sea has its own fish (mackerel, sea bream,
+tuna) on coastal and **offshore** grounds (farther than 14 cubes from dry land); a thin
+ground is made up by fish swimming in from the open sea.
 
 ## 5. Chronicle (core/sim/chronicle)
 
@@ -149,6 +171,18 @@ events) and a decision trace (the scored options behind the current activity).
   another survey region is out of reach only when both floods ran their course. Long
   searches share a per-tick budget of expanded nodes; beyond it they wait a tick. Someone outside every region (fallen into the ravine) plans and cuts a
   45° staircase out of the rock (`agents_escape.cpp`).
+* **The long way** (`agents_route.cpp`): a goal more than 64 cubes away is walked in
+  legs. A cheap A* over tiles of 8×8 columns (heights from the generator, too-steep
+  steps refused, fresh water waded at a cost, the sea avoided) picks a point about 48
+  cubes along the route and an ordinary short search walks there; the next leg is
+  sought wherever the last one ended (the path's goal stays the real goal), so a walk
+  goes on the same after a load. Someone far from home who can reach no water nearby
+  heads for the spring at home the same way, and the "am I stuck?" check looks at the
+  first leg only.
+* **Boats** (`agents_boat.cpp`): with 木船, fishers take a boat from the store, carry it
+  to the shore nearest an offshore school, row out over open water (a route around
+  headlands on a coarse grid of the water, straightened), cast from the boat, and row
+  back; afloat they need no ground under them.
 * **Bodies keep apart** (`agents.cpp`, `footprint.h`): a sleeper lies on her side along
   a **bed** of three cubes in a row (about 2.6 × 1 cubes), and beds are chosen so that
   no two bodies overlap — tight inside a house, a little apart and clear of the flames
@@ -194,6 +228,14 @@ events) and a decision trace (the scored options behind the current activity).
   herbs are used up. Carts made in a workshop raise what a hauler carries; equipment is
   picked up when unloading at a store.
 
+* **Seed expeditions**: a people that knows farming but has no seed and no wild grain
+  near home looks over the whole island (grain country first, by the land's kind, then
+  what really grows there) and posts gathering jobs at the nearest stand; such jobs are
+  worth a long walk.
+* **War wounds**: a soldier hurt past a fifth of her body is sent back from the fight
+  (no longer under arms, so no longer anyone's target), and nobody is called up again
+  before mending.
+
 ## 7. Economy (core/economy)
 
 Material ledger: every item unit lives in exactly one store (stockpile, workshop, ground
@@ -205,6 +247,26 @@ Bridges follow a span rule and fail as real debris. Farms are plots of farmland 
 growth depends on irrigation from real water nearby.
 
 ## 8. Society, politics, magic and decisions
+
+* **The steward's plan** (内政官, `society/planner.cpp`, `plan.h`): every two game hours
+  each polity takes stock (people, workers, children; food in store and seed; a food
+  ledger by source — fields, foraging, hunting, fishing — over the last three days) and
+  reckons what the land around could give for good (wild plants and their regrowth,
+  game at a sustainable rate, fish grounds at their breeding rate, offshore ones with
+  boats, fields). From that it sets a target of days in store, shares out the hands
+  between food, building and gathering (the food share from what a food worker has
+  actually brought in, corrected by a slow feedback term learnt from the stores:
+  `food_lean`), allows births where food and housing leave room, and ranks **advice**
+  (what to research, farms to found or expand, housing, storehouses, outposts, and
+  keeping the peace or making it). Residents take trades from the shares
+  (`agents_plan.cpp`: whoever suits a short-handed trade moves over); advice adds to the
+  bias of matching decision options and the steward speaks first in the council, but
+  every girl still weighs options by her own values. The plan and its summary are shown
+  on the civilisation card and in council.
+* **Civilisation index** (文明指数, daily per polity and for the island): people (children
+  half) × how well they live (fed, food secure, housed, content) + 0.3 × what stands
+  built + 0.8 × what is known (techs weighted by era). A people that shrinks or goes
+  hungry cannot make that up with buildings and knowledge.
 
 * **Polity** (`society/`): identity and display name are separate from the ruler, so the
   title "X的文明，国名" follows the ruler while people, industry and history remain.

@@ -2,6 +2,8 @@
 // structure. Personality is separate from a magical girl's drive (源动力).
 #pragma once
 
+#include <algorithm>
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -212,6 +214,10 @@ struct Character {
     std::unique_ptr<GirlData> girl;
 
     bool is_girl() const { return kind == CharKind::MagicalGirl && girl != nullptr; }
+    // How badly hurt: the share of the body lost plus half the bleeding (0 whole).
+    float hurt() const {
+        return 1.0f - (float)body.total_alive() / (float)std::max(1, body.total_voxels()) + 0.5f * body.bleeding;
+    }
     float support_for(EntityId g) const {
         for (auto& s : support)
             if (s.girl == g) return s.value;

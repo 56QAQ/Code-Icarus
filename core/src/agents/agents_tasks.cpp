@@ -323,7 +323,30 @@ bool Agents::find_water(Character& c, Vec3i& stand, Vec3i& water) {
         blacklist(c, s, kTicksPerHour * 2);
         // Anything else near an unreachable spot is probably unreachable too.
     }
+    // Far from home with nothing near to be reached: back to the water at home (the walk
+    // goes in legs; the spring by the village is known to be reachable from there).
+    if (far_from_home(c))
+        if (const Polity* p = ctx_.society->polity(c.polity))
+            if (const Building* seat = ctx_.buildings->get(p->seat)) {
+                i64 bd = 1LL << 60;
+                for (const Vec3i& s : water_spots_) {
+                    const i64 d = s.dist2(seat->entrance);
+                    if (d >= bd || blacklisted(c, s) || !nav.standable(s) || !water_next_to(s, water)) continue;
+                    bd = d;
+                    stand = s;
+                }
+                if (bd < 60 * 60) {
+                    c.water_spot = stand;
+                    return true;
+                }
+            }
     return false;
+}
+
+bool Agents::far_from_home(const Character& c) const {
+    const Polity* p = ctx_.society->polity(c.polity);
+    const Building* seat = p ? ctx_.buildings->get(p->seat) : nullptr;
+    return seat && seat->entrance.dist2(c.foot) > (i64)kLegFar * kLegFar * 4;
 }
 
 StoreId Agents::nearest_storage(u16 polity, const Vec3i& from, ItemId item) {
@@ -532,9 +555,11 @@ bool Agents::task_drink(Character& c) {
     const MatId WATER = ctx_.reg->m().water;
     if (t.step == 0) {
         Vec3i stand, water;
+        // Far from home (on campaign, on an errand): a stream or pond at hand first.
+        const bool away = far_from_home(c);
         // Far from the known springs: any water nearby, and farther afield when parched.
-        if (!find_water(c, stand, water) && !wild_water_near(c.foot, 40, stand) &&
-            !(c.needs.water < 0.35f && wild_water_near(c.foot, 100, stand))) {
+        if (!(away && wild_water_near(c.foot, 40, stand)) && !find_water(c, stand, water) &&
+            !wild_water_near(c.foot, 40, stand) && !(c.needs.water < 0.35f && wild_water_near(c.foot, 100, stand))) {
             day.thirsty_no_water++;
             say(c, "找不到水源");
             end_task(c, false);

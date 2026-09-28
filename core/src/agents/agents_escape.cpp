@@ -83,8 +83,7 @@ bool Agents::task_escape(Character& c) {
     const Polity* pp = ctx_.society->polity(c.polity);
     const Building* seat = pp ? ctx_.buildings->get(pp->seat) : nullptr;
     if (t.step == 0) {
-        Path tmp;
-        if (!seat || nav.find_path(c.foot, seat->entrance, true, tmp, 60000)) {
+        if (!seat || reachable(c.foot, seat->entrance, 60000)) {
             c.unreachable.clear();  // not stuck after all
             c.water_spot = {-1, -1, -1};
             end_task(c, true);

@@ -50,7 +50,9 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     // against a caravan's errand she carries on from her own pack.)
     const bool doing = c.task.type == TaskType::Work && c.task.job == j.id;
     float dist = doing || j.from == c.inv ? 0.0f : std::sqrt((float)c.foot.dist2(j.pos));
-    float score = motivation * j.priority * cat_w * skill_f - dist / 260.0f;
+    // (An expedition for seed is worth the long walk.)
+    const bool expedition = j.type == JobType::Forage && j.plot == 2;
+    float score = motivation * j.priority * cat_w * skill_f - dist / (expedition ? 1200.0f : 260.0f);
     // A caravan under way (the goods in hand, or picked up again from her own pack after
     // a rest) is seen through: only a pressing need interrupts it.
     if (j.type == JobType::Trade && ((doing && c.task.step >= 2) || j.from == c.inv)) score += 0.5f;
@@ -101,7 +103,7 @@ u32 Agents::best_job(Character& c, float& best, std::string& why) {
         // Cheap straight-line cut-off before scoring (not for what she is already about:
         // a caravan far from the store it set out from).
         const bool mine = (c.task.type == TaskType::Work && c.task.job == j.id) || j.from == c.inv;
-        if (!mine && c.foot.chebyshev(j.pos) > 240) continue;
+        if (!mine && c.foot.chebyshev(j.pos) > (j.type == JobType::Forage && j.plot == 2 ? 900 : 240)) continue;
         std::string w;
         float s = work_score(c, j, w);
         if (s > best) {
@@ -187,7 +189,15 @@ void Agents::think(Character& c) {
     if (night) sleep += (c.needs.rest < 0.95f ? 0.9f + 0.6f * tired : 0.0f);
     else if (c.needs.rest > 0.3f) sleep *= 0.3f;
     if (c.task.type == TaskType::Sleep && night) sleep += 1.0f;  // stay in bed through the night
-    add("睡觉", sleep, strfmt("疲劳 %s%s", pct(tired), night ? "，夜深了" : ""));
+    // After the working day, those out at the far fields set off home to bed in good time
+    // (rather than work on until they drop and sleep in the open).
+    bool far_bed = false;
+    if (!work_time && hour_of(now_) >= 12.0f)
+        if (const Building* h = ctx_.buildings->get(c.home); h && h->functional && c.foot.chebyshev(h->inside) > 40) {
+            sleep += 0.45f;
+            far_bed = true;
+        }
+    add("睡觉", sleep, strfmt("疲劳 %s%s", pct(tired), night ? "，夜深了" : (far_bed ? "，收工回家" : "")));
 
     float lonely = 1.0f - c.needs.social;
     float social = lonely * (0.25f + 0.75f * c.pers.sociability) * 0.9f;
@@ -259,8 +269,7 @@ void Agents::think(Character& c) {
             float duty = 1.25f + (p->op.active ? 0.35f : 0.0f) + (p->op.active && p->op.phase == 2 ? 0.7f : 0.0f);
             add("从军", duty, p->op.active ? "军令在身：" + p->op.aim : "战时戒备");
             // The badly wounded fall back out of the fight.
-            const float hurt = 1.0f - (float)c.body.total_alive() / (float)std::max(1, c.body.total_voxels()) +
-                               0.5f * c.body.bleeding;
+            const float hurt = c.hurt();
             if (hurt > 0.3f && nearest_enemy(c, 16.0f, true))
                 add("逃离危险", 1.6f + 2.5f * hurt, strfmt("伤势 %s，撤下战场", pct(std::min(1.0f, hurt))));
         } else {

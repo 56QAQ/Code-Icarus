@@ -220,8 +220,9 @@ int Society::soldiers(u16 id) const {
 
 static bool fit_to_serve(const SimContext& ctx, const Character& c, u16 polity) {
     // (Scholars are spared: learning is slow to replace.)
+    // (Nor are the wounded sent back in before they have mended.)
     return c.alive && !c.departed && !c.is_girl() && c.polity == polity && !c.drafted && c.occupation != "research" && c.body.can_hold() &&
-           c.body.mobility() >= 0.6f && !ctx.agents->is_child(c) && !ctx.agents->is_elder(c);
+           c.body.mobility() >= 0.6f && c.hurt() < 0.12f && !ctx.agents->is_child(c) && !ctx.agents->is_elder(c);
 }
 
 int Society::draftable(u16 id) const {

@@ -320,6 +320,12 @@ private:
     // to walk to next (the farthest first); false when there is no coarse route.
     static constexpr int kLegFar = 64, kLeg = 48;
     bool route_vias(const Vec3i& from, const Vec3i& to, std::vector<Vec3i>& vias);
+    // Whether `to` can be walked to from `from` (the first leg, for a far goal).
+    bool reachable(const Vec3i& from, const Vec3i& to, int budget);
+    // Far from home: more than two legs' walk from the polity's hall.
+    bool far_from_home(const Character& c) const;
+    // The nearest stand of wild grain r0..r1 cubes from home (agents_jobs.cpp).
+    bool far_wild_grain(const Vec3i& home, int r0, int r1, Vec3i& out);
     void route_tile(int tx, int tz, i16& h, u8& wet);
     int route_tx_ = 0, route_tz_ = 0;
     std::vector<i16> route_h_;   // ground height of each tile (worked out when first needed)

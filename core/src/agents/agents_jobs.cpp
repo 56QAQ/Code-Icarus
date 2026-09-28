@@ -601,6 +601,24 @@ void Agents::generate_jobs() {
                 existing[{(int)JobType::Forage, p}] = 1;
                 ++open;
             }
+            // None anywhere near: an expedition for seed to the nearest stand of wild grain
+            // on the island, however far (the grassland, the savanna, a lake's shore).
+            if (first_fields && open == 0) {
+                Vec3i stand;
+                if (!far_wild_grain(seat->entrance, 190, 900, stand)) continue;
+                for (int i = 0; i < 160 && open < 6; ++i) {
+                    const u64 h = hash3(0x5EEDF4ull + pc.id, (i32)(now_ / 300), i, 7);
+                    const int x = stand.x + (int)(h % 41) - 20, z = stand.z + (int)((h >> 8) % 41) - 20;
+                    const ColumnInfo col = ctx_.world->gen().column(x, z);
+                    if (!col.land) continue;
+                    const Vec3i p{x, col.top + 1, z};
+                    if (vmat(ctx_.world->peek(p)) != wild_grain || has(JobType::Forage, p)) continue;
+                    Job& j = add(JobType::Forage, pc.id, p, 1.0f);
+                    j.plot = 2;  // an expedition: worth the long walk
+                    existing[{(int)JobType::Forage, p}] = 1;
+                    ++open;
+                }
+            }
         }
     }
 
@@ -757,6 +775,36 @@ void Agents::generate_jobs() {
             }
         }
     }
+}
+
+// The nearest stand of wild grain between r0 and r1 cubes from home: rings outward,
+// grain country first judged by the land's kind, then a look at what really grows there.
+bool Agents::far_wild_grain(const Vec3i& home, int r0, int r1, Vec3i& out) {
+    const MatId wild_grain = ctx_.reg->m().wild_grain;
+    const WorldGen& g = ctx_.world->gen();
+    for (int r = r0; r <= r1; r += 16) {
+        const int n = std::max(8, (int)(6.2831853f * (float)r / 16.0f));
+        for (int k = 0; k < n; ++k) {
+            const float a = 6.2831853f * (float)k / (float)n;
+            const int x = home.x + (int)std::lround(std::cos(a) * (float)r), z = home.z + (int)std::lround(std::sin(a) * (float)r);
+            const ColumnInfo col = g.column(x, z);
+            if (!col.land || col.water_top >= 0 || col.island != 0) continue;
+            if (col.biome != Biome::Grassland && col.biome != Biome::Savanna && col.biome != Biome::Lakeshore) continue;
+            int found = 0;
+            for (int i = 0; i < 48 && found < 3; ++i) {
+                const u64 h = hash3(0x6A41ull, x, i, z);
+                const int qx = x + (int)(h % 33) - 16, qz = z + (int)((h >> 8) % 33) - 16;
+                const ColumnInfo qc = g.column(qx, qz);
+                if (!qc.land) continue;
+                if (vmat(ctx_.world->peek({qx, qc.top + 1, qz})) == wild_grain) ++found;
+            }
+            if (found >= 3) {
+                out = Vec3i{x, col.top + 1, z};
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // A spot on dry ground at the water's edge within a few cubes of p (nearest first).

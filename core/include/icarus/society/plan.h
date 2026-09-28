@@ -72,6 +72,9 @@ struct PolityPlan {
     std::vector<Look> looks;
     Tick first = 0;   // the first plan
     float hands = 0;  // people in the food trade, on average over the looks
+    // Learnt from the stores: how far the reckoned food share has to be leaned (up while
+    // the stores stay below their target, down while they overflow).
+    float food_lean = 0;
 
     // How strongly the plan backs a decision option (0 when it does not).
     float backing(const std::string& key) const {

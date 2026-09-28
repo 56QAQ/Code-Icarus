@@ -150,4 +150,16 @@ bool Agents::route_vias(const Vec3i& from, const Vec3i& to, std::vector<Vec3i>& 
     return !vias.empty();
 }
 
+bool Agents::reachable(const Vec3i& from, const Vec3i& to, int budget) {
+    Nav& nav = *ctx_.nav;
+    Path tmp;
+    if (std::max(std::abs(to.x - from.x), std::abs(to.z - from.z)) <= kLegFar)
+        return nav.find_path(from, to, true, tmp, budget);
+    std::vector<Vec3i> vias;
+    if (!route_vias(from, to, vias)) return false;
+    for (const Vec3i& v : vias)
+        if (nav.find_path(from, v, true, tmp, 8000, 3, 3)) return true;
+    return false;
+}
+
 }  // namespace icarus

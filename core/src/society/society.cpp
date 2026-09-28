@@ -1026,6 +1026,9 @@ void Society::save(BinWriter& w) const {
     }
     w.varu(island_history_.size());
     for (float v : island_history_) w.f32(v);
+    // Version 7: what the stewards have learnt about their food shares.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) w.f32(polities_[i].plan.food_lean);
     w.end_section(sec);
 }
 
@@ -1280,6 +1283,13 @@ void Society::load(BinReader& outer) {
                 }
                 const u64 ni = r.varu();
                 for (u64 k = 0; k < ni; ++k) island_history_.push_back(r.f32());
+            }
+            if (!r.at_end()) {
+                const u64 np9 = r.varu();
+                for (size_t i = 1; i < (size_t)np9; ++i) {
+                    const float lean = r.f32();
+                    if (i < polities_.size()) polities_[i].plan.food_lean = lean;
+                }
             }
         }
     }
