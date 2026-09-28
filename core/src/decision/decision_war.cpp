@@ -215,6 +215,12 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         } else if (ours < 6) {
             o.feasible = false;
             o.why_not = "人手太少";
+        } else if (p.plan.at && p.plan.need > 0.0f && p.plan.stock >= 0.6f * p.plan.target_days * p.plan.need &&
+                   p.plan.balance >= -0.1f * p.plan.need && !(dg && dg->grievance >= 0.5f)) {
+            // Plunder is for the hungry (or for revenge): a people that is getting by risks
+            // its own for nothing it needs.
+            o.feasible = false;
+            o.why_not = "我们并不缺粮，为抢粮开战得不偿失";
         } else if (weapons < (raiders + 1) / 2) {
             o.feasible = false;
             o.why_not = strfmt("武器不足（%d 件，出动 %d 人）", weapons, raiders);

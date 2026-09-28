@@ -265,7 +265,9 @@ void Agents::think(Character& c) {
         if (steal > 0.05f) add("偷取食物", steal * 2.0f, strfmt("饥饿难耐，公共粮仓却不开放（服从 %s）", pct(c.pers.conformity)));
     }
 
-    // War: soldiers serve; civilians keep away from enemy fighters.
+    // War: soldiers serve (the badly hurt are sent home, whatever they are about);
+    // civilians keep away from enemy fighters.
+    discharge_if_hurt(c);
     if (p && !p->wars.empty()) {
         if (c.drafted) {
             // On campaign, and above all in the thick of it at the objective, the army's

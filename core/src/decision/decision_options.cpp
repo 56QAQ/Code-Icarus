@@ -642,7 +642,10 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         } else if (grain < n + keep) {
             o.feasible = false;
             o.why_not = "还没攒下足够的谷种";
-        } else if (!band && p.stats.food_days < 1.0f && p.stats.food_access < 0.9f) {
+        } else if (!band && p.stats.food_days < 1.0f && p.stats.food_access < 0.9f &&
+                   (float)grain * 0.3f >= std::max(1.0f, p.plan.need)) {
+            // (Only when the seed is a real meal for everyone: a handful of grain eaten is
+            // gone in an hour, sown it feeds them many times over.)
             o.feasible = false;
             o.why_not = "正闹饥荒，谷种先留作口粮";
         }

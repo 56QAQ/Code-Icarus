@@ -58,6 +58,8 @@ public:
     float carried_weight(const Character& c) const;
     // A raider who can carry no more food.
     bool raider_laden(const Character& c) const;
+    // A soldier hurt past a fifth of her body leaves the fight (true when sent home now).
+    bool discharge_if_hurt(Character& c);
     // The nearest cube within `radius` that residents can walk to from a settlement.
     bool nearest_walkable(const Vec3i& p, int radius, Vec3i& out) const;
     // A hazard residents will run from for a while (explosions, a god's wrath).

@@ -63,6 +63,27 @@ void Agents::strike(Character& attacker, Character& target, float power, const s
     }
 }
 
+bool Agents::discharge_if_hurt(Character& c) {
+    // A soldier hurt this badly is sent back from the fight: no longer under arms, and so
+    // no longer anyone's target (a band's feud should not go on to the last man).
+    if (!c.drafted || c.is_girl() || c.hurt() <= 0.22f) return false;
+    const Polity* p = ctx_.society->polity(c.polity);
+    c.drafted = false;
+    c.path.clear();
+    c.moving = false;
+    say(c, "负伤退出战斗");
+    Event e;
+    e.type = EventType::Battle;
+    e.severity = 2;
+    e.actor = c.id;
+    e.polity = c.polity;
+    e.pos = c.foot;
+    if (p) e.causes[0] = p->op.active ? p->op.event : (p->wars.empty() ? 0 : p->wars.front().event);
+    e.text = strfmt("%s身负重伤，退出了战斗", c.name.c_str());
+    ctx_.chron->emit(std::move(e));
+    return true;
+}
+
 bool Agents::raider_laden(const Character& c) const {
     return carry_capacity(c) + 4.0f - carried_weight(c) < 0.6f;
 }
@@ -74,22 +95,7 @@ bool Agents::task_fight(Character& c) {
         end_task(c, true);
         return true;
     }
-    // A soldier hurt this badly is sent back from the fight: no longer under arms, and so
-    // no longer anyone's target (a band's feud should not go on to the last man).
-    if (!c.is_girl() && c.hurt() > 0.22f) {
-        c.drafted = false;
-        c.path.clear();
-        c.moving = false;
-        say(c, "负伤退出战斗");
-        Event e;
-        e.type = EventType::Battle;
-        e.severity = 2;
-        e.actor = c.id;
-        e.polity = c.polity;
-        e.pos = c.foot;
-        e.causes[0] = p->op.active ? p->op.event : p->wars.front().event;
-        e.text = strfmt("%s身负重伤，退出了战斗", c.name.c_str());
-        ctx_.chron->emit(std::move(e));
+    if (discharge_if_hurt(c)) {
         end_task(c, false);
         return false;
     }

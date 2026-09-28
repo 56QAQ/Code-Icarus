@@ -196,7 +196,9 @@ u32 Farming::found(u16 polity, const std::string& name, const Vec3i& near, int r
                 if (y < 1) continue;
                 Vec3i g{x, y, z};
                 const Material& m = w_.material(g);
-                if (!m.fertile || m.fluid || w_.material(g + Vec3i{0, 1, 0}).solid) continue;
+                // (Open air above: never the bed of a lake or river, where nothing is sown.)
+                const Material& above = w_.material(g + Vec3i{0, 1, 0});
+                if (!m.fertile || m.fluid || above.solid || above.fluid) continue;
                 if (is_taken(g)) continue;
                 Plot probe;
                 probe.ground = g;
@@ -230,7 +232,8 @@ int Farming::expand(u32 farm_id, int n) {
             Vec3i g{x, y, z};
             const Material& m = w_.material(g);
             if (!m.fertile || m.fluid) continue;
-            if (w_.material(g + Vec3i{0, 1, 0}).solid) continue;
+            const Material& above = w_.material(g + Vec3i{0, 1, 0});
+            if (above.solid || above.fluid) continue;
             Plot probe;
             probe.ground = g;
             if (!check_irrigation(probe, irrigation_bonus ? irrigation_bonus(f->polity) : 0)) continue;

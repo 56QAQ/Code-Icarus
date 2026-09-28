@@ -34,6 +34,8 @@ float Agents::migration_pull(const Character& c, const Polity& own, const Polity
         if (own.war_with(q.id)) pull -= 0.3f;  // going over to the enemy takes more
         // A place whose own stores are running thin has no room for more mouths.
         if (q.stats.food_days < 3.0f) pull *= 0.25f + 0.25f * std::max(0.0f, q.stats.food_days);
+        // Nor one whose land already feeds as many as it can (word gets round).
+        if (q.plan.at && q.plan.capacity < 1.05f * (float)std::max(1, q.plan.people)) pull *= 0.35f;
         if (pull > best) {
             best = pull;
             dest = &q;
