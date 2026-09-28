@@ -3,6 +3,7 @@
 // A* with 8-way horizontal moves, 1-cube step up, up to 3-cube drops.
 #pragma once
 
+#include <array>
 #include <unordered_map>
 #include <vector>
 
@@ -57,6 +58,11 @@ public:
     void on_changes(const std::vector<VoxelChange>& changes);
     bool major_dirty = true, minor_dirty = true;
 
+    // Cubes where someone lies asleep: still passable, but a path goes round them when it
+    // reasonably can (set every tick by the residents; never blocks a way).
+    void set_soft(std::vector<Vec3i> cubes);
+    float soft_cost(const Vec3i& p) const;
+
     NavStats stats;
 
 private:
@@ -79,6 +85,8 @@ private:
     World& w_;
     std::vector<Node> table_;
     u32 gen_ = 1;
+    std::vector<u64> soft_;              // packed positions, sorted
+    std::array<u64, 16> soft_bits_{};    // quick filter by a hash of the position
 };
 
 }  // namespace icarus

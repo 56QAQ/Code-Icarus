@@ -202,6 +202,22 @@ void Agents::drop_cargo(Character& c) {
     }
 }
 
+bool Agents::at_home(const Character& c) const {
+    const Building* h = ctx_.buildings->get(c.home);
+    if (!h || !h->functional) return false;
+    if (c.foot.chebyshev(h->inside) <= 3) return true;
+    // A large house (a hall, a longhouse): anywhere within its walls.
+    if (std::abs(c.foot.y - h->inside.y) > 1) return false;
+    int x0 = 1 << 30, x1 = -(1 << 30), z0 = 1 << 30, z1 = -(1 << 30);
+    for (const Vec3i& p : h->plan_pos) {
+        x0 = std::min(x0, p.x);
+        x1 = std::max(x1, p.x);
+        z0 = std::min(z0, p.z);
+        z1 = std::max(z1, p.z);
+    }
+    return c.foot.x > x0 && c.foot.x < x1 && c.foot.z > z0 && c.foot.z < z1;
+}
+
 bool Agents::near_campfire(const Vec3i& p) const {
     for (const Building& b : ctx_.buildings->all())
         if (b.alive && b.functional && b.def == "campfire" && b.inside.chebyshev(p) <= 8) return true;
@@ -217,8 +233,7 @@ float Agents::exposure(const Character& c) const {
     if (is_night(now_)) cold += 0.2f;
     if (ctx_.physics && ctx_.physics->raining()) cold += 0.15f;
     // Under a roof it hardly matters; by a campfire it is much warmer.
-    const Building* h = ctx_.buildings->get(c.home);
-    if (h && h->functional && c.foot.chebyshev(h->inside) <= 3) cold *= 0.2f;
+    if (at_home(c)) cold *= 0.2f;
     else if (near_campfire(c.foot)) cold = std::max(0.0f, cold - 0.3f);
     const float warmth = c.clothes != kNoItem ? ctx_.reg->item(c.clothes).warmth : 0.0f;
     return saturate(cold - warmth);

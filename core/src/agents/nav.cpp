@@ -47,6 +47,26 @@ float Nav::step_cost(const Vec3i& p) {
     return c;
 }
 
+void Nav::set_soft(std::vector<Vec3i> cubes) {
+    soft_.clear();
+    soft_bits_.fill(0);
+    for (const Vec3i& c : cubes) {
+        const u64 k = pack(c);
+        soft_.push_back(k);
+        const u64 h = (k * 0x9E3779B97F4A7C15ull) >> 54;  // 10 bits
+        soft_bits_[(size_t)(h >> 6)] |= 1ull << (h & 63);
+    }
+    std::sort(soft_.begin(), soft_.end());
+}
+
+float Nav::soft_cost(const Vec3i& p) const {
+    if (soft_.empty()) return 0.0f;
+    const u64 k = pack(p);
+    const u64 h = (k * 0x9E3779B97F4A7C15ull) >> 54;
+    if (!(soft_bits_[(size_t)(h >> 6)] & (1ull << (h & 63)))) return 0.0f;
+    return std::binary_search(soft_.begin(), soft_.end(), k) ? 3.0f : 0.0f;
+}
+
 bool Nav::find_standable_near(const Vec3i& p, Vec3i& out, int radius) {
     for (int r = 0; r <= radius; ++r) {
         for (int dy = 0; dy <= 3; ++dy) {
@@ -119,7 +139,7 @@ int Nav::neighbors(const Vec3i& p, Vec3i* out, float* cost) {
                 !passable({p.x, top + 1, p.z + dz}))
                 continue;
         }
-        float c = step_cost(cand) * (diag ? 1.41421f : 1.0f);
+        float c = (step_cost(cand) + soft_cost(cand)) * (diag ? 1.41421f : 1.0f);
         if (cand.y > p.y) c += cand.y - p.y >= 2 ? 2.0f : 0.6f;
         if (cand.y < p.y) c += 0.2f * (float)(p.y - cand.y);
         out[n] = cand;

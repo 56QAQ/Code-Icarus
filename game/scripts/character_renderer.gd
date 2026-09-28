@@ -260,9 +260,11 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	# must not be smoothed away); whole-body changes (lying down) are slower.
 	var k := 1.0 - exp(-delta * 30.0)
 	var ks := 1.0 - exp(-delta * 5.0)
-	# Lying down: asleep on the back, the dead fallen on their side.
-	body.rotation.z = lerpf(body.rotation.z, PI / 2.0 if not alive else 0.0, ks)
-	body.position.y = lerpf(body.position.y, 0.3 if lying else 0.0, ks)
+	# Lying down on the side: asleep a little curled up and centred on the bed (about
+	# 2.6 cubes long and one wide, as the kernel lays the beds out), the dead fallen.
+	body.rotation.z = lerpf(body.rotation.z, PI / 2.0 if lying else 0.0, ks)
+	var rest := Vector3(1.32, 0.62, 0.0) if sleeping else (Vector3(0.0, 0.6, 0.0) if lying else Vector3.ZERO)
+	body.position = body.position.lerp(rest, ks)
 	var legl: Node3D = parts[PART_LEG_L]
 	var legr: Node3D = parts[PART_LEG_R]
 	var arml: Node3D = parts[PART_ARM_L]
@@ -339,9 +341,17 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 		lr = 0.0
 		lean = 0.0
 		head_y = 0.0
-		head_x = sin(t * 0.8) * 0.02 if sleeping else 0.0
+		head_x = 0.0
+		if sleeping:
+			# Knees drawn up a touch, hands forward, head tucked; breathing. (Kept within
+			# about 0.8 cubes front to back, so neighbours in the next bed do not touch.)
+			al = -0.3
+			ar = -0.2
+			ll = -0.25
+			lr = -0.16
+			head_x = 0.1 + sin(t * 0.8) * 0.02
 	# A bend at the hips: the whole figure leans, the legs stay upright.
-	var bx := -PI / 2.0 if sleeping else (0.0 if not alive else lean)
+	var bx := 0.0 if lying else lean
 	body.rotation.x = lerpf(body.rotation.x, bx, ks if lying or absf(body.rotation.x) > 1.0 else k)
 	var comp := body.rotation.x if not lying else 0.0
 	legl.rotation.x = lerpf(legl.rotation.x, ll - comp, k)
@@ -359,7 +369,8 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	var lvl: Node3D = n.get("level_l")
 	if lvl != null and is_instance_valid(lvl):
 		lvl.rotation.x = -arml.rotation.x
-	body.position.y += bob if not lying else 0.0
+	if not lying:
+		body.position.y = rest.y + bob
 	# Twin tails swing with the stride and settle when standing; the emblem floats.
 	for tp in n.get("tails", []):
 		if is_instance_valid(tp):

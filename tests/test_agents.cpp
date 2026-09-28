@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <map>
 
+#include "icarus/agents/footprint.h"
 #include "icarus/economy/buildings.h"
 #include "icarus/sim/clock.h"
 #include "icarus/sim/simulation.h"
@@ -259,11 +260,46 @@ TEST("agents: at night everyone sleeps on a cube of their own, at home when they
         ++sleeping;
         CHECK(std::find(spots.begin(), spots.end(), cp->foot) == spots.end());
         spots.push_back(cp->foot);
-        if (const Building* h = sim.buildings().get(cp->home))
-            if (cp->foot.chebyshev(h->inside) <= 3) ++at_home;
+        if (sim.agents().at_home(*cp)) ++at_home;
     }
     CHECK(sleeping > 10);
     CHECK(at_home * 10 >= sleeping * 7);
+    // Lying down they take a bed's room (three cubes in a row): no two bodies overlap.
+    std::vector<std::pair<EntityId, BedPrint>> beds;
+    for (const auto& cp : sim.agents().all()) {
+        if (!cp || !cp->alive || cp->task.type != TaskType::Sleep || cp->task.step < 2) continue;
+        const bool bed = cp->foot == cp->task.target;
+        beds.push_back({cp->id, bed_print(cp->foot, bed ? cp->task.target2 : Vec3i{})});
+    }
+    int in_beds = 0;
+    for (const auto& [id, b] : beds) in_beds += (b.x1 - b.x0 > 2.0f || b.z1 - b.z0 > 2.0f) ? 1 : 0;
+    CHECK(in_beds * 10 >= (int)beds.size() * 8);
+    for (size_t i = 0; i < beds.size(); ++i)
+        for (size_t j = i + 1; j < beds.size(); ++j) CHECK(!beds[i].second.overlaps(beds[j].second));
+}
+
+TEST("agents: people standing still (at a store, a workbench, the hall) do not stand in each other") {
+    Simulation sim(test_registry());
+    sim.new_game(village(1));
+    sim.run(kTicksPerHour * 3);
+    int stationary = 0, overlapping = 0;
+    for (int k = 0; k < 120; ++k) {
+        sim.run(37);
+        const auto& all = sim.agents().all();
+        for (size_t i = 1; i < all.size(); ++i) {
+            const Character* a = all[i].get();
+            if (!a || !a->alive || a->departed || a->moving || a->sleeping) continue;
+            ++stationary;
+            for (size_t j = i + 1; j < all.size(); ++j) {
+                const Character* b = all[j].get();
+                if (!b || !b->alive || b->departed || b->moving || b->sleeping || std::abs(a->foot.y - b->foot.y) > 1) continue;
+                const float dx = a->pos.x - b->pos.x, dz = a->pos.z - b->pos.z;
+                if (dx * dx + dz * dz < 0.4f * 0.4f) ++overlapping;
+            }
+        }
+    }
+    CHECK(stationary > 200);
+    CHECK(overlapping * 50 <= stationary);
 }
 
 TEST("agents: someone at the water drinks her fill, and drinks before bed") {

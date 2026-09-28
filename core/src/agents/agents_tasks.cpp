@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "icarus/agents/agents.h"
+#include "icarus/agents/footprint.h"
 #include "icarus/fauna/fauna.h"
 #include "icarus/sim/ecology.h"
 #include "icarus/economy/buildings.h"
@@ -579,14 +580,24 @@ bool Agents::task_drink(Character& c) {
     return true;
 }
 
-Vec3i Agents::sleep_spot(const Character& c, const Building* home, const Vec3i& near) {
-    // Cubes taken by other sleepers (where they lie or are going to lie).
-    std::vector<Vec3i> taken;
+Vec3i Agents::sleep_spot(const Character& c, const Building* home, const Vec3i& near, Vec3i& axis) {
+    // Beds taken by other sleepers (where they lie or are going to lie).
+    std::vector<BedPrint> taken;
     for (const auto& op : chars_)
-        if (op && op->alive && !op->departed && op->id != c.id && op->task.type == TaskType::Sleep)
-            taken.push_back(op->task.step >= 2 ? op->foot : op->task.target);
-    auto free_at = [&](const Vec3i& p) { return std::find(taken.begin(), taken.end(), p) == taken.end(); };
+        if (op && op->alive && !op->departed && op->id != c.id && op->task.type == TaskType::Sleep && op->task.step >= 1)
+            taken.push_back(bed_print(op->task.target, op->task.target2));
+    auto free_bed = [&](const Vec3i& mid, const Vec3i& ax, float gap = 0.0f) {
+        BedPrint b = bed_print(mid, ax);
+        b.x0 -= gap;
+        b.z0 -= gap;
+        b.x1 += gap;
+        b.z1 += gap;
+        for (const BedPrint& o : taken)
+            if (b.overlaps(o)) return false;
+        return true;
+    };
     Nav& nav = *ctx_.nav;
+    const Vec3i X{1, 0, 0}, Z{0, 0, 1};
     if (home) {
         // The floor inside, farthest from the door first; each member of the household
         // starts from their own spot.
@@ -600,32 +611,61 @@ Vec3i Agents::sleep_spot(const Character& c, const Building* home, const Vec3i& 
             const i64 da = a.dist2(home->entrance), db = b.dist2(home->entrance);
             return da != db ? da > db : a < b;
         });
+        auto floor = [&](const Vec3i& p) { return std::find(spots.begin(), spots.end(), p) != spots.end(); };
         if (!spots.empty()) {
             int rank = 0;
             for (const auto& op : chars_)
                 if (op && op->alive && !op->departed && op->home == c.home && op->id < c.id) ++rank;
+            // A whole bed on the floor, three cubes in a row.
             for (size_t k = 0; k < spots.size(); ++k) {
                 const Vec3i& p = spots[((size_t)rank + k) % spots.size()];
-                if (free_at(p)) return p;
+                for (const Vec3i& ax : {X, Z})
+                    if (floor(p - ax) && floor(p + ax) && free_bed(p, ax)) {
+                        axis = ax;
+                        return p;
+                    }
+            }
+            for (size_t k = 0; k < spots.size(); ++k) {
+                const Vec3i& p = spots[((size_t)rank + k) % spots.size()];
+                if (free_bed(p, Vec3i{})) {
+                    axis = Vec3i{};
+                    return p;
+                }
             }
         }
     }
-    // Outdoors (or a full house): the nearest free standable cube around (a ring around
-    // a campfire, keeping a cube away from the flames).
-    for (int r = 0; r <= 7; ++r)
-        for (int dz = -r; dz <= r; ++dz)
-            for (int dx = -r; dx <= r; ++dx) {
-                if (std::max(std::abs(dx), std::abs(dz)) != r) continue;
-                for (int dy : {0, 1, -1}) {
-                    const Vec3i p = near + Vec3i{dx, dy, dz};
-                    if (!free_at(p) || !nav.standable(p)) continue;
-                    bool by_flames = false;
-                    for (int k = 0; k < 4 && !by_flames; ++k)
-                        by_flames = ctx_.world->material(p + kDir4H[k]).key == "campfire" ||
-                                    ctx_.world->material(p).key == "campfire";
-                    if (!by_flames) return p;
+    // Outdoors (or a full house): the nearest free ground around, beds laid out like
+    // the spokes of a wheel (feet towards the middle), keeping a cube away from flames,
+    // and a little apart from each other while there is room.
+    auto by_flames = [&](const Vec3i& p) {
+        for (int dz = -1; dz <= 1; ++dz)
+            for (int dx = -1; dx <= 1; ++dx)
+                if (ctx_.world->material(p + Vec3i{dx, 0, dz}).key == "campfire") return true;
+        return false;
+    };
+    auto good = [&](const Vec3i& p) { return nav.standable(p) && !by_flames(p); };
+    for (int pass = 0; pass < 3; ++pass)
+        for (int r = 0; r <= (pass < 2 ? 9 : 16); ++r)
+            for (int dz = -r; dz <= r; ++dz)
+                for (int dx = -r; dx <= r; ++dx) {
+                    if (std::max(std::abs(dx), std::abs(dz)) != r) continue;
+                    for (int dy : {0, 1, -1}) {
+                        const Vec3i p = near + Vec3i{dx, dy, dz};
+                        if (!good(p)) continue;
+                        if (pass < 2) {
+                            const Vec3i first = std::abs(dx) >= std::abs(dz) ? X : Z, second = first == X ? Z : X;
+                            for (const Vec3i& ax : {first, second})
+                                if (good(p - ax) && good(p + ax) && free_bed(p, ax, pass == 0 ? 0.45f : 0.0f)) {
+                                    axis = ax;
+                                    return p;
+                                }
+                        } else if (free_bed(p, Vec3i{})) {
+                            axis = Vec3i{};
+                            return p;
+                        }
+                    }
                 }
-            }
+    axis = Vec3i{};
     return near;
 }
 
@@ -644,7 +684,7 @@ bool Agents::task_sleep(Character& c) {
                 c.needs.rest > 0.15f)
                 near = seat->inside;
         }
-        t.target = sleep_spot(c, go_home ? h : nullptr, near);
+        t.target = sleep_spot(c, go_home ? h : nullptr, near, t.target2);
         t.step = 1;
     }
     if (t.step == 1) {
@@ -654,11 +694,15 @@ bool Agents::task_sleep(Character& c) {
         t.step = 2;
         t.started = now_;
         c.sleeping = true;
+        // Lying down on her side along the bed (facing one way or the other).
+        if (c.foot == t.target && (t.target2.x || t.target2.z)) {
+            c.yaw = t.target2.x ? 0.0f : -1.5707964f;
+            if (c.id & 1) c.yaw += 3.1415927f;
+        }
     }
     if (t.step == 2) {
         c.sleeping = true;
-        const Building* h = ctx_.buildings->get(c.home);
-        bool at_home = h && h->functional && c.foot.chebyshev(h->inside) <= 3;
+        const bool at_home = this->at_home(c);
         say(c, at_home ? "在家睡觉" : "露宿");
         if (!at_home && near_campfire(c.foot)) say(c, "在篝火边睡觉");
         c.needs.comfort = clampv(c.needs.comfort + (at_home ? 0.0004f : -0.0003f), 0.0f, 1.0f);

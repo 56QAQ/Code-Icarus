@@ -1,5 +1,6 @@
 // Agents: lifecycle, needs, health, movement and persistence.
 #include "icarus/agents/agents.h"
+#include "icarus/agents/footprint.h"
 #include "icarus/fauna/fauna.h"
 
 #include <algorithm>
@@ -136,6 +137,7 @@ void read_region_cells(BinReader& r, RegionMap& map) {
 void Agents::step(Tick now) {
     now_ = now;
     path_spent_ = 0;
+    index_crowd();
     if (now % kTicksPerHour == 0) {
         fail_ring_pos_ = (fail_ring_pos_ + 1) % (int)fail_ring_.size();
         fail_ring_[(size_t)fail_ring_pos_] = 0;
@@ -174,6 +176,94 @@ void Agents::step(Tick now) {
         if ((now + c.id) % kTicksPerHour == 0) hourly(c);
         if (now >= c.next_think || c.task.type == TaskType::None) think(c);
         run_task(c);
+    }
+    keep_apart();
+}
+
+void Agents::index_crowd() {
+    crowd_.clear();
+    std::vector<Vec3i> beds;
+    for (size_t i = 1; i < chars_.size(); ++i) {
+        const Character* c = chars_[i].get();
+        if (!c || !c->alive || c->departed) continue;
+        crowd_.push_back({crowd_key(c->foot.x >> 2, c->foot.z >> 2), (u32)i});
+        if (!c->sleeping) continue;
+        beds.push_back(c->foot);
+        const Vec3i& ax = c->task.target2;
+        if (c->task.type == TaskType::Sleep && c->foot == c->task.target && (ax.x || ax.z)) {
+            beds.push_back(c->foot + ax);
+            beds.push_back(c->foot - ax);
+        }
+    }
+    std::sort(crowd_.begin(), crowd_.end());
+    ctx_.nav->set_soft(std::move(beds));
+}
+
+bool Agents::crowded(const Vec3i& p, const Character& c) {
+    bool hit = false;
+    for_near(p, [&](const Character& o) {
+        if (&o != &c && o.alive && !o.departed && !o.moving && !o.sleeping && o.foot == p) hit = true;
+    });
+    return hit;
+}
+
+void Agents::keep_apart() {
+    // Someone standing still is a disc of about the shoulders' width; a sleeper covers
+    // her bed. People standing in each other ease apart (within their own cube, so every
+    // rule that goes by the cube stays true); passers-by are left to walk on.
+    constexpr float R = 0.42f;
+    for (size_t i = 1; i < chars_.size(); ++i) {
+        Character* cp = chars_[i].get();
+        if (!cp || !cp->alive || cp->departed || cp->moving || cp->sleeping || cp->fall_speed > 0.0f) continue;
+        Character& c = *cp;
+        float px = 0.0f, pz = 0.0f;
+        for_near(c.foot, [&](const Character& o) {
+            if (&o == &c || !o.alive || o.departed || o.moving || std::abs(o.foot.y - c.foot.y) > 1) return;
+            if (o.sleeping) {
+                const bool bed = o.task.type == TaskType::Sleep && o.foot == o.task.target;
+                const BedPrint b = bed_print(o.foot, bed ? o.task.target2 : Vec3i{});
+                const float l = c.pos.x - (b.x0 - R), r = (b.x1 + R) - c.pos.x;
+                const float d = c.pos.z - (b.z0 - R), u = (b.z1 + R) - c.pos.z;
+                if (l <= 0 || r <= 0 || d <= 0 || u <= 0) return;
+                const float m = std::min(std::min(l, r), std::min(d, u));
+                if (m == l) px -= l;
+                else if (m == r) px += r;
+                else if (m == d) pz -= d;
+                else pz += u;
+                return;
+            }
+            float dx = c.pos.x - o.pos.x, dz = c.pos.z - o.pos.z;
+            const float d2 = dx * dx + dz * dz;
+            if (d2 >= 4.0f * R * R) return;
+            float d = std::sqrt(d2);
+            const float over = (2.0f * R - d) * 0.5f;
+            if (d < 1e-3f) {
+                // On the very same spot: part along a direction the pair agrees on.
+                const u32 lo = std::min(c.id, o.id), hi = std::max(c.id, o.id);
+                const float a = (float)((lo * 2654435761u + hi * 40503u) % 6283u) / 1000.0f;
+                dx = std::cos(a) * (c.id == lo ? 1.0f : -1.0f);
+                dz = std::sin(a) * (c.id == lo ? 1.0f : -1.0f);
+                d = 1.0f;
+            }
+            px += dx / d * over;
+            pz += dz / d * over;
+        });
+        if (px == 0.0f && pz == 0.0f) continue;
+        const float len = std::sqrt(px * px + pz * pz), step = 0.06f;
+        if (len > step) {
+            px *= step / len;
+            pz *= step / len;
+        }
+        // Within her own cube, leaning a little into an open one beside it (never into
+        // a wall).
+        Nav& nav = *ctx_.nav;
+        auto open = [&](int dx, int dz) {
+            const Vec3i q = c.foot + Vec3i{dx, 0, dz};
+            return nav.passable(q) && nav.passable(q + Vec3i{0, 1, 0});
+        };
+        const float fx = (float)c.foot.x, fz = (float)c.foot.z;
+        c.pos.x = clampv(c.pos.x + px, fx + (open(-1, 0) ? -0.2f : 0.12f), fx + (open(1, 0) ? 1.2f : 0.88f));
+        c.pos.z = clampv(c.pos.z + pz, fz + (open(0, -1) ? -0.2f : 0.12f), fz + (open(0, 1) ? 1.2f : 0.88f));
     }
 }
 
@@ -578,6 +668,27 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
     float cost = nav.step_cost(next);
     speed /= std::max(0.6f, cost);
     Vec3f target((float)next.x + 0.5f, (float)next.y, (float)next.z + 0.5f);
+    // Keep to the right of anyone coming the other way, so the two pass side by side.
+    {
+        float fx = target.x - c.pos.x, fz = target.z - c.pos.z;
+        const float len = std::sqrt(fx * fx + fz * fz);
+        if (len > 0.05f) {
+            fx /= len;
+            fz /= len;
+            bool oncoming = false;
+            for_near(c.foot, [&](const Character& o) {
+                if (oncoming || &o == &c || !o.alive || !o.moving || o.departed || std::abs(o.foot.y - c.foot.y) > 2) return;
+                const float ox = o.pos.x - c.pos.x, oz = o.pos.z - c.pos.z;
+                const float ahead = ox * fx + oz * fz;
+                if (ahead <= 0.0f || ahead > 3.0f || std::abs(ox * fz - oz * fx) > 0.9f) return;
+                if (std::sin(o.yaw) * fx + std::cos(o.yaw) * fz < -0.5f) oncoming = true;
+            });
+            if (oncoming) {
+                target.x -= fz * 0.28f;
+                target.z += fx * 0.28f;
+            }
+        }
+    }
     Vec3f d = target - c.pos;
     float dist = d.length();
     c.moving = true;
@@ -588,6 +699,23 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
         c.path.next++;
         if (Store* s = ctx_.econ->store(c.inv)) s->pos = c.foot;
         if (arrived()) {
+            // Someone already stands here (at a store, a workbench, the edge of a field):
+            // a free cube beside it that is just as good, if there is one.
+            if (adjacent_ok && crowded(c.foot, c)) {
+                Vec3i nb[8];
+                float nc[8];
+                const int n = nav.neighbors(c.foot, nb, nc);
+                for (int k = 0; k < n; ++k) {
+                    const Vec3i q = nb[k];
+                    if (std::abs(q.x - goal.x) > reach_xz || std::abs(q.z - goal.z) > reach_xz || q.y - goal.y > 2 ||
+                        goal.y - q.y > reach_up || crowded(q, c))
+                        continue;
+                    c.path.nodes.assign(1, q);
+                    c.path.next = 0;
+                    c.path_goal = goal;
+                    return Move::Moving;
+                }
+            }
             c.moving = false;
             c.path.clear();
             return Move::Arrived;

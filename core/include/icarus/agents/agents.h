@@ -3,6 +3,7 @@
 // worth, never what they are forced to do.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <string>
@@ -118,6 +119,8 @@ public:
     // Cold, wet and dark against what c wears: 0 = comfortable .. 1 = freezing.
     float exposure(const Character& c) const;
     bool near_campfire(const Vec3i& p) const;
+    // Whether c is at home: in its house (anywhere within its walls) or right by it.
+    bool at_home(const Character& c) const;
 
     AgentTuning tune;
     // Diagnostics (not saved): recent failed routes (who, from, to).
@@ -203,6 +206,24 @@ private:
     void update_needs(Character& c);
     void update_health(Character& c);
     void update_physics(Character& c);
+    // Keeping bodies apart: who stands where (rebuilt every tick), the cubes sleepers lie
+    // on (paths go round them), and a nudge apart for people standing in each other.
+    void index_crowd();
+    void keep_apart();
+    // Someone other than c standing still (awake) on cube p.
+    bool crowded(const Vec3i& p, const Character& c);
+    template <class F>
+    void for_near(const Vec3i& p, F&& f) {
+        const i32 cx = p.x >> 2, cz = p.z >> 2;
+        for (i32 dz = -1; dz <= 1; ++dz)
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                const u64 key = crowd_key(cx + dx, cz + dz);
+                auto it = std::lower_bound(crowd_.begin(), crowd_.end(), std::pair<u64, u32>{key, 0});
+                for (; it != crowd_.end() && it->first == key; ++it)
+                    if (Character* o = chars_[it->second].get()) f(*o);
+            }
+    }
+    static u64 crowd_key(i32 cx, i32 cz) { return ((u64)(u32)cx << 32) | (u64)(u32)cz; }
     void hourly(Character& c);
     // ai
     void think(Character& c);
@@ -224,7 +245,9 @@ private:
     // Where to lie down: a bed spot of its own inside the home (by rank among the
     // household), or a free cube near `near` when sleeping out; never on a cube another
     // sleeper already lies on or is heading for.
-    Vec3i sleep_spot(const Character& c, const Building* home, const Vec3i& near);
+    // A bed is three cubes in a row (a sleeper lies on her side along `axis`, a unit x or z
+    // vector), centred on the returned cube; axis is zero for a single-cube spot.
+    Vec3i sleep_spot(const Character& c, const Building* home, const Vec3i& near, Vec3i& axis);
     bool task_social(Character& c);
     bool task_wander(Character& c);
     bool task_work(Character& c);
@@ -281,6 +304,7 @@ private:
     // Path search nodes expanded this tick (long searches beyond the budget wait a tick).
     static constexpr u64 kPathTickBudget = 40000;
     u64 path_spent_ = 0;
+    std::vector<std::pair<u64, u32>> crowd_;  // (4x4 column cell, index in chars_), sorted
     std::array<int, 24> fail_ring_{};                // path failures per hour, last 24 h
     int fail_ring_pos_ = 0;
     std::vector<Vec3i> water_spots_;                // standable places next to drinkable water
