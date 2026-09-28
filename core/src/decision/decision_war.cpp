@@ -88,6 +88,9 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         } else if (p.stats.food_stock < 3.0f * kEnvoyGift) {
             o.feasible = false;
             o.why_not = "拿不出像样的礼物";
+        } else if (p.plan.at && (p.plan.stock - (float)kEnvoyGift < p.plan.target_days * p.plan.need || p.plan.balance < 0.0f)) {
+            o.feasible = false;
+            o.why_not = "自己的存粮都不够，内政官不肯拿粮食送人";
         } else if (att > 0.5f) {
             o.feasible = false;
             o.why_not = "两国已然交好";

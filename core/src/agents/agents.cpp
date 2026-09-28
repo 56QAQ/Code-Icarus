@@ -15,7 +15,9 @@ namespace icarus {
 
 namespace {
 // Per-character data added in version 2 (see Agents::save).
-constexpr u64 kCharBlockVersion = 3;  // 2: age, partner, parents, awakening; 3: empowerment
+constexpr u64 kCharBlockVersion = 6;  // 2: age, partner, parents, awakening; 3: empowerment;
+                                      // 4: the last fruitless search for food; 5: afloat;
+                                      // 6: under way (others keep to the right of her)
 }  // namespace
 
 Agents::Agents(SimContext& ctx) : ctx_(ctx) {}
@@ -306,6 +308,7 @@ void Agents::update_health(Character& c) {
 }
 
 void Agents::update_physics(Character& c) {
+    if (c.in_boat) return;  // afloat: the boat carries her (see the boat's errand)
     World& w = *ctx_.world;
     Nav& nav = *ctx_.nav;
     Vec3i below{c.foot.x, c.foot.y - 1, c.foot.z};
@@ -1055,6 +1058,9 @@ void Agents::save(BinWriter& w) const {
         w.u64v(c.girl ? c.girl->awakened : 0);
         w.u64v(c.empowered_until);
         w.f32(c.empowered);
+        w.u64v(c.no_food_until);
+        w.boolean(c.in_boat);
+        w.boolean(c.moving);
     }
     w.varu(region_open_.size());
     for (u8 o : region_open_) w.u8v(o);
@@ -1319,6 +1325,9 @@ void Agents::load(BinReader& outer) {
                 ch.empowered_until = r.u64v();
                 ch.empowered = r.f32();
             }
+            if (version >= 4) ch.no_food_until = r.u64v();
+            if (version >= 5) ch.in_boat = r.boolean();
+            if (version >= 6) ch.moving = r.boolean();
         }
     }
     region_open_.assign(1, 0);

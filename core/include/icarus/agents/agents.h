@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "icarus/agents/character.h"
+#include "icarus/society/plan.h"
 #include "icarus/agents/region_map.h"
 #include "icarus/agents/jobs.h"
 #include "icarus/sim/context.h"
@@ -89,6 +90,10 @@ public:
     bool awaken(const Polity& p, EventId cause);
     // The children of a character (living ones).
     std::vector<EntityId> children_of(EntityId id) const;
+
+    // The steward's shares of hands become people's trades (agents_plan.cpp): whoever
+    // fits a short-handed trade best moves over from one with hands to spare.
+    void assign_trades(u16 polity, const PolityPlan& plan);
 
     // Job generation (fields, piles, sites, kitchens...).
     void generate_jobs();
@@ -229,12 +234,15 @@ private:
     void think(Character& c);
     float work_score(Character& c, const Job& j, std::string& why);
     u32 best_job(Character& c, float& score, std::string& why);
-    // Jobs in hand per polity: construction (build, carry to sites) and gathering (cut
-    // wood, quarry), counted afresh each tick someone looks for work; both keep a share
-    // of the hands.
-    Tick crew_tick_ = ~Tick(0);
-    std::vector<std::array<u16, 2>> crew_;
-    void count_crews();
+    // Boats (agents_boat.cpp): fishing out on open water.
+    bool boat_fishing(Character& c, Job& j);
+    // A route over one sheet of water (surface at `level`) from one water column to
+    // another, as waypoints at the surface; false when the water does not connect.
+    bool water_route(const Vec3i& from, const Vec3i& to, int level, std::vector<Vec3i>& out) const;
+    // The public store nearest c holding a boat, or none.
+    StoreId boat_store(const Character& c) const;
+    // Back ashore at once (an errand afloat that cannot go on).
+    void land(Character& c);
     // tasks
     void run_task(Character& c);
     void end_task(Character& c, bool success);

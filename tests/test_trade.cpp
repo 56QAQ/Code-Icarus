@@ -269,10 +269,26 @@ TEST("aid: food to spare goes to a starving neighbour, carried over and asked no
     std::string err;
     u32 chosen = 0;
     for (int h = 0; h < 24 * 4 && !chosen; ++h) {
+        // (The neighbour's larder stays empty: its own people now bring food in.)
+        for (StoreId sid : sim.society().public_stores(nid))
+            if (const Store* s = sim.economy().store(sid)) {
+                const std::vector<ItemStack> items = s->items;
+                for (const ItemStack& st : items)
+                    if (sim.reg().item(st.item).nutrition > 0.0f) sim.economy().remove(sid, st.item, st.count, "test");
+            }
         sim.run(kTicksPerHour);
         for (u32 id : sim.decisions().awaiting_remote()) {
             const Decision* d = sim.decisions().get(id);
-            if (d->kind != "diplomacy" || d->polity != 1) continue;
+            if (d->kind != "diplomacy" || d->polity != 1) {
+                // (Anything else the rulers ponder is answered at once, so that nobody
+                // stays busy waiting for an answer that never comes.)
+                for (const DecisionOption& o : d->options)
+                    if (o.feasible) {
+                        sim.decisions().submit(id, o.key, "测试", "remote", err);
+                        break;
+                    }
+                continue;
+            }
             for (const DecisionOption& o : d->options)
                 if (o.key == "send_aid" && o.feasible) {
                     REQUIRE(sim.decisions().submit(id, o.key, "邻人挨饿", "remote", err));
@@ -317,10 +333,26 @@ TEST("aid: carriers who stop on the way (to drink) go on with their load, and it
     std::string err;
     u32 chosen = 0;
     for (int h = 0; h < 24 * 4 && !chosen; ++h) {
+        // (The neighbour's larder stays empty: its own people now bring food in.)
+        for (StoreId sid : sim.society().public_stores(nid))
+            if (const Store* s = sim.economy().store(sid)) {
+                const std::vector<ItemStack> items = s->items;
+                for (const ItemStack& st : items)
+                    if (sim.reg().item(st.item).nutrition > 0.0f) sim.economy().remove(sid, st.item, st.count, "test");
+            }
         sim.run(kTicksPerHour);
         for (u32 id : sim.decisions().awaiting_remote()) {
             const Decision* d = sim.decisions().get(id);
-            if (d->kind != "diplomacy" || d->polity != 1) continue;
+            if (d->kind != "diplomacy" || d->polity != 1) {
+                // (Anything else the rulers ponder is answered at once, so that nobody
+                // stays busy waiting for an answer that never comes.)
+                for (const DecisionOption& o : d->options)
+                    if (o.feasible) {
+                        sim.decisions().submit(id, o.key, "测试", "remote", err);
+                        break;
+                    }
+                continue;
+            }
             for (const DecisionOption& o : d->options)
                 if (o.key == "send_aid" && o.feasible) {
                     REQUIRE(sim.decisions().submit(id, o.key, "邻人挨饿", "remote", err));

@@ -68,6 +68,8 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("tech_tree", "polity"), &IcarusSim::tech_tree);
     ClassDB::bind_method(D_METHOD("round_state"), &IcarusSim::round_state);
     ClassDB::bind_method(D_METHOD("polities"), &IcarusSim::polities);
+    ClassDB::bind_method(D_METHOD("island_index"), &IcarusSim::island_index);
+    ClassDB::bind_method(D_METHOD("preview_island", "config", "size"), &IcarusSim::preview_island);
     ClassDB::bind_method(D_METHOD("piles"), &IcarusSim::piles);
     ClassDB::bind_method(D_METHOD("building_at", "cube"), &IcarusSim::building_at);
     ClassDB::bind_method(D_METHOD("buildings"), &IcarusSim::buildings);
@@ -122,6 +124,46 @@ Dictionary IcarusSim::rules_doc(const String& name) const {
     return json_to_variant(reg_->doc(to_std(name)));
 }
 
+namespace {
+// The world part of a new-game config (layout, seed and the random layout's options).
+icarus::WorldConfig world_from(const icarus::Json& j) {
+    icarus::WorldConfig w =
+        icarus::WorldConfig::for_layout(icarus::layout_from_key(j.str("layout", "classic")), (uint64_t)j.num("seed", 1));
+    if (w.layout == icarus::WorldLayout::Random) {
+        w.sea = j.boolean("sea", w.sea);
+        w.richness = j.integer("richness", w.richness);
+        w.relief = j.integer("relief", w.relief);
+        w.climate = j.integer("climate", w.climate);
+        w.size = j.integer("size", w.size);
+        w.sized();
+    }
+    w.island_radius = j.flt("island_radius", w.island_radius);
+    return w;
+}
+}  // namespace
+
+PackedFloat32Array IcarusSim::island_index() const {
+    PackedFloat32Array out;
+    if (!sim_) return out;
+    for (float v : sim_->society().island_history()) out.push_back(v);
+    return out;
+}
+
+Ref<Image> IcarusSim::preview_island(const Dictionary& config, int size) const {
+    if (!reg_ || size < 16) return Ref<Image>();
+    icarus::WorldGen gen;
+    gen.init(world_from(variant_to_json(config)), *reg_);
+    const std::vector<uint32_t> pix = gen.preview(size);
+    PackedByteArray bytes;
+    bytes.resize((int64_t)pix.size() * 3);
+    for (size_t i = 0; i < pix.size(); ++i) {
+        bytes[(int64_t)i * 3] = (uint8_t)(pix[i] >> 16);
+        bytes[(int64_t)i * 3 + 1] = (uint8_t)(pix[i] >> 8);
+        bytes[(int64_t)i * 3 + 2] = (uint8_t)pix[i];
+    }
+    return Image::create_from_data(size, size, false, Image::FORMAT_RGB8, bytes);
+}
+
 bool IcarusSim::new_game(const Dictionary& config) {
     if (!reg_) {
         last_error_ = "rules not loaded";
@@ -130,17 +172,7 @@ bool IcarusSim::new_game(const Dictionary& config) {
     try {
         icarus::Json j = variant_to_json(config);
         icarus::GameConfig cfg;
-        cfg.world = icarus::WorldConfig::for_layout(icarus::layout_from_key(j.str("layout", "classic")),
-                                                    (uint64_t)j.num("seed", 1));
-        if (cfg.world.layout == icarus::WorldLayout::Random) {
-            cfg.world.sea = j.boolean("sea", cfg.world.sea);
-            cfg.world.richness = j.integer("richness", cfg.world.richness);
-            cfg.world.relief = j.integer("relief", cfg.world.relief);
-            cfg.world.climate = j.integer("climate", cfg.world.climate);
-            cfg.world.size = j.integer("size", cfg.world.size);
-            cfg.world.sized();
-        }
-        cfg.world.island_radius = j.flt("island_radius", cfg.world.island_radius);
+        cfg.world = world_from(j);
         cfg.scenario = j.str("scenario", cfg.scenario);
         cfg.era = j.str("era", cfg.era);
         cfg.civs = j.integer("civs", cfg.civs);
@@ -661,6 +693,7 @@ Array IcarusSim::characters() const {
         d["moving"] = c.moving;
         d["phase"] = c.walk_phase;
         d["sleeping"] = c.sleeping;
+        d["in_boat"] = c.in_boat;
         d["alive"] = c.alive;
         d["girl"] = c.is_girl();
         d["age"] = sim_->agents().age_years(c);
@@ -1408,7 +1441,72 @@ Dictionary IcarusSim::polity_info(int64_t id) const {
     hist["mood"] = mood;
     hist["ruler_support"] = support;
     hist["population"] = pop;
+    // The civilisation index, one a day.
+    PackedFloat32Array civ;
+    for (const auto& c : p->civ_history) civ.push_back(c.total);
+    hist["civ"] = civ;
     d["history"] = hist;
+    // The steward's plan (内政官的报告).
+    {
+        const icarus::PolityPlan& P = p->plan;
+        Dictionary pl;
+        pl["need"] = P.need;
+        pl["income"] = P.income;
+        pl["potential"] = P.potential;
+        pl["capacity"] = P.capacity;
+        pl["stock_days"] = P.need > 0.0f ? P.stock / P.need : 0.0f;
+        pl["target_days"] = P.target_days;
+        pl["days_left"] = P.days_left;
+        pl["workers"] = P.workers;
+        pl["children"] = P.children;
+        pl["beds"] = P.beds;
+        pl["beds_needed"] = P.beds_needed;
+        pl["plots"] = P.plots;
+        pl["plots_needed"] = P.plots_needed;
+        pl["birth"] = P.birth;
+        pl["birth_why"] = to_gd(P.birth_why);
+        pl["summary"] = to_gd(P.summary);
+        Array by, want;
+        for (int s = 0; s < icarus::kFoodSources; ++s) {
+            Dictionary t;
+            t["name"] = String::utf8(icarus::food_source_zh(s));
+            t["income"] = P.income_by[s];
+            t["potential"] = P.potential_by[s];
+            by.push_back(t);
+        }
+        for (int t = 0; t < icarus::kTrades; ++t) {
+            Dictionary w;
+            w["name"] = String::utf8(icarus::trade_zh(t));
+            w["want"] = P.want[t];
+            w["staff"] = P.staff[t];
+            want.push_back(w);
+        }
+        pl["sources"] = by;
+        pl["trades"] = want;
+        Array adv;
+        for (const icarus::Advice& a : P.advice) {
+            Dictionary t;
+            t["key"] = to_gd(a.key);
+            t["urgency"] = a.urgency;
+            t["text"] = to_gd(a.text);
+            adv.push_back(t);
+        }
+        pl["advice"] = adv;
+        if (!p->civ_history.empty()) {
+            const icarus::CivIndex& c = p->civ_history.back();
+            Dictionary ci;
+            ci["total"] = c.total;
+            ci["people"] = c.people;
+            ci["fed"] = c.fed;
+            ci["secure"] = c.secure;
+            ci["housed"] = c.housed;
+            ci["built"] = c.built;
+            ci["known"] = c.known;
+            ci["content"] = c.content;
+            pl["index"] = ci;
+        }
+        d["plan"] = pl;
+    }
     Array reigns;
     for (const auto& r : p->reigns) {
         Dictionary t;
@@ -1840,6 +1938,7 @@ Dictionary IcarusSim::decision(int64_t id) const {
         Dictionary pd;
         pd["girl"] = (int64_t)pr.girl;
         if (const icarus::Character* g = sim_->agents().get(pr.girl)) pd["name"] = to_gd(g->name);
+        else if (pr.girl == icarus::kNoEntity) pd["name"] = String::utf8("内政官");
         String title = to_gd(pr.key);
         for (const auto& o : d->options)
             if (o.key == pr.key) title = to_gd(o.title);

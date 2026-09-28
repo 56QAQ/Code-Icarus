@@ -39,6 +39,9 @@ public:
     // A wild plant was gathered here (fruit picked, a bush stripped, grain cut); it
     // grows back after a few days if the spot is still free.
     void picked(const Vec3i& p, Tick now, MatId plant);
+    // Food a day the gathered plants within radius r of c will give once they bear again
+    // (what a forager may count on beyond what stands ripe now).
+    float regrowing_food(const Vec3i& c, int r) const;
 
     void save(BinWriter& w) const;
     void load(BinReader& r);

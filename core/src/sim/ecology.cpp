@@ -116,6 +116,19 @@ MatId Ecology::wild_plant_for(const Vec3i& p) {
 
 void Ecology::picked(const Vec3i& p, Tick now, MatId plant) { picked_.push_back({p, now, plant}); }
 
+float Ecology::regrowing_food(const Vec3i& c, int r) const {
+    float sum = 0;
+    for (const Picked& f : picked_) {
+        const i64 dx = f.pos.x - c.x, dz = f.pos.z - c.z;
+        if (dx * dx + dz * dz > (i64)r * r) continue;
+        const Material& m = reg_->mat(f.plant);
+        if (m.forage_item == kNoItem) continue;
+        const float n = reg_->item(m.forage_item).nutrition;
+        if (n > 0.0f) sum += (float)std::max(1, m.forage_count) * n / (m.foliage ? 3.0f : 4.0f);
+    }
+    return sum;
+}
+
 void Ecology::daily(Tick now, const Buildings& buildings) {
     const CoreMats& M = reg_->m();
     // Looking never wakes a cell; only planting and growing write.

@@ -28,6 +28,7 @@
     {"key": "bronze_armor", "name": "打造铜甲", "inputs": {"copper": 4}, "outputs": {"bronze_armor": 1}, "ticks": 300, "batch": 1, "station": "workshop", "tech": "copper_working", "group": "armor", "military": true},
     {"key": "iron_sword", "name": "锻造铁剑", "inputs": {"iron": 2, "wood": 1}, "outputs": {"iron_sword": 1}, "ticks": 280, "batch": 2, "station": "workshop", "tech": "iron_working", "group": "weapon", "military": true},
     {"key": "iron_armor", "name": "锻造铁甲", "inputs": {"iron": 4}, "outputs": {"iron_armor": 1}, "ticks": 340, "batch": 1, "station": "workshop", "tech": "iron_working", "group": "armor", "military": true},
+    {"key": "boat", "name": "造木船", "inputs": {"planks": 8, "wood": 2}, "outputs": {"boat": 1}, "ticks": 420, "batch": 1, "station": "workshop", "tech": "boats", "group": "boat", "stock_per_resident": 0.08},
     {"key": "cart", "name": "打造手推车", "inputs": {"planks": 4, "wood": 1}, "outputs": {"cart": 1}, "ticks": 220, "batch": 1, "station": "workshop", "tech": "wheel", "group": "cart", "stock_per_resident": 0.3},
     {"key": "stone_pick", "name": "打制石镐", "inputs": {"stone": 1, "wood": 1}, "outputs": {"stone_pick": 1}, "ticks": 120, "batch": 2, "station": "workshop", "tech": "stone_tools", "group": "pick", "stock_per_resident": 0.12},
     {"key": "stone_hoe", "name": "打制石锄", "inputs": {"stone": 1, "wood": 1}, "outputs": {"stone_hoe": 1}, "ticks": 120, "batch": 2, "station": "workshop", "tech": "stone_tools", "group": "hoe", "stock_per_resident": 0.15},

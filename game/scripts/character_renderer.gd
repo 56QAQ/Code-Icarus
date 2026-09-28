@@ -152,7 +152,34 @@ func _create(c: Dictionary) -> Dictionary:
 	_box(sack, Vector3(0.24, 0.04, 0.2), Vector3(0, 0.22, 0), _gear_mat("string"))
 	n["sack"] = sack
 	n["cart"] = _make_cart(root)
+	n["boat"] = _make_boat(root)
 	return n
+
+
+## A plank boat with a pair of oars, under a fisher out on the water. The character sits
+## on the middle thwart; the kernel keeps her at the water's surface.
+func _make_boat(root: Node3D) -> Node3D:
+	var boat := Node3D.new()
+	boat.visible = false
+	root.add_child(boat)
+	var wood := _gear_mat("wood")
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.36, 0.24, 0.15)
+	dark.roughness = 0.9
+	_box(boat, Vector3(1.0, 0.12, 2.3), Vector3(0, -0.28, 0), dark)          # bottom
+	for side in [-1.0, 1.0]:
+		_box(boat, Vector3(0.1, 0.36, 2.2), Vector3(0.52 * side, -0.08, 0), wood)  # sides
+	_box(boat, Vector3(0.9, 0.34, 0.1), Vector3(0, -0.1, -1.14), wood)        # stern
+	_box(boat, Vector3(0.6, 0.3, 0.3), Vector3(0, -0.02, 1.25), wood)          # bow
+	_box(boat, Vector3(0.95, 0.08, 0.3), Vector3(0, 0.06, -0.15), dark)        # thwart
+	for side in [-1.0, 1.0]:
+		var pivot := Node3D.new()
+		pivot.position = Vector3(0.56 * side, 0.1, 0.1)
+		pivot.name = "oar_l" if side < 0 else "oar_r"
+		boat.add_child(pivot)
+		_box(pivot, Vector3(0.06, 0.06, 1.7), Vector3(0.55 * side, -0.1, 0), wood)
+		_box(pivot, Vector3(0.05, 0.22, 0.4), Vector3(1.3 * side, -0.3, 0), wood)
+	return boat
 
 
 ## A little hand cart, pulled behind a hauler who owns one.
@@ -334,6 +361,23 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 		al = -2.0 + sin(t * 5.0) * 0.15
 		ar = -2.0 - sin(t * 5.0) * 0.15
 		head_x = -0.2
+	# Afloat: seated in the boat, rowing while it moves, casting the net when still.
+	var afloat: bool = c.get("in_boat", false) and alive
+	var boat: Node3D = n["boat"]
+	boat.visible = afloat
+	if afloat:
+		var rowing := float(n["speed"]) > 0.3
+		var stroke := sin(t * 3.2)
+		ll = -1.45
+		lr = -1.45
+		lean = 0.1 + stroke * 0.12 if rowing else 0.2
+		al = (-1.1 + stroke * 0.45) if rowing else (-1.6 + sin(t * 1.3) * 0.5)
+		ar = al if rowing else (-1.3 - sin(t * 1.3) * 0.5)
+		head_y = 0.0
+		for side in [-1.0, 1.0]:
+			var oar: Node3D = boat.get_node("oar_l" if side < 0 else "oar_r")
+			oar.rotation.y = (stroke * 0.5 * side) if rowing else 0.0
+			oar.rotation.z = (-0.25 + 0.2 * cos(t * 3.2)) * side if rowing else -0.05 * side
 	if lying:
 		al = 0.1
 		ar = 0.1
@@ -370,7 +414,7 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	if lvl != null and is_instance_valid(lvl):
 		lvl.rotation.x = -arml.rotation.x
 	if not lying:
-		body.position.y = rest.y + bob
+		body.position.y = rest.y + bob - (0.55 if afloat else 0.0)
 	# Twin tails swing with the stride and settle when standing; the emblem floats.
 	for tp in n.get("tails", []):
 		if is_instance_valid(tp):

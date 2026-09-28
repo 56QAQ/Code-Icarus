@@ -3,7 +3,9 @@
 
 #include <memory>
 
+#include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
@@ -72,6 +74,11 @@ public:
     Array tech_tree(int64_t polity) const;  // every tech with its state for the polity
     Dictionary round_state() const;         // {unified, event, text, time, polity}
     Array polities() const;
+    // The whole island's civilisation index, one value a day.
+    PackedFloat32Array island_index() const;
+    // A top-down picture of the island a new game with this config would make (column
+    // information only: quick, no cubes generated). Needs the rules loaded.
+    Ref<Image> preview_island(const Dictionary& config, int size) const;
     Array piles() const;
     Dictionary building_at(const Vector3i& cube) const;
     Array buildings() const;

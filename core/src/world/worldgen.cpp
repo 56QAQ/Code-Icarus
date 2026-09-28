@@ -385,9 +385,12 @@ const WorldGen::ColumnBlock& WorldGen::column_block(int cx, int cz) const {
     auto it = col_cache_.find(key);
     if (it != col_cache_.end()) return *it->second;
     auto blk = std::make_unique<ColumnBlock>();
-    for (int lz = 0; lz < kCellSize; ++lz)
-        for (int lx = 0; lx < kCellSize; ++lx)
-            blk->cols[lz * kCellSize + lx] = compute_column(cx * kCellSize + lx, cz * kCellSize + lz);
+    if (cfg_.layout == WorldLayout::Random && rnd_)
+        column_block_random(cx, cz, *blk);
+    else
+        for (int lz = 0; lz < kCellSize; ++lz)
+            for (int lx = 0; lx < kCellSize; ++lx)
+                blk->cols[lz * kCellSize + lx] = compute_column(cx * kCellSize + lx, cz * kCellSize + lz);
     auto* raw = blk.get();
     col_cache_[key] = std::move(blk);
     return *raw;

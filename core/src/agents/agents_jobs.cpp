@@ -583,10 +583,14 @@ void Agents::generate_jobs() {
                 if (j.alive && j.type == JobType::Forage && j.polity == pc.id &&
                     ctx_.world->mat(j.pos) == wild_grain)
                     ++open;
-            for (int i = 0; i < 400 && open < 5; ++i) {
+            // Without a field yet, and without the seed for one, they look farther afield
+            // (wild grain may not grow near home at all).
+            const bool first_fields = have < 6 && pc.plan.plots == 0;
+            const float reach = first_fields ? 190.0f : 100.0f;
+            for (int i = 0; i < (first_fields ? 700 : 400) && open < 5; ++i) {
                 const u64 h = hash3(0x5EEDull + pc.id, (i32)(now_ / 300), i, 3);
                 const float u = (float)(h & 0xFFFF) / 65535.0f, v = (float)((h >> 16) & 0xFFFF) / 65535.0f;
-                const float r = 4.0f + 100.0f * u;
+                const float r = 4.0f + reach * u;
                 const int x = seat->entrance.x + (int)std::lround(std::cos(v * 6.2831853f) * r);
                 const int z = seat->entrance.z + (int)std::lround(std::sin(v * 6.2831853f) * r);
                 const ColumnInfo col = ctx_.world->gen().column(x, z);
@@ -697,6 +701,59 @@ void Agents::generate_jobs() {
                 Job& j = add(JobType::Fish, pc.id, stand, pc.stats.food_days < 2.0f ? 1.05f : 0.9f);
                 j.project = (u32)g + 1;
                 ++open;
+            }
+        }
+        // Boats: out to the schools beyond reach of the shore, one boat each, putting out
+        // from the shore nearest home on the way to them.
+        const ItemId boat = ctx_.reg->find_item("boat");
+        for (auto& pc : ctx_.society->polities()) {
+            if (!pc.alive || !pc.has_tech("boats") || boat == kNoItem || pc.stats.food_days >= 12.0f) continue;
+            const Building* seat = ctx_.buildings->get(pc.seat);
+            if (!seat) continue;
+            int boats = 0, out = 0;
+            for (StoreId sid : ctx_.society->public_stores(pc.id)) boats += ctx_.econ->available(sid, boat);
+            for (const Job& j : jobs.all())
+                if (j.alive && j.type == JobType::Fish && j.plot == 1 && j.polity == pc.id) ++out;
+            if (boats - out <= 0) continue;
+            std::vector<Vec3i> homes{seat->entrance};
+            for (const Vec3i& o : pc.outposts) homes.push_back(o);
+            std::vector<std::pair<float, int>> cands;
+            for (size_t g = 0; g < grounds.size(); ++g) {
+                const FishGround& fg = grounds[g];
+                if (!fg.offshore || fg.stock < std::max(2, (fg.cap * 2 + 4) / 5)) continue;
+                i64 d2 = 1LL << 60;
+                for (const Vec3i& h : homes) d2 = std::min(d2, fg.at.dist2(h));
+                if (d2 > 220 * 220) continue;
+                bool taken = false;
+                for (const Job& o : jobs.all())
+                    if (o.alive && o.type == JobType::Fish && o.project == (u32)g + 1) taken = true;
+                if (!taken) cands.push_back({-((float)fg.stock / (float)fg.cap - std::sqrt((float)d2) / 400.0f), (int)g});
+            }
+            std::sort(cands.begin(), cands.end());
+            for (const auto& [score, g] : cands) {
+                if (boats - out <= 0) break;
+                // Walk from the school toward home until the first dry land: the shore there.
+                const Vec3i at = ctx_.fauna->ground_center((size_t)g);
+                Vec3i home = homes.front();
+                for (const Vec3i& h : homes)
+                    if (h.dist2(at) < home.dist2(at)) home = h;
+                const float dx = (float)(home.x - at.x), dz = (float)(home.z - at.z);
+                const float len = std::max(1.0f, std::sqrt(dx * dx + dz * dz));
+                Vec3i coast{0, -1, 0};
+                for (float s = 0; s < len; s += 2.0f) {
+                    const int x = at.x + (int)std::lround(dx / len * s), z = at.z + (int)std::lround(dz / len * s);
+                    const ColumnInfo col = ctx_.world->gen().column(x, z);
+                    if (col.land && col.water_top < 0) {
+                        coast = Vec3i{x, col.top + 1, z};
+                        break;
+                    }
+                }
+                Vec3i stand;
+                if (coast.y < 0 || !shore_near(coast, stand, 8)) continue;
+                Job& j = add(JobType::Fish, pc.id, stand, pc.stats.food_days < 2.0f ? 1.05f : 0.95f);
+                j.project = (u32)g + 1;
+                j.plot = 1;  // by boat
+                ++out;
             }
         }
     }

@@ -167,7 +167,7 @@ TEST("fauna: fish school in the lakes, stay in the water, and fishers bring them
     // Fishers catch them (the catch enters the ledger), and hunters never go after them.
     sim.run(kTicksPerDay);
     const auto& r = sim.economy().reasons();
-    CHECK(r.count("+butcher:fish") && r.at("+butcher:fish") > 0);
+    CHECK(r.count("+fish:fish") && r.at("+fish:fish") > 0);
     for (const auto& [k, n] : f.deaths)
         if (k.rfind("crucian:", 0) == 0 || k.rfind("carp:", 0) == 0) CHECK(k.find("猎杀") == std::string::npos);
 }

@@ -190,6 +190,9 @@ private:
     struct RandomIsland;
     void init_random();
     ColumnInfo compute_column_random(int x, int z) const;
+    struct RawBlock;
+    ColumnInfo column_random(int x, int z, RawBlock* rb) const;
+    void column_block_random(int cx, int cz, ColumnBlock& out) const;
     void generate_cell_random(const Vec3i& cc, Voxel* out) const;
     std::shared_ptr<const RandomIsland> rnd_;
     // Resource richness (random layout; 1 elsewhere): trees, wild plants, ore bodies.

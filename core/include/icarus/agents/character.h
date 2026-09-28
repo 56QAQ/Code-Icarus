@@ -200,6 +200,8 @@ struct Character {
     u16 region = 0;                // walkable region (refreshed with the water index; 0 = unknown)
     Tick next_think = 0;
     Tick last_ate = 0, last_drank = 0, last_slept = 0, last_social = 0, last_punished = 0;
+    Tick no_food_until = 0;  // found nothing to eat anywhere near: not looking again before this
+    bool in_boat = false;    // afloat in a boat (fishing out on the water): no ground needed
     std::vector<Consideration> trace;  // last decision breakdown
     std::vector<std::pair<Vec3i, Tick>> unreachable;  // temporarily blacklisted targets
     bool drafted = false;

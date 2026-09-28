@@ -54,7 +54,9 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     // A caravan under way (the goods in hand, or picked up again from her own pack after
     // a rest) is seen through: only a pressing need interrupts it.
     if (j.type == JobType::Trade && ((doing && c.task.step >= 2) || j.from == c.inv)) score += 0.5f;
-    if (!c.occupation.empty() && c.occupation == cat) score += 0.08f;
+    // One's own trade (the steward shares the hands out, see agents_plan.cpp) comes first
+    // in working hours; other work is taken up when there is none of one's own.
+    if (!c.occupation.empty() && c.occupation == cat) score += is_work_time(c) ? 0.35f : 0.08f;
     // Scholars are there to study in working hours (unless the larder is emptying).
     if (cat == "research" && c.occupation == "research" && is_work_time(c) &&
         !(p && p->stats.food_days < 1.0f && p->stats.food_access < 0.9f))
@@ -72,24 +74,6 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
         }
         if (!kind.empty()) score += 0.06f * (std::min(1.4f, tool_factor(c, kind)) - 0.7f);
     }
-    // Building and gathering keep a share of the hands while people are fed: otherwise
-    // food work, always the most urgent, would take everyone and nothing would be built.
-    // (Construction is building and carrying to sites; gathering is cutting wood and
-    // quarrying. Crafting, digging and hauling piles have their own pull.)
-    const int crew = (j.type == JobType::Build || j.type == JobType::HaulToSite) ? 0
-                     : (j.type == JobType::Chop || j.type == JobType::Mine)       ? 1
-                                                                                  : -1;
-    if (p && crew >= 0) {
-        const bool band = ctx_.society->foraging_band(*p);
-        // (A band lives from day to day: everyone eating is its sign of plenty.)
-        const bool fed = band ? p->stats.food_access >= 0.95f : (p->stats.food_days >= 1.5f && p->stats.food_access >= 0.9f);
-        if (fed && c.polity < crew_.size() && is_work_time(c)) {
-            const float hands = (float)std::max(4, p->stats.population);
-            const float share = (float)crew_[c.polity][(size_t)crew] / hands;
-            const float kWant = band ? 0.1f : 0.15f;
-            if (share < kWant) score += 0.6f * (kWant - share) / kWant * clampv(1.0f - dist / 150.0f, 0.2f, 1.0f);
-        }
-    }
     // Late in the working day nobody sets out for work far from home.
     if (p && dist > 40.0f) {
         const float left = 8.0f + p->policies.work_hours - hour_of(now_);
@@ -101,18 +85,7 @@ float Agents::work_score(Character& c, const Job& j, std::string& why) {
     return score;
 }
 
-void Agents::count_crews() {
-    crew_tick_ = now_;
-    crew_.assign(ctx_.society->polities().size() + 1, {0, 0});
-    for (const Job& j : ctx_.jobs->all()) {
-        if (!j.alive || j.claimed_by == kNoEntity || j.polity >= crew_.size()) continue;
-        if (j.type == JobType::Build || j.type == JobType::HaulToSite) crew_[j.polity][0]++;
-        else if (j.type == JobType::Chop || j.type == JobType::Mine) crew_[j.polity][1]++;
-    }
-}
-
 u32 Agents::best_job(Character& c, float& best, std::string& why) {
-    if (crew_tick_ != now_) count_crews();
     best = -1e9f;
     u32 pick = 0;
     for (const Job& j : ctx_.jobs->all()) {
@@ -167,6 +140,7 @@ void Agents::end_task(Character& c, bool success) {
         }
     }
     ctx_.econ->release_agent(c.id);
+    land(c);  // (an errand afloat that ends out on the water ends ashore)
     if (!success) c.task.fails++;
     TaskType prev = c.task.type;
     c.task = Task{};
@@ -182,6 +156,8 @@ void Agents::think(Character& c) {
     // Someone already at the water drinks her fill (a sip only quenches half a thirst);
     // only danger pulls her away.
     if (c.task.type == TaskType::Drink && c.task.step == 2 && danger_at(c) < 0.3f && !nearest_enemy(c, 14.0f, true)) return;
+    // Out on the water there is nothing to do but fish and row back.
+    if (c.in_boat && c.task.type == TaskType::Work) return;
     const Polity* p = ctx_.society->polity(c.polity);
     const Policies pol = p ? p->policies : Policies{};
     const bool night = is_night(now_);
@@ -200,7 +176,7 @@ void Agents::think(Character& c) {
     if (inv)
         for (auto& st : inv->items)
             if (ctx_.reg->item(st.item).nutrition > 0) carrying_food = true;
-    if (!food_known && !carrying_food) eat *= 0.6f;
+    if (!food_known && !carrying_food) eat *= now_ < c.no_food_until ? 0.15f : 0.6f;
     add("吃饭", eat, strfmt("饥饿 %s%s", pct(hunger), (food_known || carrying_food) ? "" : "，却不知哪里有吃的"));
 
     float thirst = 1.0f - c.needs.water;
@@ -358,6 +334,21 @@ void Agents::think(Character& c) {
                 opts.insert(opts.begin(), d);
                 break;
             }
+    // Before setting out on work far from food and water: a meal and a drink first (a
+    // long walk back half-way through the job would waste the day).
+    if (opts.front().label == "工作" && c.task.type != TaskType::Work && job)
+        if (const Job* jb = ctx_.jobs->get(job); jb && c.foot.dist2(jb->pos) > 70 * 70) {
+            const char* first = c.needs.water < 0.6f ? "喝水" : ((c.needs.food < 0.6f && (food_known || carrying_food)) ? "吃饭" : nullptr);
+            for (size_t i = 1; first && i < opts.size(); ++i)
+                if (opts[i].label == first) {
+                    Consideration d = opts[i];
+                    d.score = opts.front().score + 0.01f;
+                    d.why += "，出远门之前";
+                    opts.erase(opts.begin() + (long)i);
+                    opts.insert(opts.begin(), d);
+                    break;
+                }
+        }
     c.trace.assign(opts.begin(), opts.begin() + (long)std::min<size_t>(5, opts.size()));
     const Consideration& best = opts.front();
     if (best.label == current && c.task.type != TaskType::None) return;

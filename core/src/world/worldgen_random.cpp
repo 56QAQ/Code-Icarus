@@ -145,11 +145,25 @@ WorldGen::RandomIsland::Raw WorldGen::RandomIsland::raw(int xi, int zi) const {
     if (xi < 0 || zi < 0 || xi >= W || zi >= D) return r;
     const float x = (float)xi + 0.5f, z = (float)zi + 0.5f;
     if (sea && dist2d(x, z, cx, cz) > Rs) return r;
-    float t = sample(H, x, z) + relief * 1.1f * fbm2(salt + 21, x / 33.0f, z / 33.0f, 3) +
-              0.55f * fbm2(salt + 22, x / 9.0f, z / 9.0f, 2);
-    // River valley.
+    int cn[4];
+    corners(x, z, cn);
+    bool outside = false;
+    int lake = -1;
+    for (int k = 0; k < 4; ++k) {
+        if (kind[(size_t)cn[k]] == kOutside) outside = true;
+        if (lake_of[(size_t)cn[k]] && (lake < 0 || lake_of[(size_t)cn[k]] - 1 < lake)) lake = lake_of[(size_t)cn[k]] - 1;
+    }
     const RBlock* b = block(xi, zi);
     const int li = (zi & kCellMask) * kCellSize + (xi & kCellMask);
+    // Open sky beyond a sealess island's edge (no noise to work out).
+    const float coarse = sample(H, x, z);
+    if (!sea && outside && lake < 0 && !(b && b->w[(size_t)li] >= 0) && coarse + relief * 1.1f + 0.6f < (float)SL) {
+        bool flat = false;
+        for (const Flat& f : flats) flat = flat || dist2d(x, z, f.x, f.z) < f.r;
+        if (!flat) return r;
+    }
+    float t = coarse + relief * 1.1f * fbm2(salt + 21, x / 33.0f, z / 33.0f, 3) + 0.55f * fbm2(salt + 22, x / 9.0f, z / 9.0f, 2);
+    // River valley.
     if (b && b->cap[(size_t)li] < 32767) {
         t = std::min(t, (float)b->cap[(size_t)li]);
         r.bank = true;
@@ -160,14 +174,6 @@ WorldGen::RandomIsland::Raw WorldGen::RandomIsland::raw(int xi, int zi) const {
         if (dd >= f.r) continue;
         t = lerpf(t, f.level, 1.0f - smoothstep(f.r * 0.62f, f.r, dd));
         if (dd < f.keep) r.reserved = true;
-    }
-    int cn[4];
-    corners(x, z, cn);
-    bool outside = false;
-    int lake = -1;
-    for (int k = 0; k < 4; ++k) {
-        if (kind[(size_t)cn[k]] == kOutside) outside = true;
-        if (lake_of[(size_t)cn[k]] && (lake < 0 || lake_of[(size_t)cn[k]] - 1 < lake)) lake = lake_of[(size_t)cn[k]] - 1;
     }
     int top = (int)std::floor(t);
     r.t = t;
@@ -539,14 +545,17 @@ void WorldGen::init_random() {
                     slot->dist.fill(255);
                 }
                 const size_t li = (size_t)((z & kCellMask) * kCellSize + (x & kCellMask));
-                const int cap = wl + 1 + (int)std::floor(std::max(0.0f, ds - hw) * 0.5f);
+                // Banks flush with the water, the valley rising gently beyond them.
+                const int cap = wl + (int)std::floor(std::max(0.0f, ds - hw - 1.0f) * 0.5f);
                 slot->cap[li] = (i16)std::min<int>(slot->cap[li], cap);
                 if (ds <= hw) {
                     const u8 q = (u8)std::min(254.0f, ds * 8.0f);
                     if (slot->w[li] < 0 || q < slot->dist[li]) {
                         slot->w[li] = (i16)wl;
                         slot->dist[li] = q;
-                        slot->depth[li] = (u8)(1 + (int)std::lround((1.0f - (ds / hw) * (ds / hw)) * (float)deep));
+                        // One deeper for each cube in from the edge (never a step anyone
+                        // wading in could not climb back out of).
+                        slot->depth[li] = (u8)(1 + std::min(deep, (int)std::floor(hw - ds)));
                     }
                 }
             }
@@ -802,7 +811,27 @@ void WorldGen::init_random() {
     feat_.bridge_a = feat_.bridge_b = feat_.ravine_end = feat_.village;
 }
 
-ColumnInfo WorldGen::compute_column_random(int xi, int zi) const {
+// Raw columns of one cell column and a one-column rim, each worked out when first
+// needed (the neighbour rules look at the four next door).
+struct WorldGen::RawBlock {
+    static constexpr int N = kCellSize + 2;
+    int x0 = 0, z0 = 0;  // world position of entry (0, 0)
+    std::array<RandomIsland::Raw, N * N> r;
+    std::array<bool, N * N> done{};
+};
+
+void WorldGen::column_block_random(int cx, int cz, ColumnBlock& out) const {
+    auto rb = std::make_unique<RawBlock>();
+    rb->x0 = cx * kCellSize - 1;
+    rb->z0 = cz * kCellSize - 1;
+    for (int lz = 0; lz < kCellSize; ++lz)
+        for (int lx = 0; lx < kCellSize; ++lx)
+            out.cols[lz * kCellSize + lx] = column_random(cx * kCellSize + lx, cz * kCellSize + lz, rb.get());
+}
+
+ColumnInfo WorldGen::compute_column_random(int xi, int zi) const { return column_random(xi, zi, nullptr); }
+
+ColumnInfo WorldGen::column_random(int xi, int zi, RawBlock* rb) const {
     ColumnInfo c;
     const RandomIsland& I = *rnd_;
     const float x = (float)xi + 0.5f, z = (float)zi + 0.5f;
@@ -826,7 +855,16 @@ ColumnInfo WorldGen::compute_column_random(int xi, int zi) const {
         c.island = (u8)ii;
         return c;
     }
-    RandomIsland::Raw r = I.raw(xi, zi);
+    auto raw = [&](int x, int z) -> RandomIsland::Raw {
+        if (!rb) return I.raw(x, z);
+        const int i = (z - rb->z0) * RawBlock::N + (x - rb->x0);
+        if (!rb->done[(size_t)i]) {
+            rb->r[(size_t)i] = I.raw(x, z);
+            rb->done[(size_t)i] = true;
+        }
+        return rb->r[(size_t)i];
+    };
+    RandomIsland::Raw r = raw(xi, zi);
     if (!r.land) return c;
     int top = r.top;
     int water = r.water;
@@ -839,7 +877,7 @@ ColumnInfo WorldGen::compute_column_random(int xi, int zi) const {
         for (auto& d : k4) {
             const int nx = xi + d[0], nz = zi + d[1];
             if (has_sea_ && sea_wall(nx, nz)) continue;
-            const RandomIsland::Raw n = I.raw(nx, nz);
+            const RandomIsland::Raw n = raw(nx, nz);
             if (n.land && n.water > hi) hi = n.water;
         }
         if (water < 0 && hi > top) {

@@ -4,6 +4,7 @@
 // so conservation can be audited at any time.
 #pragma once
 
+#include <array>
 #include <functional>
 #include <map>
 #include <string>
@@ -106,6 +107,12 @@ public:
     float food_nutrition_in(StoreId s) const;
     const LedgerLine& ledger(ItemId item) const { return ledger_[item]; }
     const std::map<std::string, i64>& reasons() const { return reasons_; }
+    // Food each polity has brought in, by source (0 fields, 1 foraging, 2 hunting,
+    // 3 fishing), in nutrition units since the start; zeros for a polity with none.
+    std::array<double, 4> food_in(u16 polity) const {
+        auto it = food_in_.find(polity);
+        return it == food_in_.end() ? std::array<double, 4>{0, 0, 0, 0} : it->second;
+    }
 
     // Daily spoilage of perishable food in every store.
     void spoil(Rng& rng, const std::function<float(u16)>& polity_factor = {});
@@ -123,6 +130,7 @@ private:
     std::vector<StoreId> free_ids_;
     std::vector<LedgerLine> ledger_;
     std::map<std::string, i64> reasons_;
+    std::map<u16, std::array<double, 4>> food_in_;
     Tick now_ = 0;
 };
 

@@ -34,6 +34,7 @@ void Society::reset(u64 seed) {
     projects_.assign(1, Project{});
     most_polities_ = 1;
     last_merge_ = unification_ = 0;
+    island_history_.clear();
 }
 
 std::vector<std::string> Society::start_techs(const std::string& era) const {
@@ -208,6 +209,8 @@ void Society::hourly(Tick now) {
         }
         p.history.push_back(p.stats);
         if (p.history.size() > 24 * 60) p.history.erase(p.history.begin());
+        // The steward looks ahead every two hours (the first time at once).
+        if (p.plan.at == 0 || (now / kTicksPerHour) % 2 == 0) draw_plan(p);
     }
     update_projects();
     check_unification();
@@ -247,6 +250,14 @@ void Society::daily(Tick now) {
     trade_daily();
     for (auto& p : polities_)
         if (p.alive) update_diplomacy(p);
+    // The civilisation index, per polity and for the island.
+    float island = 0;
+    for (auto& p : polities_) {
+        if (!p.alive) continue;
+        p.civ_history.push_back(civ_index(p));
+        island += p.civ_history.back().total;
+    }
+    island_history_.push_back(island);
     ctx_.econ->spoil(rng_, [this](u16 polity) { return 1.0f - std::min(0.9f, passive(polity, "preserve")); });
     ctx_.agents->day = {};
     (void)now;
@@ -700,6 +711,84 @@ void Society::update_projects() {
 // ------------------------------------------------------------------------------ persistence
 
 namespace {
+void save_plan(BinWriter& w, const PolityPlan& P) {
+    w.u64v(P.at);
+    for (int v : {P.workers, P.children, P.elders, P.people, P.beds, P.plots, P.irrigated, P.sites, P.plots_needed, P.beds_needed})
+        w.vari(v);
+    for (float v : {P.need, P.stock, P.seed, P.income, P.potential, P.capacity, P.target_days, P.balance, P.days_left, P.birth,
+                    P.hands})
+        w.f32(v);
+    for (int s = 0; s < kFoodSources; ++s) {
+        w.f32(P.income_by[s]);
+        w.f32(P.potential_by[s]);
+    }
+    for (int t = 0; t < kTrades; ++t) {
+        w.f32(P.want[t]);
+        w.vari(P.staff[t]);
+    }
+    w.str(P.birth_why);
+    w.str(P.summary);
+    w.u64v(P.first);
+    w.varu(P.looks.size());
+    for (const PolityPlan::Look& l : P.looks) {
+        w.u64v(l.at);
+        for (double d : l.food) w.f64(d);
+        w.f32(l.hands);
+    }
+    w.varu(P.advice.size());
+    for (const Advice& a : P.advice) {
+        w.str(a.key);
+        w.f32(a.urgency);
+        w.str(a.text);
+    }
+}
+PolityPlan load_plan(BinReader& r) {
+    PolityPlan P;
+    P.at = r.u64v();
+    for (int* v : {&P.workers, &P.children, &P.elders, &P.people, &P.beds, &P.plots, &P.irrigated, &P.sites, &P.plots_needed,
+                   &P.beds_needed})
+        *v = (int)r.vari();
+    for (float* v : {&P.need, &P.stock, &P.seed, &P.income, &P.potential, &P.capacity, &P.target_days, &P.balance,
+                     &P.days_left, &P.birth, &P.hands})
+        *v = r.f32();
+    for (int s = 0; s < kFoodSources; ++s) {
+        P.income_by[s] = r.f32();
+        P.potential_by[s] = r.f32();
+    }
+    for (int t = 0; t < kTrades; ++t) {
+        P.want[t] = r.f32();
+        P.staff[t] = (int)r.vari();
+    }
+    P.birth_why = r.str();
+    P.summary = r.str();
+    P.first = r.u64v();
+    const u64 nl = r.varu();
+    for (u64 k = 0; k < nl; ++k) {
+        PolityPlan::Look l;
+        l.at = r.u64v();
+        for (double& d : l.food) d = r.f64();
+        l.hands = r.f32();
+        P.looks.push_back(l);
+    }
+    const u64 na = r.varu();
+    for (u64 k = 0; k < na; ++k) {
+        Advice a;
+        a.key = r.str();
+        a.urgency = r.f32();
+        a.text = r.str();
+        P.advice.push_back(std::move(a));
+    }
+    return P;
+}
+void save_civ(BinWriter& w, const CivIndex& c) {
+    for (float v : {c.people, c.fed, c.secure, c.housed, c.built, c.known, c.content, c.total}) w.f32(v);
+}
+CivIndex load_civ(BinReader& r) {
+    CivIndex c;
+    for (float* v : {&c.people, &c.fed, &c.secure, &c.housed, &c.built, &c.known, &c.content, &c.total}) *v = r.f32();
+    return c;
+}
+
 void save_stats(BinWriter& w, const PolityStats& s) {
     w.u64v(s.tick);
     w.vari(s.population);
@@ -928,6 +1017,15 @@ void Society::save(BinWriter& w) const {
         w.varu(polities_[i].wars.size());
         for (const War& wr : polities_[i].wars) w.vari(wr.repulsed);
     }
+    // Version 6: the stewards' plans and the civilisation index.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) {
+        save_plan(w, polities_[i].plan);
+        w.varu(polities_[i].civ_history.size());
+        for (const CivIndex& c : polities_[i].civ_history) save_civ(w, c);
+    }
+    w.varu(island_history_.size());
+    for (float v : island_history_) w.f32(v);
     w.end_section(sec);
 }
 
@@ -1166,6 +1264,22 @@ void Society::load(BinReader& outer) {
                         if (i < polities_.size() && k < polities_[i].wars.size()) polities_[i].wars[k].repulsed = rep;
                     }
                 }
+            }
+            island_history_.clear();
+            if (!r.at_end()) {
+                const u64 np8 = r.varu();
+                for (size_t i = 1; i < (size_t)np8; ++i) {
+                    PolityPlan plan = load_plan(r);
+                    std::vector<CivIndex> civ;
+                    const u64 nc = r.varu();
+                    for (u64 k = 0; k < nc; ++k) civ.push_back(load_civ(r));
+                    if (i < polities_.size()) {
+                        polities_[i].plan = std::move(plan);
+                        polities_[i].civ_history = std::move(civ);
+                    }
+                }
+                const u64 ni = r.varu();
+                for (u64 k = 0; k < ni; ++k) island_history_.push_back(r.f32());
             }
         }
     }

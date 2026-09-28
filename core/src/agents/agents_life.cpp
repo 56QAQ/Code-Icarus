@@ -175,15 +175,12 @@ void Agents::daily_life() {
         if (is_elder(a) || is_elder(b) || a.is_girl() || b.is_girl()) continue;
         if ((a.mood + b.mood) * 0.5f < min_mood) continue;
         const bool band = ctx_.society->foraging_band(*p);
-        if (band ? p->stats.food_access < 0.9f : (p->stats.food_days < min_days || p->stats.food_access < 0.85f)) continue;
-        float pr = chance * clampv(1.0f - (float)p->stats.population / std::max(10.0f, cap), 0.1f, 1.0f);
-        // Farmers with too few fields for the mouths they have hold back.
-        if (!band) {
-            int plots = 0;
-            for (const Farm& f : ctx_.farming->all())
-                if (f.alive && f.polity == p->id) plots += (int)f.plots.size();
-            pr *= clampv((float)plots / (2.0f * (float)std::max(1, p->stats.population)), 0.25f, 1.0f);
-        }
+        // Nobody starts a family while going hungry; beyond that, whether the people can
+        // feed and house more mouths for good is the steward's judgement (the plan's
+        // birth allowance: none when stores are short, more when the land has room).
+        if (p->stats.food_access < 0.85f) continue;
+        const float allow = p->plan.at ? p->plan.birth : (p->stats.food_days >= min_days ? 1.0f : 0.0f);
+        float pr = chance * allow * clampv(1.0f - (float)p->stats.population / std::max(10.0f, cap), 0.1f, 1.0f);
         const Building* h = ctx_.buildings->get(a.home);
         if (!h || !h->functional) {
             pr *= band ? life_f(reg, "band_factor", 0.5f) : life_f(reg, "crowding", 0.3f);

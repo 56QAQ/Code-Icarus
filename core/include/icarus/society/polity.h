@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "icarus/sim/chronicle.h"
+#include "icarus/society/plan.h"
 #include "icarus/util/json.h"
 #include "icarus/util/types.h"
 
@@ -174,6 +175,8 @@ struct Polity {
     std::vector<Crisis> crises;
     PolityStats stats;
     std::vector<PolityStats> history;
+    PolityPlan plan;                   // the steward's plan (内政规划)
+    std::vector<CivIndex> civ_history;  // the civilisation index, one a day
     int deaths_total = 0;
     Tick forage_until = 0;   // organised foraging campaign
     // Passive spells of the polity's magical girls, summed by effect (refreshed hourly).

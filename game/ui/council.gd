@@ -413,7 +413,7 @@ func _rebuild_detail(d: Dictionary) -> void:
 
 	var props: Array = d.get("proposals", [])
 	if not props.is_empty():
-		_section("其他魔法少女的建议")
+		_section("内政官与其他魔法少女的建议")
 		var flow := HFlowContainer.new()
 		flow.add_theme_constant_override("h_separation", 6)
 		flow.add_theme_constant_override("v_separation", 6)

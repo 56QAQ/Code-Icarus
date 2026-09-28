@@ -66,6 +66,11 @@ public:
     void finish_project(u32 id, bool success, EventId cause);
 
     void compute_stats(Polity& p);
+    // The steward's plan (planner.cpp): drawn up every two hours; the civilisation index.
+    void draw_plan(Polity& p);
+    CivIndex civ_index(const Polity& p) const;
+    // The whole island's index (the sum over living polities), one a day.
+    const std::vector<float>& island_history() const { return island_history_; }
     // Technology.
     const Json* tech(const std::string& key) const;
     bool tech_available(const Polity& p, const std::string& key) const;  // requirements met, not known
@@ -199,6 +204,7 @@ private:
     std::vector<Polity> polities_ = std::vector<Polity>(1);
     std::vector<Project> projects_ = std::vector<Project>(1);
     int most_polities_ = 1;     // most polities alive at once so far
+    std::vector<float> island_history_;  // the island's civilisation index, a day each
     EventId last_merge_ = 0;    // latest annexation
     EventId unification_ = 0;   // the island was unified (once per round)
 };

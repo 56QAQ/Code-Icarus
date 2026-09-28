@@ -22,6 +22,7 @@ void Economy::reset() {
     free_ids_.clear();
     ledger_.assign(reg_->item_count(), LedgerLine{});
     reasons_.clear();
+    food_in_.clear();
 }
 
 StoreId Economy::create_store(StoreKind kind, const Vec3i& pos, u16 polity, EntityId owner, float capacity) {
@@ -98,6 +99,11 @@ i32 Economy::add(StoreId sid, ItemId item, i32 n, const std::string& reason) {
     st->count += n;
     ledger_[item].produced += n;
     reasons_["+" + reason + ":" + reg_->item(item).key] += n;
+    // Food coming in from the land, credited to the polity whose hands brought it.
+    if (s->polity && reg_->item(item).nutrition > 0.0f) {
+        const int src = reason == "harvest" ? 0 : reason == "forage" ? 1 : reason == "butcher" ? 2 : reason == "fish" ? 3 : -1;
+        if (src >= 0) food_in_[s->polity][(size_t)src] += (double)n * (double)reg_->item(item).nutrition;
+    }
     return n;
 }
 
@@ -285,6 +291,12 @@ void Economy::save(BinWriter& w) const {
         w.str(k);
         w.i64v(v);
     }
+    // Food brought in by polity (added in version 3).
+    w.varu(food_in_.size());
+    for (auto& [pid, v] : food_in_) {
+        w.u16v(pid);
+        for (double d : v) w.f64(d);
+    }
     w.end_section(sec);
 }
 
@@ -335,6 +347,15 @@ void Economy::load(BinReader& outer) {
     for (u64 k = 0; k < nrs; ++k) {
         std::string key = r.str();
         reasons_[key] = r.i64v();
+    }
+    food_in_.clear();
+    if (!r.at_end()) {
+        const u64 np = r.varu();
+        for (u64 k = 0; k < np; ++k) {
+            const u16 pid = r.u16v();
+            auto& v = food_in_[pid];
+            for (double& d : v) d = r.f64();
+        }
     }
 }
 

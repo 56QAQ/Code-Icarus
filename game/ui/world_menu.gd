@@ -11,19 +11,55 @@ var _scroll: ScrollContainer
 var _seed_edit: LineEdit
 ## New-world options: [config value, label, tooltip].
 const LAYOUTS := [
-	["classic", "经典小岛", "一座小岛：村落、田地、峡谷上的桥与山泉。"],
-	["continent", "广袤大陆", "远大于经典小岛的空岛：山脉、湖泊与多种生态群系（森林、草原、针叶林、雪原、荒漠、稀树草原、沼泽）。"],
+	["random", "随机空岛", "按种子随机生成的大空岛：山脉、河流、湖泊、多种生态群系与自然资源；可以选择周围是否有海、资源多少、大小、地形与气候。"],
+	["continent", "广袤大陆", "第二版本的大陆：山脉、湖泊与多种生态群系，最多三个文明。"],
+	["classic", "经典小岛", "第一版本的小岛：村落、田地、峡谷上的桥与山泉。"],
 ]
 const ERAS := [
 	["wild", "蛮荒", "一群衣不蔽体的人造人围着篝火：露宿、采集野果、赤手狩猎。科技与村落要从零摸索。"],
 	["tribal", "部落", "篝火旁的窝棚、石器、兽皮与木矛：会打猎、会搭窝棚的部落。"],
-	["village", "村落", "茅屋、仓库、灶房与水边的麦田：已经会耕种的村落（第一版的开局）。"],
+	["village", "村落", "茅屋、仓库、灶房与水边的麦田：已经会耕种的村落。"],
 ]
 const CIVS := [
-	["1", "一个文明", "空岛上只有一个文明。"],
-	["3", "三个文明", "三个彼此敌视的文明各据一方（需要「广袤大陆」）。"],
+	["1", "一", "空岛上只有一个文明。"],
+	["2", "二", "两个文明各据一方。"],
+	["3", "三", "三个文明各据一方（「经典小岛」只容得下一个）。"],
+	["4", "四", "四个文明各据一方（需要「随机空岛」）。"],
 ]
-var _options := {"layout": "classic", "era": "village", "civs": "1"}
+# The random island's options (shown only for 随机空岛).
+const SEAS := [
+	["1", "环海", "岛的四周是一圈海：海水是咸的，不能喝也不能浇地；外海有鱼群，学会造木船才能去捕。海的外缘有看不见的空气墙，海平面永远不变。"],
+	["0", "悬空", "没有海：空岛悬在云上，河流在岛边的湖里汇聚。"],
+]
+const RICHNESS := [
+	["0", "贫瘠", "树木、野果、野麦、猎物、鱼群与矿脉都少：生存更难。"],
+	["1", "普通", "寻常的丰饶程度。"],
+	["2", "丰饶", "树木、野果、猎物、鱼群与矿脉都更多。"],
+]
+const SIZES := [
+	["0", "中", "比「广袤大陆」略大。"],
+	["1", "大", "再大一半：更长的河、更远的邻国。"],
+]
+const RELIEFS := [
+	["0", "平缓", "丘陵低缓、山脉矮小。"],
+	["1", "起伏", "丘陵与一两条山脉。"],
+	["2", "险峻", "高山连绵、河谷深切。"],
+]
+const CLIMATES := [
+	["0", "多样", "从雪原到荒漠：冷暖干湿随地而异，各种群系都有。"],
+	["1", "温和", "大多是草原与森林。"],
+	["2", "寒冷", "针叶林与雪原居多。"],
+	["3", "炎热", "炎热干燥：稀树草原与荒漠居多。"],
+	["4", "湿润", "森林与沼泽居多。"],
+]
+var _options := {"layout": "random", "era": "wild", "civs": "4", "sea": "1", "richness": "1", "size": "1", "relief": "1", "climate": "0"}
+var _random_rows: Array[Control] = []
+var _preview: TextureRect
+var _preview_note: Label
+var _preview_thread: Thread
+var _preview_wanted := ""   # the config (as text) the picture should show
+var _preview_shown := ""    # the config the picture shows (or is being drawn for)
+var _preview_wait := 0.0
 var _status: Label
 var _slot_box: VBoxContainer
 var _resume: Button
@@ -49,7 +85,7 @@ func _ready() -> void:
 	sb.set_border_width_all(1)
 	add_theme_stylebox_override("panel", sb)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	custom_minimum_size = Vector2(580, 0)
+	custom_minimum_size = Vector2(660, 0)
 	# The menu scrolls when it is taller than the screen (a small window, a large
 	# interface size, or the help unfolded).
 	_scroll = ScrollContainer.new()
@@ -93,25 +129,61 @@ func _ready() -> void:
 	_seed_edit.placeholder_text = "任意整数"
 	row.add_child(_seed_edit)
 	var dice := _button("随机", UITheme.TEXT)
-	dice.pressed.connect(func() -> void: _seed_edit.text = str(randi_range(1, 999999)))
+	dice.pressed.connect(func() -> void:
+		_seed_edit.text = str(randi_range(1, 999999))
+		_want_preview())
 	row.add_child(dice)
+	_seed_edit.text_changed.connect(func(_t: String) -> void: _want_preview())
 	var g2 := Control.new()
 	g2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(g2)
 	var start := _button("开辟这片空岛", UITheme.ACCENT)
 	start.pressed.connect(_new_world)
 	row.add_child(start)
+	# The options beside a picture of the island they make.
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 14)
+	_col.add_child(body)
+	var frame := PanelContainer.new()
+	var fsb := UITheme.flat(Color(0.03, 0.05, 0.09, 0.9), 12, 6, 6)
+	fsb.border_color = Color(UITheme.ACCENT, 0.25)
+	fsb.set_border_width_all(1)
+	frame.add_theme_stylebox_override("panel", fsb)
+	frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	body.add_child(frame)
+	var fcol := VBoxContainer.new()
+	fcol.add_theme_constant_override("separation", 4)
+	frame.add_child(fcol)
+	_preview = TextureRect.new()
+	_preview.custom_minimum_size = Vector2(200, 200)
+	_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_preview.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	fcol.add_child(_preview)
+	_preview_note = UITheme.label("", 11, UITheme.TEXT_FAINT)
+	_preview_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_preview_note.custom_minimum_size = Vector2(200, 0)
+	_preview_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	fcol.add_child(_preview_note)
 	var opts := GridContainer.new()
 	opts.columns = 2
 	opts.add_theme_constant_override("h_separation", 10)
 	opts.add_theme_constant_override("v_separation", 6)
-	_col.add_child(opts)
-	for entry in [["空岛", LAYOUTS, "layout"], ["开局时代", ERAS, "era"], ["文明", CIVS, "civs"]]:
+	opts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(opts)
+	for entry in [["空岛", LAYOUTS, "layout", false], ["海洋", SEAS, "sea", true], ["资源", RICHNESS, "richness", true],
+			["大小", SIZES, "size", true], ["地形", RELIEFS, "relief", true], ["气候", CLIMATES, "climate", true],
+			["开局时代", ERAS, "era", false], ["文明", CIVS, "civs", false]]:
 		var l := UITheme.label(entry[0], 13, UITheme.TEXT_DIM)
 		l.custom_minimum_size = Vector2(64, 0)
 		opts.add_child(l)
-		opts.add_child(_choice(entry[1], entry[2]))
-	_col.add_child(UITheme.label("同一个种子总会生成同一座岛与同样的开局；之后的历史由魔法少女与你的干预写成。", 11, UITheme.TEXT_FAINT))
+		var chips := _choice(entry[1], entry[2])
+		opts.add_child(chips)
+		if entry[3]:
+			_random_rows.append(l)
+			_random_rows.append(chips)
+	_col.add_child(UITheme.label("同一个种子与同样的选项总会生成同一座岛与同样的开局；之后的历史由魔法少女与你的干预写成。", 11, UITheme.TEXT_FAINT))
+	_show_random_rows()
 
 	# Slots.
 	_col.add_child(_section("存档"))
@@ -212,6 +284,8 @@ func open() -> void:
 	_status.text = ""
 	_refresh_slots()
 	visible = true
+	_want_preview()
+	_preview_wait = 0.0
 
 
 func close() -> void:
@@ -222,11 +296,7 @@ func close() -> void:
 
 
 func _new_world() -> void:
-	var s := _seed_edit.text.strip_edges()
-	var seed := int(s) if s.is_valid_int() else (hash(s) & 0x7fffffff)
-	var config := {"seed": maxi(1, seed)}
-	config.merge(_options, true)
-	config["civs"] = int(config.get("civs", "1"))
+	var config := _config()
 	if Game.start_new_game(config):
 		_was_paused = false
 		close()
@@ -311,9 +381,64 @@ func _choice(options: Array, key: String) -> Control:
 		var value: String = o[0]
 		b.toggled.connect(func(on: bool) -> void:
 			if on:
-				_options[key] = value)
+				_options[key] = value
+				if key == "layout":
+					_show_random_rows()
+				_want_preview())
 		h.add_child(b)
 	return h
+
+
+## The random island's own options only for 随机空岛.
+func _show_random_rows() -> void:
+	var random: bool = _options.get("layout", "") == "random"
+	for c in _random_rows:
+		c.visible = random
+
+
+## The new-game config from the seed field and the chosen options.
+func _config() -> Dictionary:
+	var s := _seed_edit.text.strip_edges()
+	var seed := int(s) if s.is_valid_int() else (hash(s) & 0x7fffffff)
+	var config := {"seed": maxi(1, seed), "layout": _options["layout"], "era": _options["era"],
+		"civs": int(_options.get("civs", "1"))}
+	if _options["layout"] == "random":
+		config["sea"] = _options["sea"] == "1"
+		for k in ["richness", "size", "relief", "climate"]:
+			config[k] = int(_options[k])
+	return config
+
+
+## The picture follows the options (drawn off the main thread, a moment after the last change).
+func _want_preview() -> void:
+	_preview_wanted = var_to_str(_config())
+	_preview_wait = 0.3
+
+
+func _process(delta: float) -> void:
+	if not visible:
+		return
+	if _preview_thread != null and not _preview_thread.is_alive():
+		var img: Image = _preview_thread.wait_to_finish()
+		_preview_thread = null
+		if img != null:
+			_preview.texture = ImageTexture.create_from_image(img)
+		_preview_note.text = ""
+	if _preview_wanted == _preview_shown or _preview_thread != null:
+		return
+	_preview_wait -= delta
+	if _preview_wait > 0.0:
+		return
+	_preview_shown = _preview_wanted
+	var cfg: Dictionary = str_to_var(_preview_wanted)
+	_preview_note.text = "正在绘制…"
+	_preview_thread = Thread.new()
+	_preview_thread.start(func() -> Image: return Game.sim.preview_island(cfg, 200))
+
+
+func _exit_tree() -> void:
+	if _preview_thread != null:
+		_preview_thread.wait_to_finish()
 
 
 func _section(text: String) -> Control:

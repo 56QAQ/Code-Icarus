@@ -361,11 +361,19 @@ bool Agents::task_eat(Character& c) {
     const Registry& reg = *ctx_.reg;
     const Polity* p = ctx_.society->polity(c.polity);
     float ration = p ? p->policies.ration : 1.0f;
+    // What in her pack is not hers to eat: a caravan's load, and grain carried home when
+    // her people are short of seed — unless she is starving (a carrier far from home eats
+    // a little of what she carries rather than die on the road).
+    const ItemId seed_grain = seed_kept(c) ? reg.find_item("grain") : kNoItem;
+    const bool starving = c.needs.food < 0.2f;
+    auto not_to_eat = [&](ItemId item, i32 have) {
+        return (starving ? 0 : cargo_kept(c, item)) + (item == seed_grain ? have : 0);
+    };
     auto carried_food = [&]() {
         const Store* s = ctx_.econ->store(c.inv);
         if (!s) return false;
         for (auto& st : s->items)
-            if (food_item(reg, st.item) && st.count > cargo_kept(c, st.item)) return true;
+            if (food_item(reg, st.item) && st.count > not_to_eat(st.item, st.count)) return true;
         return false;
     };
     if (t.step == 0) {
@@ -376,6 +384,16 @@ bool Agents::task_eat(Character& c) {
             return true;
         }
         StoreId s = find_food_store(c, true, false);
+        // Far from the stores and hungry: whatever grows wild close by comes first.
+        if (s != kNoStore && c.needs.food < 0.3f)
+            if (const Store* st = ctx_.econ->store(s); st && st->pos.dist2(c.foot) > 80 * 80) {
+                Vec3i p;
+                if (wild_food_near(c.foot, 32, p)) {
+                    t.target = p;
+                    t.step = 5;
+                    return true;
+                }
+            }
         if (s == kNoStore) {
             // Nothing put by: pick something growing wild nearby and eat it on the spot
             // (the starving walk further for it).
@@ -387,6 +405,9 @@ bool Agents::task_eat(Character& c) {
             }
             day.hungry_no_food++;
             say(c, "找不到可以吃的东西");
+            // Not looking all over again at once: an hour of work (the foragers may bring
+            // something home) before the next search.
+            c.no_food_until = now_ + kTicksPerHour;
             end_task(c, false);
             return false;
         }
@@ -491,7 +512,7 @@ bool Agents::task_eat(Character& c) {
         for (auto& st : items) {
             const ItemDef& d = reg.item(st.item);
             if (d.nutrition <= 0) continue;
-            const i32 kept = cargo_kept(c, st.item);  // (a caravan's load is not hers to eat)
+            const i32 kept = not_to_eat(st.item, st.count);  // (a caravan's load, seed grain)
             while (c.needs.food < target - 0.02f && ctx_.econ->store(c.inv)->count(st.item) > kept) {
                 ctx_.econ->remove(c.inv, st.item, 1, "eaten");
                 c.needs.food = std::min(1.0f, c.needs.food + d.nutrition);
@@ -567,8 +588,12 @@ bool Agents::task_drink(Character& c) {
             return false;
         }
         Voxel v = w.get(found);
-        int l = vlevel(v) - 1;
-        w.set(found, l > 0 ? make_voxel(WATER, (u8)l) : make_voxel(0));
+        // (A river of the random island flows: what one drinks is made up from upstream.
+        // Ponds, puddles and the lakes of the other layouts are drunk down.)
+        const ColumnInfo col = w.gen().column(found.x, found.z);
+        const bool flowing = w.config().layout == WorldLayout::Random && col.water_top >= found.y && !col.sea;
+        int l = vlevel(v) - (flowing ? 0 : 1);
+        if (!flowing) w.set(found, l > 0 ? make_voxel(WATER, (u8)l) : make_voxel(0));
         c.needs.water = std::min(1.0f, c.needs.water + 0.45f);
         day.drinks++;
         c.last_drank = now_;
@@ -1561,7 +1586,7 @@ bool Agents::task_work(Character& c) {
                     say(c, strfmt("追猎%s", sp.name.c_str()));
                     if (d <= reach) {
                         c.yaw = std::atan2(a->pos.x - c.pos.x, a->pos.z - c.pos.z);
-                        if (now_ >= t.target2.x) {
+                        if (now_ >= (Tick)t.target2.x) {
                             t.target2.x = (i32)(now_ + 24);
                             // Hunting weapons are made for game: their blows count double.
                             float power = wd ? wd->power * 2.0f : 0.04f;
@@ -1630,6 +1655,8 @@ bool Agents::task_work(Character& c) {
             return true;
         }
         case JobType::Fish: {
+            // Out in a boat (agents_boat.cpp).
+            if (j->plot == 1) return boat_fishing(c, *j);
             // From the shore: spear the fish of the school that come near (or, with nets,
             // cast for them), a few if they bite, and bring the catch home.
             Fauna* fauna = ctx_.fauna;

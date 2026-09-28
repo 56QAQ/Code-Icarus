@@ -275,6 +275,7 @@ func _refresh() -> void:
 				if r[0] == "生态":
 					bar.tooltip_text = "全岛林木保有率：%d / %d 棵树仍然挺立" % [oc["trees"], oc["trees_initial"]]
 				grid.add_child(bar)
+		_steward(d.get("plan", {}))
 		_detail.add_child(UITheme.label("趋势（近 %d 小时）" % (d["history"]["food_days"] as PackedFloat32Array).size(), 12, UITheme.TEXT_FAINT))
 		var spark := Sparklines.new()
 		spark.series = [
@@ -284,8 +285,56 @@ func _refresh() -> void:
 		]
 		spark.custom_minimum_size = Vector2(330, 84)
 		_detail.add_child(spark)
+		var civ: PackedFloat32Array = d["history"].get("civ", PackedFloat32Array())
+		if civ.size() >= 2:
+			var top := 1.0
+			for v in civ:
+				top = maxf(top, v)
+			var cs := Sparklines.new()
+			cs.series = [["文明指数（每日）", civ, UITheme.WARN, 0.0, top * 1.1]]
+			cs.custom_minimum_size = Vector2(330, 40)
+			_detail.add_child(cs)
 	var ws: Dictionary = sim.world_stats()
 	_world_line.text = "地格 活跃%d · 休眠%d · 未生成%d · 流水%d · 火%d" % [ws.get("active", 0), ws.get("dormant", 0), ws.get("ungenerated", 0), ws.get("water_active", 0), ws.get("fire_active", 0)]
+
+
+## The steward's report (内政官): what the land gives against what the people eat, how the
+## hands are shared out, whether families may grow, and what it urges the ruler to do.
+func _steward(pl: Dictionary) -> void:
+	if pl.is_empty():
+		return
+	var ci: Dictionary = pl.get("index", {})
+	_detail.add_child(UITheme.label("内政官的报告" + ("　·　文明指数 %.0f" % float(ci["total"]) if not ci.is_empty() else ""), 12, UITheme.TEXT_FAINT))
+	var need := float(pl["need"])
+	var income := float(pl["income"])
+	var line1 := UITheme.label("每天需粮 %.1f · 近来收入 %.1f · 存粮 %.1f / %.0f 天" % [need, income, float(pl["stock_days"]), float(pl["target_days"])], 13,
+		UITheme.GOOD if income >= need else UITheme.WARN)
+	_detail.add_child(line1)
+	var src := PackedStringArray()
+	for s in pl["sources"]:
+		if float(s["income"]) >= 0.05 or float(s["potential"]) >= 0.05:
+			src.append("%s %.1f/%.1f" % [s["name"], float(s["income"]), float(s["potential"])])
+	var l2 := UITheme.label("收入/可持续：" + " · ".join(src), 12, UITheme.TEXT_DIM)
+	l2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l2.custom_minimum_size = Vector2(330, 0)
+	l2.tooltip_text = "左：近三天每天实际收入；右：周边土地长久下去每天能给的（田地、再生的野果、猎物与鱼群的繁殖）"
+	_detail.add_child(l2)
+	var cap := float(pl["capacity"])
+	var trades := PackedStringArray()
+	for t in pl["trades"]:
+		trades.append("%s %d%%（%d人）" % [t["name"], int(float(t["want"]) * 100.0), int(t["staff"])])
+	_detail.add_child(UITheme.label("可持续养活约 %.0f 人 · 分工：%s" % [cap, "、".join(trades)], 12, UITheme.TEXT_DIM))
+	var birth := float(pl["birth"])
+	_detail.add_child(UITheme.label("生育：%s" % String(pl["birth_why"]), 12,
+		UITheme.GOOD if birth >= 1.0 else (UITheme.WARN if birth < 0.3 else UITheme.TEXT_DIM)))
+	var adv: Array = pl.get("advice", [])
+	for i in mini(3, adv.size()):
+		var a: Dictionary = adv[i]
+		var u := float(a["urgency"])
+		var al := UITheme.label("▸ " + String(a["text"]), 12, UITheme.BAD if u >= 0.75 else (UITheme.WARN if u >= 0.45 else UITheme.TEXT_DIM))
+		al.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		al.custom_minimum_size = Vector2(330, 0)
+		_detail.add_child(al)
 
 
 func _refresh_war(d: Dictionary) -> void:

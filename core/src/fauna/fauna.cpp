@@ -224,8 +224,8 @@ void Fauna::spawn_herd(u16 s, const Vec3i& at, int n, Tick now) {
         if (!leader) leader = id;
         // Start at any age up to half a life.
         Animal* a = get(id);
+        // (Before the start, it may wrap: ages are taken as differences.)
         a->born = now - (Tick)(rng_.uniform(kGrownDays, species_[s].lifespan_days * 0.5f) * (float)kTicksPerDay);
-        if (now < (Tick)0) a->born = 0;
     }
 }
 
@@ -260,7 +260,7 @@ void Fauna::populate() {
                     const size_t before = animals_.size();
                     spawn_herd(s.id, Vec3i{x, col.water_top, z}, n, 0);
                     spawned[s.id] += (int)(animals_.size() - before);
-                    if (animals_.size() > before) grounds_.push_back({Vec3i{x, col.water_top, z}, s.id, s.herd_max * 2, 0});
+                    if (animals_.size() > before) grounds_.push_back({Vec3i{x, col.water_top, z}, s.id, s.herd_max * 2, 0, Vec3i{}});
                 }
             if (!col.land || col.water_top >= 0 || col.reserved) continue;
             float site_d = 1e9f;
@@ -832,7 +832,8 @@ int Fauna::butcher(Animal& a, StoreId into) {
     if (a.alive || a.butchered) return 0;
     a.butchered = true;
     int n = 0;
-    for (auto& [it, count] : species_[a.species].yield) n += ctx_.econ->add(into, it, count, "butcher");
+    const char* why = species_[a.species].aquatic ? "fish" : "butcher";
+    for (auto& [it, count] : species_[a.species].yield) n += ctx_.econ->add(into, it, count, why);
     return n;
 }
 
@@ -1112,7 +1113,7 @@ void Fauna::load(BinReader& outer) {
             bool have = false;
             for (const FishGround& g : grounds_)
                 if (g.species == a.species && g.at.dist2(a.home) < 8 * 8) have = true;
-            if (!have) grounds_.push_back({a.home, a.species, s.herd_max * 2, 0});
+            if (!have) grounds_.push_back({a.home, a.species, s.herd_max * 2, 0, Vec3i{}});
         }
     }
     for (FishGround& g : grounds_)

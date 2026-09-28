@@ -47,6 +47,8 @@
 
     {"key": "carpentry", "name": "木工", "era": 1, "cost": 50, "practice": {"chop": 0.2, "craft": 0.3, "build": 0.2}, "values": {"growth": 0.6, "welfare": 0.2}, "requires": ["stone_tools"],
      "desc": "工坊与长屋；木器加工更快。", "effects": {"craft_speed": 0.2}},
+    {"key": "boats", "name": "木船", "era": 1, "cost": 60, "practice": {"hunt": 0.2, "craft": 0.2}, "values": {"food_security": 0.6, "growth": 0.4}, "requires": ["carpentry", "fishing"],
+     "desc": "用木板造船：渔民扛船到岸边，划到岸上够不着的外海与大湖深处撒网捕鱼。"},
     {"key": "hunting_weapons", "name": "猎具", "era": 1, "cost": 50, "practice": {"hunt": 0.8, "craft": 0.1}, "values": {"military": 0.7, "food_security": 0.2}, "requires": ["stone_tools", "hunting"],
      "desc": "长矛与弓，既能狩猎也能作战。"},
     {"key": "pottery", "name": "制陶", "era": 1, "cost": 60, "practice": {"cook": 0.8}, "values": {"food_security": 0.5, "growth": 0.3}, "requires": ["fire"],

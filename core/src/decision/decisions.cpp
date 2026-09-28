@@ -341,14 +341,27 @@ void Decisions::consider(Polity& p) {
             ruler_busy = true;
         }
     }
-    // Choosing what to study next, whenever no research direction is set.
-    if (!ruler_busy && p.policies.research.empty() && now_ > kTicksPerDay / 3 &&
+    // Choosing what to study next, whenever no research direction is set — or when the
+    // steward presses for a study that would lift what holds the people back, and the
+    // present one is not far along.
+    bool rethink = false;
+    if (!p.policies.research.empty())
+        for (const Advice& a : p.plan.advice)
+            if (a.urgency >= 0.7f && a.key.rfind("research_", 0) == 0 && a.key != "research_" + p.policies.research) {
+                float done = 0, cost = 1;
+                for (const auto& r : p.research)
+                    if (r.first == p.policies.research) done = r.second;
+                if (const Json* t = ctx_.society->tech(p.policies.research)) cost = t->flt("cost", 1.0f);
+                rethink = done < 0.5f * cost;
+                break;
+            }
+    if (!ruler_busy && (p.policies.research.empty() || rethink) && now_ > kTicksPerDay / 3 &&
         !ctx_.society->available_techs(p).empty()) {
         bool open_research = false;
         for (size_t i = list_.size() > 64 ? list_.size() - 64 : 1; i < list_.size(); ++i)
             if (list_[i].polity == p.id && list_[i].kind == "research" &&
                 (list_[i].status == DecisionStatus::Pending || list_[i].status == DecisionStatus::AwaitingRemote ||
-                 now_ - list_[i].created < kTicksPerHour * 6))
+                 now_ - list_[i].created < (rethink ? kTicksPerDay : kTicksPerHour * 6)))
                 open_research = true;
         if (!open_research) {
             Decision d;
@@ -365,8 +378,10 @@ void Decisions::consider(Polity& p) {
     }
     // Neighbours: diplomacy, and the conduct of wars we started.
     if (!ruler_busy) consider_foreign(p, *ruler);
-    // Routine governance every two days when calm.
-    if (!ruler_busy && now_ - ruler->girl->last_decision > kTicksPerDay * 2 && now_ > kTicksPerDay / 2) {
+    // Routine governance every two days when calm (sooner when the steward presses).
+    const bool pressed = p.plan.top() && p.plan.top()->urgency >= 0.7f;
+    if (!ruler_busy && now_ - ruler->girl->last_decision > (pressed ? kTicksPerDay * 3 / 4 : kTicksPerDay * 2) &&
+        now_ > kTicksPerDay / 2) {
         Decision d;
         d.girl = p.ruler;
         d.polity = p.id;
@@ -519,6 +534,30 @@ int Decisions::best_local(const Decision& d, const Character& g, std::string* wh
 
 void Decisions::gather_proposals(Decision& d, Polity& p) {
     std::string lines;
+    // The steward's plan backs the options that meet what it foresees (every adviser and
+    // the ruler still weigh them by their own values), and speaks first in the council.
+    const PolityPlan& plan = p.plan;
+    int backed = -1;
+    for (size_t i = 0; i < d.options.size(); ++i) {
+        DecisionOption& o = d.options[i];
+        const float u = plan.backing(o.key);
+        if (u <= 0.0f) continue;
+        o.bias += 0.9f * u;
+        if (o.feasible && (backed < 0 || u > plan.backing(d.options[(size_t)backed].key))) backed = (int)i;
+    }
+    if (backed >= 0) {
+        const DecisionOption& o = d.options[(size_t)backed];
+        for (const Advice& a : plan.advice)
+            if (a.key == o.key) {
+                Proposal pr;
+                pr.girl = kNoEntity;  // the steward (内政官)
+                pr.key = o.key;
+                pr.reason = a.text;
+                lines += "- 内政官建议：「" + o.title + "」，" + a.text + "。\n";
+                d.proposals.push_back(std::move(pr));
+                break;
+            }
+    }
     for (auto& cp : ctx_.agents->all()) {
         if (!cp || !cp->alive || cp->departed || !cp->is_girl() || cp->polity != p.id || cp->id == d.girl) continue;
         if (cp->girl->stance == "rebel") continue;  // no longer advises the ruler
@@ -532,7 +571,8 @@ void Decisions::gather_proposals(Decision& d, Polity& p) {
         lines += "- " + cp->name + "（" + cp->girl->temperament + "）建议：「" + d.options[(size_t)k].title + "」，" + why + "。\n";
         d.proposals.push_back(std::move(pr));
     }
-    if (!lines.empty()) d.situation += "\n其他魔法少女的建议：\n" + lines;
+    if (!plan.summary.empty()) d.situation += "\n内政官的报告：" + plan.summary + "。\n";
+    if (!lines.empty()) d.situation += "\n其他人的建议：\n" + lines;
 }
 
 void Decisions::resident_reaction(const Decision& d) {

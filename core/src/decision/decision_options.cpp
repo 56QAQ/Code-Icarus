@@ -879,6 +879,8 @@ void Decisions::build_research_options(Decision& d, Polity& p, Character& ruler)
         float ca = ta->flt("cost"), cb = tb->flt("cost");
         return ca != cb ? ca < cb : a < b;
     });
+    // What the steward recommends studying is always among those laid before the ruler.
+    std::stable_partition(keys.begin(), keys.end(), [&](const std::string& k) { return p.plan.backing("research_" + k) > 0.0f; });
     if (keys.size() > 5) keys.resize(5);
     // What the people can put into it: scholars at their research buildings, or (for the
     // techs of the wild era) whoever muses at the fire or the hall.
@@ -952,7 +954,7 @@ void Decisions::finalize(Decision& d, int idx, const std::string& rationale, con
                 if (x.key == pr.key) title = x.title;
             Json pj = Json::object();
             pj.set("girl", (double)pr.girl);
-            pj.set("name", a ? a->name : std::string("?"));
+            pj.set("name", a ? a->name : std::string(pr.girl == kNoEntity ? "内政官" : "?"));
             pj.set("option", title);
             pj.set("adopted", pr.key == o.key);
             props.push(pj);
