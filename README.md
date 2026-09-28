@@ -70,6 +70,8 @@ build/tools/cli/icarus_cli run --layout random --scenario wild --era wild --civs
 build/tools/cli/icarus_cli preview --layout random --seed 3 --sea 1 --richness 1 --out out/p.png   # 随机空岛俯视预览
 build/tools/cli/icarus_cli run --load out/r.sav --days 2 -v      # 从存档继续，报告卡顿的 tick
 tools/acceptance.sh out/acceptance 3                            # 第二版本验收：三国 8 局 + 蛮荒 6 局，各一年，输出汇总表
+build/tools/cli/icarus_cli trend --layout random --scenario wild --era wild --civs 4 --seed 3 --days 64   # 逐日的全岛文明指数
+tools/v3_acceptance.sh out/v3 1-16 64                          # 第三版本验收：16 个随机空岛各 64 天，汇总文明指数的走势
 build/tools/cli/icarus_cli experiment --seeds 1-8 --days 7 --admin 30:kill_spring --report out.md
 tools/screenshot.sh out.png --ticks 1500 --council   # 无头渲染一帧游戏画面
 RES=3840x2160 tools/screenshot.sh out.png --ui-scale 1.1   # 指定分辨率与界面大小

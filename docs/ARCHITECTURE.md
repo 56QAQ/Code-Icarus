@@ -288,7 +288,11 @@ growth depends on irrigation from real water nearby.
   the food crisis resolves (`Polity::emergency_until`, logged in the chronicle). Homes
   for many are laid out several at once, sized to the builders; one decision's homes
   count as one undertaking against the limit on unfinished works, and what the steward
-  presses for may start beside two others.
+  presses for may start beside two others. New fields are worth what the people are
+  short of: full while there are too few to feed everyone, a quarter once there are more
+  than the steward reckons they need.
+* **Rewards by work** (按劳分配) refuse public food in a lean season only to grown folk fit
+  to work who shirked; children, the old, soldiers and the wounded owe no work.
 * **War weariness** (`Polity::weary`): every war that ends (peace, or the enemy gone)
   adds weariness by its length and losses; it fades by the day. Weary peoples weigh
   raids and conquests less, take peace terms sooner, and the steward counsels rest.
