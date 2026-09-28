@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 #include "icarus/agents/agents.h"
 #include "icarus/economy/buildings.h"
@@ -250,14 +251,21 @@ void Society::daily(Tick now) {
     trade_daily();
     for (auto& p : polities_)
         if (p.alive) update_diplomacy(p);
-    // The civilisation index, per polity and for the island.
+    // The civilisation index, per polity and for the island. The island's people and what
+    // stands built add up; what is known counts once, wherever on the island it is known
+    // (one people taking in another loses no knowledge).
     float island = 0;
+    std::set<std::string> known;
     for (auto& p : polities_) {
         if (!p.alive) continue;
         p.civ_history.push_back(civ_index(p));
-        island += p.civ_history.back().total;
+        island += p.civ_history.back().total - kCivKnownWeight * p.civ_history.back().known;
+        known.insert(p.techs.begin(), p.techs.end());
     }
-    island_history_.push_back(island);
+    float k = 0;
+    for (const std::string& t : known)
+        if (const Json* tj = tech(t)) k += 1.0f + (float)tj->integer("era", 0);
+    island_history_.push_back(island + kCivKnownWeight * k);
     ctx_.econ->spoil(rng_, [this](u16 polity) { return 1.0f - std::min(0.9f, passive(polity, "preserve")); });
     ctx_.agents->day = {};
     (void)now;
@@ -1029,6 +1037,9 @@ void Society::save(BinWriter& w) const {
     // Version 7: what the stewards have learnt about their food shares.
     w.varu(polities_.size());
     for (size_t i = 1; i < polities_.size(); ++i) w.f32(polities_[i].plan.food_lean);
+    // Version 8: whether the plan calls for children to replace the old.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) w.boolean(polities_[i].plan.renewing);
     w.end_section(sec);
 }
 
@@ -1289,6 +1300,13 @@ void Society::load(BinReader& outer) {
                 for (size_t i = 1; i < (size_t)np9; ++i) {
                     const float lean = r.f32();
                     if (i < polities_.size()) polities_[i].plan.food_lean = lean;
+                }
+            }
+            if (!r.at_end()) {
+                const u64 np10 = r.varu();
+                for (size_t i = 1; i < (size_t)np10; ++i) {
+                    const bool renewing = r.boolean();
+                    if (i < polities_.size()) polities_[i].plan.renewing = renewing;
                 }
             }
         }

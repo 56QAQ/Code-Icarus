@@ -103,7 +103,10 @@ void Agents::daily_life() {
         for (size_t k = i + 1; k < chars_.size(); ++k) {
             Character& b = *chars_[k];
             if (!b.alive || b.departed || b.is_girl() || b.polity != a.polity) continue;
-            if (a.home != b.home) continue;  // both homeless: the band around its fire
+            // Under one roof (both homeless: the band around its fire); otherwise grown-ups
+            // still unattached get to know each other about the village (everyone knows
+            // everyone in a people of a few dozen).
+            if (a.home != b.home && (a.partner || b.partner || is_child(a) || is_child(b))) continue;
             const float d = a.affinity(b.id) < -0.1f ? 0.0f : near;
             if (d <= 0.0f) continue;
             a.affinity_ref(b.id) = std::min(1.0f, a.affinity(b.id) + d);
@@ -123,9 +126,11 @@ void Agents::daily_life() {
             Character& b = *chars_[k];
             if (!b.alive || b.departed || b.is_girl() || b.partner || b.polity != a.polity || age_years(b) < wed_age)
                 continue;
-            // Not with one's own parent or child.
+            // Not with one's own parent or child; and with someone of about the same age.
             if (b.parents[0] == a.id || b.parents[1] == a.id || a.parents[0] == b.id || a.parents[1] == b.id) continue;
-            const float s = std::min(a.affinity(b.id), b.affinity(a.id));
+            const float gap = std::fabs(age_years(a) - age_years(b));
+            if (gap > 15.0f || is_elder(a) != is_elder(b)) continue;
+            const float s = std::min(a.affinity(b.id), b.affinity(a.id)) - 0.004f * gap;
             if (s > bs) {
                 bs = s;
                 best = &b;
@@ -181,14 +186,16 @@ void Agents::daily_life() {
         if (p->stats.food_access < 0.85f) continue;
         const float allow = p->plan.at ? p->plan.birth : (p->stats.food_days >= min_days ? 1.0f : 0.0f);
         float pr = chance * allow * clampv(1.0f - (float)p->stats.population / std::max(10.0f, cap), 0.1f, 1.0f);
+        // (A people whose old are dying out makes room for the children to come.)
+        const float tight = p->plan.renewing ? 0.75f : 1.0f;
         const Building* h = ctx_.buildings->get(a.home);
         if (!h || !h->functional) {
-            pr *= band ? life_f(reg, "band_factor", 0.5f) : life_f(reg, "crowding", 0.3f);
+            pr *= std::max(tight, band ? life_f(reg, "band_factor", 0.5f) : life_f(reg, "crowding", 0.3f));
         } else {
             int in = 0;
             for (const auto& cp : chars_)
                 if (cp && cp->alive && !cp->departed && cp->home == a.home) ++in;
-            if (in >= h->beds) pr *= life_f(reg, "crowding", 0.3f);
+            if (in >= h->beds) pr *= std::max(tight, life_f(reg, "crowding", 0.3f));
         }
         if (!rng_.chance(pr)) continue;
         // A child: something of each parent in looks and temper.

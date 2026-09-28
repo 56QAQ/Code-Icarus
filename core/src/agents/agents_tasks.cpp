@@ -724,8 +724,9 @@ bool Agents::task_sleep(Character& c) {
     Task& t = c.task;
     if (t.step == 0) {
         const Building* h = ctx_.buildings->get(c.home);
-        // Exhausted people far from home just lie down where they are.
-        const bool go_home = h && h->functional && !(c.needs.rest < 0.3f && c.foot.chebyshev(h->inside) > 45);
+        // Exhausted people far from home just lie down where they are (the tired walk on:
+        // an hour's walk costs little of what is left).
+        const bool go_home = h && h->functional && !(c.needs.rest < 0.12f && c.foot.chebyshev(h->inside) > 60);
         Vec3i near = go_home ? h->inside : c.foot;
         // No roof of their own: the band sleeps around its campfire.
         if (!go_home) {
@@ -1345,6 +1346,8 @@ bool Agents::task_work(Character& c) {
                 else if (done_type == JobType::Harvest) can_chain = carried_weight(c) < carry_capacity(c) - 2.0f;
                 else if (done_type == JobType::Till) can_chain = true;
                 else if (done_type == JobType::Forage) can_chain = carried_weight(c) < carry_capacity(c) - 1.0f;
+                // (Diggers leave the spoil in a pile beside the cut and dig on.)
+                else if (done_type == JobType::Dig) can_chain = carried_weight(c) < carry_capacity(c) - 2.0f;
                 if (can_chain && is_work_time(c) && c.needs.food > 0.25f && c.needs.water > 0.25f) {
                     u32 next = 0;
                     // Gatherers roam on to the next bush in sight before carrying it all home.

@@ -4,7 +4,9 @@
 
 第二版本把舞台扩展到一座远更大、群系各异的空岛：可以从真正的**蛮荒时代**开局（露宿、采集、狩猎、叶衣兽皮，靠摸索掌握用火、石器、编织、农耕……），也可以让**三个文明**彼此敌对地开局——它们多半先发展自身、开拓新村，在时机合适时宣战、行军、围城，魔法少女随军出征、施展看得见的魔法、彼此对决，最终议和、称臣或结盟。居民会结为伴侣、生儿育女、老去；魔法少女之间结下友谊、竞争、师徒与宿敌的羁绊，经历会让她们的源动力坠落或升华。
 
-设计总纲见 [`docs/VISION.md`](docs/VISION.md)，架构说明见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，第二版本计划与验收结果见 [`docs/V2_PLAN.md`](docs/V2_PLAN.md)。
+第三版本的空岛由**种子随机生成**：地形、群系、湖泊与一级一级的河流、自然资源各不相同，默认四周环绕着一圈**海**（海缘有看不见的空气墙，海平面恒定，海鱼少了会从外海游来），农耕时代可以造**木船**出海捕鱼。开新局时可以选择有没有海、资源丰富度、岛的大小、地形起伏与气候，并即时预览。每个文明都有一位**内政官**：盘点粮食的来源与周边土地可持续的产出，给粮食、建造、采集分配人手，按粮食、住房与世代更替决定生育，向统治者提出有依据的建议（研究什么、开田、建房、别打仗或及早议和），全岛每天记录「文明指数」。
+
+设计总纲见 [`docs/VISION.md`](docs/VISION.md)，架构说明见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，第二版本计划与验收结果见 [`docs/V2_PLAN.md`](docs/V2_PLAN.md)，第三版本见 [`docs/V3_PLAN.md`](docs/V3_PLAN.md)。
 
 ## 游玩
 
@@ -34,7 +36,7 @@ Linux 容器可先运行 `tools/setup_env.sh` 安装 Godot、SCons 与无头渲�
 | 底部工具栏 | 观察、挖除、创造、陨石、火焰、洪水、神迹（上方弹出范围、材料或神迹种类） |
 | 神迹 | 赐粮（真实粮食记入账本，居民会搬运入库）、鼓舞、恐吓（众人逃离）、治愈（断肢复原，不能起死回生）、天雷、降雨（补满水面、浇熄露天的火） |
 | 空格 / 1–4 | 暂停 / 1×、2×、5×、20× 速度 |
-| 新空岛（世界菜单） | 地图：经典小岛 / 大岛；开局时代：蛮荒 / 部落 / 村落；文明数 1–3 |
+| 新空岛（世界菜单） | 地图：随机空岛（默认）/ 广袤大陆 / 经典小岛；随机空岛可选海洋、资源、大小、地形、气候，右侧即时预览；开局时代：蛮荒 / 部落 / 村落；文明数 1–4 |
 | B | 羁绊：所有魔法少女及其关系网（挚友、对手、师徒、宿敌），圆的大小是追随她的民众多少；悬停查看她的经历，双击打开人物卡 |
 | J | 议事录：魔法少女的每一项决策——她知道的局势、程序给出的可行选项、其他魔法少女的建议、她的选择与理由、事后回顾 |
 | C | 编年史：按类别筛选历史，并查看任一事件的因果链图 |
@@ -64,6 +66,8 @@ tools/test.sh                                    # 以上 + Godot 冒烟测试 +
 build/tools/cli/icarus_cli run --seed 3 --days 5 --events --admin 30:break_bridge
 build/tools/cli/icarus_cli run --layout continent --scenario three_realms --seed 5 --days 32 --every 96 --events
 build/tools/cli/icarus_cli run --layout continent --scenario wild --seed 2 --days 30 --events -v   # 蛮荒开局
+build/tools/cli/icarus_cli run --layout random --scenario wild --era wild --civs 4 --seed 3 --days 64 --every 48   # 四国随机空岛
+build/tools/cli/icarus_cli preview --layout random --seed 3 --sea 1 --richness 1 --out out/p.png   # 随机空岛俯视预览
 build/tools/cli/icarus_cli run --load out/r.sav --days 2 -v      # 从存档继续，报告卡顿的 tick
 tools/acceptance.sh out/acceptance 3                            # 第二版本验收：三国 8 局 + 蛮荒 6 局，各一年，输出汇总表
 build/tools/cli/icarus_cli experiment --seeds 1-8 --days 7 --admin 30:kill_spring --report out.md

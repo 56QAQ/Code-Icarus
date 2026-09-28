@@ -68,6 +68,11 @@ void Society::draw_plan(Polity& p) {
     // ---------------------------------------------------------------- people
     int people = 0, workers = 0, kids = 0, elders = 0;
     int staff[kTrades] = {0};
+    // Looking a generation ahead: the grown folk who will be old by the time a child born
+    // today can work (they will need replacing), and the couples who could have children.
+    const Json& life = reg.doc("life");
+    const float soon_old = life.flt("elder_age", 55.0f) - life.flt("adult_age", 14.0f);
+    int aging = 0, couples = 0;
     for (const auto& cp : agents.all()) {
         if (!cp || !cp->alive || cp->departed || cp->polity != p.id) continue;
         const Character& c = *cp;
@@ -77,6 +82,10 @@ void Society::draw_plan(Polity& p) {
             ++kids;
             continue;
         }
+        if (agents.is_elder(c) || agents.age_years(c) >= soon_old) ++aging;
+        if (!agents.is_elder(c) && c.partner != kNoEntity && c.id < c.partner)
+            if (const Character* o = agents.get(c.partner); o && o->alive && !o->departed && o->polity == c.polity && !o->is_girl())
+                ++couples;
         if (agents.is_elder(c)) ++elders;
         if (c.drafted || !c.body.can_hold() || c.occupation == "research") continue;
         ++workers;
@@ -234,6 +243,18 @@ void Society::draw_plan(Polity& p) {
         }
     }
     (void)study;
+    // Digging ordered by the ruler (a sealed spring, a channel) is building work too; while
+    // the people are short of water it comes before everything but food.
+    int digs = 0;
+    for (const Job& j : ctx_.jobs->all())
+        if (j.alive && j.polity == p.id && j.type == JobType::Dig) ++digs;
+    bool thirsty = false;
+    for (const Crisis& c : p.crises)
+        if (c.active && c.kind == CrisisKind::Water) thirsty = true;
+    if (digs > 0) {
+        ++sites;
+        cubes_left += digs * (thirsty ? 120 : 30);
+    }
     P.beds = beds;
     P.sites = sites;
     // Days of food worth keeping: a band's berries spoil within days; a village keeps
@@ -300,10 +321,22 @@ void Society::draw_plan(Polity& p) {
     }
     const bool stores_ok = P.stock >= 0.5f * P.target_days * P.need || (band && P.balance > 0.0f);
     float birth = stores_ok ? clampv(0.25f + 2.0f * room, 0.05f, 1.5f) : 0.05f;
-    if (P.balance < -0.15f * P.need) birth = std::min(birth, 0.1f);
+    // A generation from now the old will be gone: children enough to take their place are
+    // no extra mouths for good (the children already growing up count towards them). Only
+    // a people eating into its last stores puts even those off.
+    const int replace = std::max(0, aging - kids);
+    const bool famine = P.balance < -0.15f * P.need && P.days_left < 3.0f;
+    float renew = 0.0f;
+    if (replace > 0 && couples > 0 && !famine)
+        renew = clampv(0.35f + 1.1f * (float)replace / (float)couples, 0.35f, 1.5f) * (stores_ok ? 1.0f : 0.6f);
+    const bool renewing = renew > birth;
+    if (renewing) birth = renew;
+    if (P.balance < -0.15f * P.need && !renewing) birth = std::min(birth, 0.1f);
     if ((float)kids > 0.6f * W) birth *= 0.5f;
     P.birth = birth;
-    P.birth_why = !stores_ok ? "存粮不足，暂不生育"
+    P.renewing = renewing;
+    P.birth_why = renewing ? strfmt("%d 个大人将在一代之内老去，需要孩子接替", aging)
+                  : !stores_ok ? "存粮不足，暂不生育"
                   : room < 0.0f ? strfmt("%s只够养活现有的人，节制生育", why.c_str())
                   : room > 0.4f ? strfmt("%s还能养活更多的人，鼓励生育", why.c_str())
                                 : strfmt("%s尚有余裕，量力生育", why.c_str());
@@ -451,7 +484,7 @@ CivIndex Society::civ_index(const Polity& p) const {
     // People living well count most (a people that shrinks or goes hungry cannot make up
     // for it with what it has built and learnt, which only adds a little over time).
     ci.total = people * (0.35f + 0.35f * ci.fed + 0.15f * ci.secure + 0.15f * ci.housed) * (0.6f + 0.4f * ci.content) +
-               0.3f * ci.built + 0.8f * ci.known;
+               kCivBuiltWeight * ci.built + kCivKnownWeight * ci.known;
     return ci;
 }
 

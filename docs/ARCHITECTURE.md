@@ -266,7 +266,16 @@ growth depends on irrigation from real water nearby.
 * **Civilisation index** (文明指数, daily per polity and for the island): people (children
   half) × how well they live (fed, food secure, housed, content) + 0.3 × what stands
   built + 0.8 × what is known (techs weighted by era). A people that shrinks or goes
-  hungry cannot make that up with buildings and knowledge.
+  hungry cannot make that up with buildings and knowledge. For the island, people and
+  buildings add up across the peoples while knowledge counts once, wherever it is known
+  (one people taking in another loses nothing that is known).
+* **Generations**: lives are compressed (0.75 years a day), so the first generation is
+  gone within two game years. The plan looks a generation ahead: the grown folk who will
+  be old by the time a child born today can work need replacing, so births are allowed
+  for that even where food and housing leave no room to grow (only a famine puts them
+  off), and crowding then weighs less. Unattached grown-ups of a people get to know each
+  other about the village (not only under one roof) and pair off with someone of about
+  their own age.
 
 * **Polity** (`society/`): identity and display name are separate from the ruler, so the
   title "X的文明，国名" follows the ruler while people, industry and history remain.

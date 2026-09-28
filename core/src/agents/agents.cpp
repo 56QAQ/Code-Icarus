@@ -692,7 +692,9 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
     {
         float fx = target.x - c.pos.x, fz = target.z - c.pos.z;
         const float len = std::sqrt(fx * fx + fz * fz);
-        if (len > 0.05f) {
+        // (Not on the last stretch to a cube's middle: two walkers stepping aside for each
+        // other there would circle it for ever.)
+        if (len > 0.7f) {
             fx /= len;
             fz /= len;
             bool oncoming = false;

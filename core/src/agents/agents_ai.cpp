@@ -191,8 +191,12 @@ void Agents::think(Character& c) {
     if (c.task.type == TaskType::Sleep && night) sleep += 1.0f;  // stay in bed through the night
     // After the working day, those out at the far fields set off home to bed in good time
     // (rather than work on until they drop and sleep in the open).
-    bool far_bed = false;
-    if (!work_time && hour_of(now_) >= 12.0f)
+    // (Not while the people are in a crisis: then the work goes on into the evening.)
+    bool far_bed = false, crisis = false;
+    if (p)
+        for (const Crisis& cr : p->crises)
+            if (cr.active && (cr.kind == CrisisKind::Water || cr.kind == CrisisKind::Food)) crisis = true;
+    if (!work_time && !crisis && hour_of(now_) >= 12.0f)
         if (const Building* h = ctx_.buildings->get(c.home); h && h->functional && c.foot.chebyshev(h->inside) > 40) {
             sleep += 0.45f;
             far_bed = true;

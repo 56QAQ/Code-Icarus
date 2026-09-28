@@ -58,6 +58,7 @@ struct PolityPlan {
     float want[kTrades] = {0.5f, 0.25f, 0.25f};  // shares of the free hands by trade
     int staff[kTrades] = {0};                     // how many hold each trade now
     float birth = 1.0f;       // births allowed: 0 (none) .. 1.5 (encouraged)
+    bool renewing = false;    // ...to replace the grown folk who will be old a generation on
     std::string birth_why;
     std::vector<Advice> advice;  // most urgent first
     std::string summary;         // a line for the council and the player
@@ -84,6 +85,11 @@ struct PolityPlan {
     }
     const Advice* top() const { return advice.empty() ? nullptr : &advice.front(); }
 };
+
+// Weights of what stands built and what is known in the civilisation index (people living
+// well count one each; see Society::civ_index).
+constexpr float kCivBuiltWeight = 0.3f;
+constexpr float kCivKnownWeight = 0.8f;
 
 // The island's state at a glance (文明指数): how many live, how well, how secure, how
 // housed, how much is built and known, and how content. Recorded daily per polity.

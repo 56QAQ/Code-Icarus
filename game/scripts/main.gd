@@ -235,6 +235,12 @@ func _ready() -> void:
 		Game.paused = true
 
 
+## Distant haze thins as the camera pulls back, so a whole island (the random ones are
+## half again as wide as the continent) stays clear from far above.
+func _haze_scale() -> float:
+	return clampf(260.0 / maxf(rig.distance, 1.0), 0.25, 1.0)
+
+
 ## Screenshot helper: casts of the named spells (comma-separated effects) in a row in
 ## front of the camera, from the girls of the world if there are any.
 func _spell_demo(list: String) -> void:
@@ -445,9 +451,9 @@ func _update_daylight() -> void:
 		sky_mat.ground_horizon_color = horizon
 		env.fog_light_color = horizon
 		sun.light_energy *= lerpf(1.0, 0.35, _rain)
-		env.fog_density = lerpf(0.0006, 0.0022, _rain)
+		env.fog_density = lerpf(0.0006, 0.0022, _rain) * _haze_scale()
 	else:
-		env.fog_density = 0.0006
+		env.fog_density = 0.0006 * _haze_scale()
 	renderer.set_wetness(_rain)
 	fx.set_rain(_rain, rig.target)
 	var cloud := Color(0.28, 0.32, 0.46).lerp(Color(0.93, 0.95, 1.0), lit).lerp(Color(1.0, 0.78, 0.66), dusk * 0.6)
