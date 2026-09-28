@@ -195,6 +195,8 @@ void Registry::parse_materials(const Json& j) {
         m.forage_count = e.integer("forage_count", m.forage_key.empty() ? 0 : 1);
         m.forage_to_key = e.str("forage_to", "air");
         m.sprite = e.str("sprite");
+        m.furniture = e.str("furniture");
+        m.made_of = e.str("made_of");
         mat_index_[m.key] = m.id;
         mats_.push_back(m);
     }
@@ -203,6 +205,7 @@ void Registry::parse_materials(const Json& j) {
         m.burn_to = mat_id(m.burn_to_key);
         if (!m.drop_item.empty()) m.drop_item_id = item_id(m.drop_item);
         if (!m.forage_key.empty()) m.forage_item = item_id(m.forage_key);
+        if (!m.made_of.empty()) m.made_of_item = item_id(m.made_of);
         m.forage_to = mat_id(m.forage_to_key);
         if (!m.sprite.empty()) m.sprite_layer = kSpriteBase + sprites++;
         m.holds_loose = !m.solid && !m.fluid && (!m.forage_key.empty() || !m.sprite.empty() || m.key == "crop" ||

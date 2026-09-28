@@ -223,8 +223,16 @@ TEST("trade: an accepted offer opens the pact, traced to the decisions") {
     sim.decisions().mode = "remote";
     std::string err;
     u32 proposed = 0, accepted = 0;
-    for (int h = 0; h < 24 * 4 && !accepted; ++h) {
-        sim.run(kTicksPerHour);
+    // (Answered promptly, as a remote client would, before the situation moves on.)
+    for (int h = 0; h < 24 * 4 * 10 && !accepted; ++h) {
+        // The neighbour stays short of food until trade is proposed: a standing reason
+        // to trade, whatever else the days bring.
+        if (!proposed && h % 10 == 0)
+            for (StoreId sid : sim.society().public_stores(nid))
+                if (const Store* s = sim.economy().store(sid))
+                    for (const ItemStack st : std::vector<ItemStack>(s->items))
+                        if (reg.item(st.item).nutrition > 0.0f) sim.economy().remove(sid, st.item, st.count, "admin_curse");
+        sim.run(kTicksPerHour / 10);
         for (u32 id : sim.decisions().awaiting_remote()) {
             const Decision* d = sim.decisions().get(id);
             for (const DecisionOption& o : d->options) {

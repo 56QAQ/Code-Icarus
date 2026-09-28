@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "icarus/economy/furniture.h"
 #include "icarus/util/rng.h"
 
 namespace icarus {
@@ -120,6 +121,292 @@ void push_crop(MeshData& m, float x, float y, float z, float h, int layer, RGBf 
     }
 }
 
+// ------------------------------------------------------------------------------ furniture
+// Furniture is drawn in a local frame: u along its length (the run of like cubes, or the
+// wall it stands against), v across it (0 at the back: the wall, or a bed's inner side),
+// h up. `fbox` maps (u, v, h) ranges into the cube at (ox, oy, oz).
+struct FFrame {
+    float ox, oy, oz;
+    bool along_x;  // u runs along x (v along z), else u along z (v along x)
+    bool flip_u, flip_v;
+};
+
+void fbox(MeshData& m, const FFrame& f, float u0, float u1, float v0, float v1, float h0, float h1, RGBf col,
+          float emission, int mat) {
+    if (f.flip_u) {
+        const float t = 1.0f - u1;
+        u1 = 1.0f - u0;
+        u0 = t;
+    }
+    if (f.flip_v) {
+        const float t = 1.0f - v1;
+        v1 = 1.0f - v0;
+        v0 = t;
+    }
+    float x0, x1, z0, z1;
+    if (f.along_x) {
+        x0 = u0; x1 = u1; z0 = v0; z1 = v1;
+    } else {
+        z0 = u0; z1 = u1; x0 = v0; x1 = v1;
+    }
+    push_box(m, f.ox + x0, f.oy + h0, f.oz + z0, f.ox + x1, f.oy + h1, f.oz + z1, col, emission, mat);
+}
+
+// Hand-dyed cloth and the colours of scrolls, jars and sacks (picked by a hash).
+constexpr RGBf kCloth[6] = {{0.62f, 0.24f, 0.2f}, {0.25f, 0.33f, 0.52f}, {0.66f, 0.52f, 0.26f},
+                            {0.4f, 0.47f, 0.33f}, {0.78f, 0.74f, 0.64f}, {0.5f, 0.32f, 0.42f}};
+constexpr RGBf kWhite{1.0f, 1.0f, 1.0f};
+
+void push_furniture(const World& w, MatId mid, const Material& fm, int wx, int wy, int wz, CellMesh& out) {
+    const Registry& reg = w.reg();
+    const CoreMats& M = reg.m();
+    MeshData& o = out.opaque;
+    const Vec3i here{wx, wy, wz};
+    auto mat_at = [&](const Vec3i& p) { return vmat(w.peek(p)); };
+    auto wall = [&](const Vec3i& p) {
+        const Material& m = reg.mat(mat_at(p));
+        return m.solid && m.opaque;
+    };
+    const u64 h = hash3(0xF0A11ull, wx, wy, wz);
+    auto unit = [&](int k) { return hash_to_unit(h >> (k * 5 % 50)); };
+    const std::string& kind = fm.furniture;
+    const RGBf wood = kWhite;  // textured: the texture carries the colour
+
+    // ---- beds and mats: along their run, the head against a wall.
+    if (kind == "bed" || kind == "mat") {
+        const FurnitureRun run = furniture_run(reg, mat_at, here);
+        const Vec3i head = run.head, foot = run.head == run.start ? run.end : run.start;
+        FFrame f{(float)wx, (float)wy, (float)wz, run.axis.x != 0, run.head != run.start, false};
+        const bool is_head = here == head, is_foot = here == foot;
+        const u64 hb = hash3(0xBEDull, head.x, head.y, head.z);
+        const RGBf cloth = kCloth[hb % 6];
+        if (kind == "bed") {
+            // Frame: rails along both sides, legs and boards at the ends, slats under a
+            // straw mattress; a pillow at the head and a blanket over the rest.
+            fbox(o, f, 0.0f, 1.0f, 0.04f, 0.12f, 0.14f, 0.34f, wood, 0.0f, M.planks);
+            fbox(o, f, 0.0f, 1.0f, 0.88f, 0.96f, 0.14f, 0.34f, wood, 0.0f, M.planks);
+            fbox(o, f, 0.0f, 1.0f, 0.12f, 0.88f, 0.24f, 0.28f, wood, 0.0f, M.planks);
+            const float m0 = is_head ? 0.08f : 0.0f, m1 = is_foot ? 0.94f : 1.0f;
+            fbox(o, f, m0, m1, 0.1f, 0.9f, 0.28f, 0.44f, wood, 0.0f, M.thatch);
+            if (is_head) {
+                fbox(o, f, 0.0f, 0.08f, 0.02f, 0.98f, 0.0f, 0.86f, wood, 0.0f, M.planks);  // headboard
+                fbox(o, f, 0.0f, 0.08f, 0.02f, 0.98f, 0.86f, 0.92f, wood, 0.0f, M.log);
+                fbox(o, f, 0.12f, 0.42f, 0.2f, 0.8f, 0.44f, 0.55f, RGBf{0.86f, 0.82f, 0.72f}, 0.0f, -1);  // pillow
+                fbox(o, f, 0.46f, 1.0f, 0.08f, 0.92f, 0.44f, 0.49f, cloth, 0.0f, -1);  // blanket
+                fbox(o, f, 0.46f, 1.0f, 0.06f, 0.08f, 0.3f, 0.49f, scalec(cloth, 0.85f), 0.0f, -1);
+                fbox(o, f, 0.46f, 1.0f, 0.92f, 0.94f, 0.3f, 0.49f, scalec(cloth, 0.85f), 0.0f, -1);
+            } else {
+                const float b1 = is_foot ? 0.9f : 1.0f;
+                fbox(o, f, 0.0f, b1, 0.08f, 0.92f, 0.44f, 0.49f, cloth, 0.0f, -1);
+                fbox(o, f, 0.0f, b1, 0.06f, 0.08f, 0.3f, 0.49f, scalec(cloth, 0.85f), 0.0f, -1);
+                fbox(o, f, 0.0f, b1, 0.92f, 0.94f, 0.3f, 0.49f, scalec(cloth, 0.85f), 0.0f, -1);
+                // (a darker stripe woven across the blanket)
+                fbox(o, f, 0.4f, 0.5f, 0.08f, 0.92f, 0.49f, 0.495f, scalec(cloth, 0.6f), 0.0f, -1);
+            }
+            if (is_foot) fbox(o, f, 0.92f, 1.0f, 0.02f, 0.98f, 0.0f, 0.56f, wood, 0.0f, M.planks);  // footboard
+            if (is_head || is_foot) {
+                const float a0 = is_head ? 0.0f : 0.9f;
+                for (float v0 : {0.02f, 0.88f}) fbox(o, f, a0 + 0.02f, a0 + 0.1f, v0, v0 + 0.1f, 0.0f, 0.34f, wood, 0.0f, M.log);
+            }
+        } else {
+            // A straw mat on the floor, a rolled-up bundle of straw for a pillow and a hide
+            // thrown over the foot end.
+            const float m0 = is_head ? 0.04f : 0.0f, m1 = is_foot ? 0.96f : 1.0f;
+            fbox(o, f, m0, m1, 0.06f, 0.94f, 0.0f, 0.05f, wood, 0.0f, M.thatch);
+            if (is_head) {
+                fbox(o, f, 0.08f, 0.34f, 0.18f, 0.82f, 0.05f, 0.17f, wood, 0.0f, M.thatch);
+                fbox(o, f, 0.5f, 1.0f, 0.12f, 0.88f, 0.05f, 0.09f, RGBf{0.47f, 0.33f, 0.21f}, 0.0f, -1);
+            } else {
+                fbox(o, f, 0.0f, is_foot ? 0.88f : 1.0f, 0.12f, 0.88f, 0.05f, 0.09f, RGBf{0.47f, 0.33f, 0.21f}, 0.0f, -1);
+                fbox(o, f, 0.0f, is_foot ? 0.88f : 1.0f, 0.1f, 0.12f, 0.02f, 0.09f, RGBf{0.4f, 0.28f, 0.18f}, 0.0f, -1);
+            }
+        }
+        return;
+    }
+
+    // ---- everything else stands against a wall (or faces its seat): find the back.
+    const Vec3i dirs[4] = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};
+    int back = -1;
+    if (kind == "desk" || kind == "table") {
+        // A desk faces its stool (the scholar sits in front): the back is the other side.
+        for (int d = 0; d < 4 && back < 0; ++d) {
+            const std::string& nk = reg.mat(mat_at(here + dirs[d])).furniture;
+            if (nk == "stool" || nk == "bench") back = d ^ 1;
+        }
+    }
+    for (int d = 0; d < 4 && back < 0; ++d)
+        if (wall(here + dirs[d]) && !wall(here - dirs[d])) back = d;
+    for (int d = 0; d < 4 && back < 0; ++d)
+        if (wall(here + dirs[d])) back = d;
+    // A piece in a row (a long table, its benches, a wall of shelves) lies along the row,
+    // its back across it.
+    if (const FurnitureRun run = furniture_run(reg, mat_at, here); run.length > 1) {
+        const bool rx = run.axis.x != 0;
+        if (back < 0 || (back < 2) != rx) {
+            const int a = rx ? 0 : 2;
+            back = wall(here + dirs[a + 1]) && !wall(here + dirs[a]) ? a + 1 : a;
+        }
+    }
+    if (back < 0) back = 0;
+    const bool along_x = back < 2;  // the back is -z/+z: the piece runs along x
+    FFrame f{(float)wx, (float)wy, (float)wz, along_x, false, back == 1 || back == 3};
+    const Vec3i U = along_x ? Vec3i{1, 0, 0} : Vec3i{0, 0, 1};
+    const bool run_lo = mat_at(here - U) == mid, run_hi = mat_at(here + U) == mid;  // joined to a like piece
+    const bool stacked = mat_at(here + Vec3i{0, 1, 0}) == mid;
+    const float lo = run_lo ? 0.0f : 0.04f, hi = run_hi ? 1.0f : 0.96f;
+    auto legs = [&](float top, float t, float v0, float v1, int legmat) {
+        if (!run_lo) {
+            fbox(o, f, lo, lo + t, v0, v0 + t, 0.0f, top, wood, 0.0f, legmat);
+            fbox(o, f, lo, lo + t, v1 - t, v1, 0.0f, top, wood, 0.0f, legmat);
+        }
+        if (!run_hi) {
+            fbox(o, f, hi - t, hi, v0, v0 + t, 0.0f, top, wood, 0.0f, legmat);
+            fbox(o, f, hi - t, hi, v1 - t, v1, 0.0f, top, wood, 0.0f, legmat);
+        }
+    };
+
+    if (kind == "desk") {
+        // A low writing desk: bundles of bamboo slips, an opened scroll, an inkstone and a
+        // brush laid out on the side where the scholar sits.
+        fbox(o, f, lo, hi, 0.1f, 0.9f, 0.58f, 0.66f, wood, 0.0f, M.planks);
+        legs(0.58f, 0.08f, 0.12f, 0.88f, M.log);
+        fbox(o, f, lo + 0.04f, hi - 0.04f, 0.46f, 0.5f, 0.14f, 0.2f, wood, 0.0f, M.log);  // stretcher
+        const RGBf slips{0.8f, 0.7f, 0.46f}, scroll{0.9f, 0.86f, 0.74f}, ink{0.12f, 0.12f, 0.13f};
+        fbox(o, f, 0.12f, 0.46f, 0.18f, 0.38f, 0.66f, 0.74f, slips, 0.0f, -1);
+        fbox(o, f, 0.16f, 0.42f, 0.22f, 0.34f, 0.74f, 0.8f, scalec(slips, 0.9f), 0.0f, -1);
+        fbox(o, f, 0.4f, 0.8f, 0.52f, 0.84f, 0.66f, 0.675f, scroll, 0.0f, -1);
+        for (int k = 0; k < 4; ++k)  // columns of characters written on it
+            fbox(o, f, 0.46f + 0.08f * (float)k, 0.49f + 0.08f * (float)k, 0.56f, 0.8f, 0.675f, 0.68f, ink, 0.0f, -1);
+        fbox(o, f, 0.8f, 0.92f, 0.56f, 0.72f, 0.66f, 0.7f, RGBf{0.2f, 0.2f, 0.22f}, 0.0f, -1);  // inkstone
+        fbox(o, f, 0.78f, 0.95f, 0.78f, 0.8f, 0.7f, 0.72f, RGBf{0.35f, 0.25f, 0.15f}, 0.0f, -1);  // brush
+        return;
+    }
+    if (kind == "table") {
+        fbox(o, f, lo, hi, 0.06f, 0.94f, 0.66f, 0.74f, wood, 0.0f, M.planks);
+        legs(0.66f, 0.1f, 0.1f, 0.9f, M.log);
+        if (unit(1) < 0.5f) fbox(o, f, 0.2f, 0.62f, 0.3f, 0.7f, 0.74f, 0.75f, RGBf{0.86f, 0.8f, 0.64f}, 0.0f, -1);  // a map
+        if (unit(2) < 0.6f) {  // a cup
+            fbox(o, f, 0.7f, 0.8f, 0.4f, 0.5f, 0.74f, 0.84f, RGBf{0.55f, 0.36f, 0.26f}, 0.0f, M.clay);
+        }
+        if (unit(3) < 0.35f) {  // an oil lamp
+            fbox(o, f, 0.42f, 0.54f, 0.6f, 0.72f, 0.74f, 0.8f, RGBf{0.5f, 0.36f, 0.26f}, 0.0f, M.clay);
+            fbox(out.foliage, f, 0.46f, 0.5f, 0.64f, 0.68f, 0.8f, 0.88f, RGBf{1.0f, 0.75f, 0.3f}, 1.0f, -1);
+        }
+        return;
+    }
+    if (kind == "stool" || kind == "bench") {
+        if (kind == "stool") {
+            // A stool cut from a log.
+            fbox(o, f, 0.3f, 0.7f, 0.3f, 0.7f, 0.0f, 0.44f, wood, 0.0f, M.log);
+            fbox(o, f, 0.26f, 0.74f, 0.26f, 0.74f, 0.38f, 0.44f, wood, 0.0f, M.planks);
+        } else {
+            fbox(o, f, lo, hi, 0.3f, 0.7f, 0.38f, 0.45f, wood, 0.0f, M.planks);
+            legs(0.38f, 0.08f, 0.34f, 0.66f, M.log);
+        }
+        return;
+    }
+    if (kind == "bookshelf" || kind == "shelf") {
+        // Sides, a back and three shelves; on them scrolls and bamboo slips (a bookshelf)
+        // or jars, sacks and baskets (a store).
+        fbox(o, f, 0.02f, 0.1f, 0.02f, 0.56f, 0.0f, 1.0f, wood, 0.0f, M.planks);
+        fbox(o, f, 0.9f, 0.98f, 0.02f, 0.56f, 0.0f, 1.0f, wood, 0.0f, M.planks);
+        fbox(o, f, 0.1f, 0.9f, 0.02f, 0.06f, 0.0f, 1.0f, wood, 0.0f, M.planks);
+        for (float sh : {0.02f, 0.34f, 0.66f}) fbox(o, f, 0.1f, 0.9f, 0.06f, 0.56f, sh, sh + 0.05f, wood, 0.0f, M.planks);
+        if (!stacked) fbox(o, f, 0.02f, 0.98f, 0.02f, 0.58f, 0.95f, 1.0f, wood, 0.0f, M.planks);
+        for (int r = 0; r < 3; ++r) {
+            const float base = 0.07f + 0.32f * (float)r;
+            float u = 0.13f;
+            for (int k = 0; k < 6 && u < 0.84f; ++k) {
+                const float t = unit(r * 6 + k);
+                if (kind == "bookshelf") {
+                    // Rolled scrolls lying end-on, bundles of slips standing.
+                    const float wdt = 0.08f + 0.06f * t, hgt = 0.12f + 0.12f * t;
+                    const RGBf c = t < 0.35f ? RGBf{0.8f, 0.7f, 0.46f} : (t < 0.7f ? RGBf{0.88f, 0.84f, 0.72f} : kCloth[(r + k) % 6]);
+                    fbox(o, f, u, std::min(0.87f, u + wdt), 0.1f, 0.5f, base, base + hgt, c, 0.0f, -1);
+                    u += wdt + 0.02f;
+                } else {
+                    const float wdt = 0.16f + 0.08f * t, hgt = 0.16f + 0.08f * t;
+                    if (t < 0.45f) {  // a clay jar with a darker lip
+                        fbox(o, f, u, std::min(0.87f, u + wdt), 0.14f, 0.44f, base, base + hgt, RGBf{0.66f, 0.42f, 0.28f}, 0.0f, M.clay);
+                        fbox(o, f, u + 0.03f, std::min(0.84f, u + wdt - 0.03f), 0.18f, 0.4f, base + hgt, base + hgt + 0.04f, RGBf{0.45f, 0.28f, 0.2f}, 0.0f, M.clay);
+                    } else if (t < 0.8f) {  // a sack
+                        fbox(o, f, u, std::min(0.87f, u + wdt), 0.1f, 0.5f, base, base + hgt * 0.9f, RGBf{0.72f, 0.62f, 0.44f}, 0.0f, -1);
+                    } else {  // a basket of something
+                        fbox(o, f, u, std::min(0.87f, u + wdt), 0.12f, 0.48f, base, base + 0.1f, RGBf{0.62f, 0.5f, 0.3f}, 0.0f, M.thatch);
+                        fbox(o, f, u + 0.03f, std::min(0.84f, u + wdt - 0.03f), 0.16f, 0.44f, base + 0.1f, base + 0.14f, kCloth[(r * 3 + k) % 6], 0.0f, -1);
+                    }
+                    u += wdt + 0.03f;
+                }
+            }
+        }
+        return;
+    }
+    if (kind == "workbench") {
+        // A heavy bench: a thick top, a shelf below, and the tools of the trade on it.
+        fbox(o, f, lo, hi, 0.08f, 0.92f, 0.68f, 0.8f, wood, 0.0f, M.log);
+        legs(0.68f, 0.12f, 0.1f, 0.9f, M.log);
+        fbox(o, f, lo + 0.06f, hi - 0.06f, 0.14f, 0.86f, 0.18f, 0.23f, wood, 0.0f, M.planks);
+        fbox(o, f, 0.12f, 0.5f, 0.2f, 0.4f, 0.23f, 0.33f, wood, 0.0f, M.planks);  // offcuts on the shelf
+        fbox(o, f, 0.16f, 0.46f, 0.52f, 0.62f, 0.8f, 0.86f, wood, 0.0f, M.planks);  // a board being worked
+        fbox(o, f, 0.58f, 0.62f, 0.45f, 0.8f, 0.8f, 0.83f, RGBf{0.4f, 0.28f, 0.18f}, 0.0f, -1);  // mallet handle
+        fbox(o, f, 0.54f, 0.66f, 0.4f, 0.48f, 0.8f, 0.9f, wood, 0.0f, M.log);                      // mallet head
+        fbox(o, f, 0.72f, 0.92f, 0.2f, 0.26f, 0.8f, 0.82f, RGBf{0.6f, 0.6f, 0.62f}, 0.0f, -1);    // a saw blade
+        fbox(o, f, 0.66f, 0.72f, 0.18f, 0.28f, 0.8f, 0.86f, RGBf{0.4f, 0.28f, 0.18f}, 0.0f, -1);
+        return;
+    }
+    if (kind == "hearth") {
+        // A clay stove: the firebox glows through its mouth, a pot sits on top.
+        fbox(o, f, 0.04f, 0.96f, 0.04f, 0.96f, 0.0f, 0.76f, RGBf{0.95f, 0.9f, 0.86f}, 0.0f, M.clay);
+        fbox(o, f, 0.0f, 1.0f, 0.0f, 1.0f, 0.76f, 0.82f, wood, 0.0f, M.stone);
+        fbox(o, f, 0.3f, 0.7f, 0.9f, 0.97f, 0.1f, 0.42f, RGBf{0.08f, 0.06f, 0.05f}, 0.0f, -1);  // the mouth
+        fbox(out.foliage, f, 0.34f, 0.66f, 0.955f, 0.975f, 0.12f, 0.26f, RGBf{1.0f, 0.5f, 0.15f}, 1.0f, -1);
+        fbox(out.foliage, f, 0.4f, 0.6f, 0.955f, 0.975f, 0.26f, 0.36f, RGBf{1.0f, 0.72f, 0.3f}, 1.0f, -1);
+        fbox(o, f, 0.28f, 0.72f, 0.28f, 0.72f, 0.82f, 1.02f, RGBf{0.22f, 0.2f, 0.2f}, 0.0f, -1);  // the pot
+        fbox(o, f, 0.24f, 0.76f, 0.24f, 0.76f, 0.98f, 1.03f, RGBf{0.28f, 0.26f, 0.25f}, 0.0f, -1);
+        return;
+    }
+    if (kind == "herb_rack") {
+        // A drying rack: two posts, two poles, bundles of herbs hanging head down.
+        fbox(o, f, 0.04f, 0.12f, 0.4f, 0.48f, 0.0f, 0.98f, wood, 0.0f, M.log);
+        fbox(o, f, 0.88f, 0.96f, 0.4f, 0.48f, 0.0f, 0.98f, wood, 0.0f, M.log);
+        fbox(o, f, 0.04f, 0.96f, 0.41f, 0.47f, 0.9f, 0.95f, wood, 0.0f, M.log);
+        fbox(o, f, 0.04f, 0.96f, 0.41f, 0.47f, 0.52f, 0.56f, wood, 0.0f, M.log);
+        for (int row = 0; row < 2; ++row)
+            for (int k = 0; k < 5; ++k) {
+                const float u = 0.18f + 0.15f * (float)k, top = row == 0 ? 0.9f : 0.52f;
+                const float t = unit(row * 5 + k);
+                const RGBf c = mixc(RGBf{0.36f, 0.5f, 0.26f}, RGBf{0.6f, 0.55f, 0.3f}, t);
+                fbox(o, f, u, u + 0.08f, 0.38f, 0.5f, top - 0.2f - 0.08f * t, top, c, 0.0f, -1);
+            }
+        fbox(o, f, 0.14f, 0.86f, 0.3f, 0.6f, 0.0f, 0.08f, RGBf{0.6f, 0.5f, 0.3f}, 0.0f, M.thatch);  // a tray below
+        return;
+    }
+    if (kind == "chest") {
+        fbox(o, f, 0.1f, 0.9f, 0.14f, 0.86f, 0.0f, 0.46f, wood, 0.0f, M.planks);
+        fbox(o, f, 0.08f, 0.92f, 0.12f, 0.88f, 0.46f, 0.54f, wood, 0.0f, M.planks);
+        for (float u : {0.24f, 0.72f})
+            fbox(o, f, u, u + 0.05f, 0.11f, 0.89f, 0.0f, 0.55f, RGBf{0.25f, 0.22f, 0.2f}, 0.0f, -1);  // bands
+        fbox(o, f, 0.46f, 0.54f, 0.87f, 0.9f, 0.34f, 0.46f, RGBf{0.3f, 0.27f, 0.24f}, 0.0f, -1);    // latch
+        return;
+    }
+    if (kind == "firepit") {
+        // A hearth in the middle of the floor: a ring of stones, logs and embers.
+        for (int k = 0; k < 8; ++k) {
+            const float a = (float)k / 8.0f * 6.2831853f;
+            const float cx = 0.5f + std::cos(a) * 0.36f, cz = 0.5f + std::sin(a) * 0.36f, r = 0.08f + 0.03f * unit(k);
+            push_box(o, (float)wx + cx - r, (float)wy, (float)wz + cz - r, (float)wx + cx + r, (float)wy + r * 1.4f,
+                     (float)wz + cz + r, scalec(kWhite, 0.85f + 0.3f * unit(k + 8)), 0.0f, M.stone);
+        }
+        push_box(o, wx + 0.22f, (float)wy, wz + 0.44f, wx + 0.78f, wy + 0.1f, wz + 0.56f, kWhite, 0.0f, M.log);
+        push_box(o, wx + 0.44f, (float)wy, wz + 0.22f, wx + 0.56f, wy + 0.1f, wz + 0.78f, kWhite, 0.0f, M.log);
+        push_box(out.foliage, wx + 0.34f, wy + 0.06f, wz + 0.34f, wx + 0.66f, wy + 0.14f, wz + 0.66f, RGBf{0.95f, 0.35f, 0.08f}, 0.9f);
+        push_box(out.foliage, wx + 0.4f, wy + 0.12f, wz + 0.4f, wx + 0.6f, wy + 0.36f, wz + 0.6f, RGBf{1.0f, 0.62f, 0.18f}, 1.0f);
+        return;
+    }
+    // Anything else: a plain crate.
+    push_box(o, wx + 0.1f, (float)wy, wz + 0.1f, wx + 0.9f, wy + 0.8f, wz + 0.9f, kWhite, 0.0f, mid);
+}
+
 }  // namespace
 
 void Mesher::load_padded(const Vec3i& cc) {
@@ -136,6 +423,15 @@ void Mesher::load_padded(const Vec3i& cc) {
                 if (!border) continue;
                 pad_[((y + 1) * 34 + (z + 1)) * 34 + (x + 1)] = w_.peek(o + Vec3i{x, y, z});
             }
+    // Cutaways: as air.
+    for (const Cut& c : cuts_) {
+        const int x0 = std::max(-1, c.lo.x - o.x), x1 = std::min(kCellSize, c.hi.x - o.x);
+        const int y0 = std::max(-1, c.lo.y - o.y), y1 = std::min(kCellSize, c.hi.y - o.y);
+        const int z0 = std::max(-1, c.lo.z - o.z), z1 = std::min(kCellSize, c.hi.z - o.z);
+        for (int y = y0; y <= y1; ++y)
+            for (int z = z0; z <= z1; ++z)
+                for (int x = x0; x <= x1; ++x) pad_[((y + 1) * 34 + (z + 1)) * 34 + (x + 1)] = make_voxel(0);
+    }
 }
 
 void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
@@ -228,6 +524,10 @@ void Mesher::build_cell(const Vec3i& cc, CellMesh& out) {
                     continue;
                 }
 
+                if (!m.furniture.empty()) {
+                    push_furniture(w_, mid, m, wx, wy, wz, out);
+                    continue;
+                }
                 if (!m.solid && !m.passable) {
                     // Small plants: crops and bushes as boxes inside the cube.
                     if (mid == M.crop) {

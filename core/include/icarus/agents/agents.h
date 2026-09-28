@@ -21,6 +21,8 @@ namespace icarus {
 
 struct Polity;
 struct Building;
+struct BuildingSlot;
+enum class SlotKind : u8;
 
 struct AgentTuning {
     float walk_speed = 0.38f;       // cubes per tick at full mobility (days are compressed)
@@ -291,6 +293,18 @@ private:
     // movement
     enum class Move { Moving, Arrived, Failed };
     Move move_to(Character& c, const Vec3i& goal, bool adjacent_ok, int reach_up = 3, int reach_xz = 1);
+    // Furniture (agents_furniture.cpp). Someone other than c is at slot position p or on
+    // the way to it (a task's target).
+    bool slot_busy(const Vec3i& p, const Character& c) const;
+    // A free slot of kind k in b, trying them from `rank` on (a household member's own
+    // bed first); `what` narrows it to one kind of furniture at the slot's cube.
+    const BuildingSlot* free_slot(const Building& b, SlotKind k, const Character& c, int rank = 0,
+                                  const char* what = nullptr) const;
+    // To a slot and into it: to the floor beside a bed and over onto it, onto a mat or a
+    // stool, to the floor before a bench; facing the right way. Arrived once there.
+    Move use_slot(Character& c, const BuildingSlot& s);
+    // Out of a bed onto the floor beside it (when she wakes or is called away).
+    void leave_furniture(Character& c);
     void place_at(Character& c, const Vec3i& foot);
     bool blacklisted(Character& c, const Vec3i& p);
     void blacklist(Character& c, const Vec3i& p, Tick duration);

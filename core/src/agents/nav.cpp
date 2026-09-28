@@ -31,7 +31,7 @@ bool Nav::standable(const Vec3i& p) {
     if (p.y < 1 || !w_.in_bounds(p)) return false;
     Vec3i below{p.x, p.y - 1, p.z};
     const Material& b = w_.reg().mat(w_.mat(below));
-    if (!b.solid || b.passable) return false;
+    if (!b.solid || b.passable || !b.furniture.empty()) return false;  // (nobody stands on a table)
     return passable(p) && passable({p.x, p.y + 1, p.z}) && passable({p.x, p.y + 2, p.z});
 }
 
@@ -43,6 +43,11 @@ float Nav::step_cost(const Vec3i& p) {
     if (ground == M.path || ground == M.planks || ground == M.stone_brick) c = 0.72f;
     if (feet == M.water) c = w_.mat({p.x, p.y + 1, p.z}) == M.water ? 6.0f : 2.5f;
     if (feet == M.crop) c += 0.4f;
+    // Stools and benches are stepped round where there is a way round; a mat is walked over.
+    if (feet != M.air) {
+        const Material& fm = w_.reg().mat(feet);
+        if (!fm.furniture.empty()) c += fm.furniture == "mat" ? 0.3f : 2.5f;
+    }
     if (vburning(w_.get(p)) || vburning(w_.get({p.x, p.y - 1, p.z}))) c += 20.0f;
     return c;
 }

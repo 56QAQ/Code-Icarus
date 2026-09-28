@@ -123,6 +123,7 @@ void Agents::start_task(Character& c, TaskType t, float utility, const std::stri
     c.task.label = label;
     c.path.clear();
     c.sleeping = false;
+    leave_furniture(c);
 }
 
 void Agents::end_task(Character& c, bool success) {
@@ -148,6 +149,7 @@ void Agents::end_task(Character& c, bool success) {
     c.task = Task{};
     c.task.type = TaskType::None;
     c.sleeping = false;
+    leave_furniture(c);
     c.path.clear();
     c.next_think = now_;  // choose something new right away
     (void)prev;

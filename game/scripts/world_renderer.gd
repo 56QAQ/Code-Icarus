@@ -153,7 +153,18 @@ func _process(_delta: float) -> void:
 	if sim == null or not sim.has_game():
 		return
 	_update_detail()
-	var dirty: PackedInt32Array = sim.take_dirty_cells()
+	remesh(sim.take_dirty_cells())
+	if _pending.is_empty() and _lod_pending.is_empty():
+		if not _initial_done:
+			_initial_done = true
+			initial_meshing_done.emit()
+	else:
+		_mesh_some()
+	_update_debris()
+
+
+## Cells to mesh again (flattened x, y, z): changed cubes, or a roof lifted off.
+func remesh(dirty: PackedInt32Array) -> void:
 	for i in range(0, dirty.size(), 3):
 		var c := Vector3i(dirty[i], dirty[i + 1], dirty[i + 2])
 		var col := Vector2i(c.x, c.z)
@@ -166,13 +177,6 @@ func _process(_delta: float) -> void:
 		elif not _pending.has(c):
 			_pending[c] = true
 			_order_dirty = true
-	if _pending.is_empty() and _lod_pending.is_empty():
-		if not _initial_done:
-			_initial_done = true
-			initial_meshing_done.emit()
-	else:
-		_mesh_some()
-	_update_debris()
 
 
 func _mesh_some() -> void:

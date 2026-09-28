@@ -4,8 +4,9 @@ extends Node3D
 ## (a stack of logs, sacks of grain, a basket of fruit, a heap of ore, a rack of tools)
 ## and so is what a storehouse holds, in the yard by its door. Around the buildings
 ## stand the things of daily life: woodpiles and water jars by the huts, barrels by the
-## storehouse, a hearth and pot in the kitchen, a workbench and tool rack by the
-## workshop, banners in the people's colour at the hall, herbs drying at the herbalist.
+## storehouse, meat drying by the kitchen, a workbench and tool rack by the workshop,
+## banners in the people's colour at the hall, herbs drying at the herbalist; and the
+## glow of the fires inside. (The furniture inside is part of the buildings' cubes.)
 ## Pure presentation: it reads the kernel's buildings and piles, never changes them.
 
 var sim: IcarusSim
@@ -268,6 +269,15 @@ func _ground(p: Vector3, guess: float) -> float:
 
 func _furnish(root: Node3D, b: Dictionary) -> void:
 	var f := _frame(b)
+	# The fires inside (a hearth, a fire pit) light the room, and at night the windows.
+	for fp in b.get("fires", []):
+		var glow := OmniLight3D.new()
+		glow.light_color = Color(1.0, 0.6, 0.3)
+		glow.light_energy = 0.9
+		glow.omni_range = 5.5
+		glow.shadow_enabled = false
+		glow.position = Vector3(fp) + Vector3(0.5, 0.8, 0.5)
+		root.add_child(glow)
 	var def := String(b["def"])
 	var yaw := atan2((f["out"] as Vector3).x, (f["out"] as Vector3).z)
 	var half: float = f["half"]
@@ -305,33 +315,15 @@ func _furnish(root: Node3D, b: Dictionary) -> void:
 				var yard := _node(root, _spot(f, half + 1.2, 1.4), yaw)
 				_heap(yard, goods, 1.8, int(b["id"]))
 		"kitchen":
-			# The hearth in the middle, a pot over it, a table with bowls.
-			var c := Vector3(f["c"])
-			c.y = float(f["lo"].y)
-			var hearth := _node(root, c, yaw)
-			for i in 8:
-				var a := TAU * i / 8.0
-				_box(hearth, Vector3(0.22, 0.16, 0.22), Vector3(cos(a) * 0.42, 0.08, sin(a) * 0.42), Color(0.5, 0.49, 0.47), a)
-			_cyl(hearth, 0.2, 0.26, Vector3(0, 0.45, 0), Color(0.22, 0.2, 0.2))
-			_cyl(hearth, 0.025, 1.2, Vector3(-0.5, 0.6, 0), Color(0.3, 0.22, 0.15))
-			_cyl(hearth, 0.025, 1.2, Vector3(0.5, 0.6, 0), Color(0.3, 0.22, 0.15))
-			_cyl(hearth, 0.02, 1.0, Vector3(0, 1.15, 0), Color(0.3, 0.22, 0.15), true)
-			var glow := OmniLight3D.new()
-			glow.light_color = Color(1.0, 0.6, 0.3)
-			glow.light_energy = 0.8
-			glow.omni_range = 4.0
-			glow.position = Vector3(0, 0.4, 0)
-			hearth.add_child(glow)
-			var table := _node(root, c + (f["side"] as Vector3) * 1.3, yaw)
-			_table(table)
-			for i in 3:
-				_cyl(table, 0.08, 0.05, Vector3(-0.25 + i * 0.25, 0.78, 0), Color(0.72, 0.5, 0.32))
+			# (The hearth and the jars are inside.) Meat hung up to dry beside it.
 			for it in goods:
 				if look_of(String(it["key"])) == "meat":
-					var hang := _node(root, c - (f["side"] as Vector3) * 1.3, yaw)
-					_cyl(hang, 0.02, 1.0, Vector3(0, 1.6, 0), Color(0.3, 0.22, 0.15), true)
+					var hang := _node(root, _spot(f, half + 0.9, -1.0), yaw)
+					_cyl(hang, 0.03, 1.8, Vector3(-0.5, 0.9, 0), Color(0.3, 0.22, 0.15))
+					_cyl(hang, 0.03, 1.8, Vector3(0.5, 0.9, 0), Color(0.3, 0.22, 0.15))
+					_cyl(hang, 0.02, 1.1, Vector3(0, 1.75, 0), Color(0.3, 0.22, 0.15), true)
 					for i in 3:
-						_box(hang, Vector3(0.1, 0.25, 0.08), Vector3(-0.3 + i * 0.3, 1.35, 0), Color(0.65, 0.22, 0.2), 0.0)
+						_box(hang, Vector3(0.1, 0.25, 0.08), Vector3(-0.3 + i * 0.3, 1.5, 0), Color(0.65, 0.22, 0.2), 0.0)
 					break
 		"workshop":
 			var bench := _node(root, _spot(f, -1.2, 0.8), yaw)
@@ -361,11 +353,6 @@ func _furnish(root: Node3D, b: Dictionary) -> void:
 				fl.position = Vector3(0, 1.3, 0)
 				br.add_child(fl)
 				_box(br, Vector3(0.2, 0.22, 0.2), Vector3(0, 1.1, 0), Color(1.0, 0.6, 0.2) * 1.6, 0.8, true)
-		"study":
-			var desk := _node(root, _spot(f, -1.3, 0.8), yaw)
-			_table(desk)
-			_cyl(desk, 0.05, 0.4, Vector3(-0.15, 0.8, 0), Color(0.92, 0.88, 0.76), true)
-			_cyl(desk, 0.05, 0.4, Vector3(0.15, 0.8, 0.08), Color(0.92, 0.88, 0.76), true, 0.5)
 		"school":
 			# A slate for reckoning, and a bench for the pupils.
 			var board := _node(root, _spot(f, -1.6, 0.55), yaw)
@@ -379,23 +366,6 @@ func _furnish(root: Node3D, b: Dictionary) -> void:
 			_box(bench, Vector3(1.1, 0.06, 0.3), Vector3(0, 0.42, 0), wood, 0.0)
 			for x in [-0.45, 0.45]:
 				_box(bench, Vector3(0.06, 0.4, 0.26), Vector3(x, 0.2, 0), wood.darkened(0.15), 0.0)
-		"academy":
-			# Shelves of books at either side of the door, and a reading desk.
-			for side in [-2.3, 2.3]:
-				var sh := _node(root, _spot(f, side, 0.3), yaw)
-				var dark := Color(0.36, 0.25, 0.16)
-				_box(sh, Vector3(0.9, 1.5, 0.05), Vector3(0, 0.75, -0.13), dark, 0.0)
-				for x in [-0.43, 0.43]:
-					_box(sh, Vector3(0.05, 1.5, 0.3), Vector3(x, 0.75, 0), dark, 0.0)
-				for row in 3:
-					_box(sh, Vector3(0.82, 0.04, 0.28), Vector3(0, 0.1 + row * 0.48, 0), dark, 0.0)
-					for k in 6:
-						var bc: Color = [Color(0.55, 0.2, 0.18), Color(0.25, 0.35, 0.5), Color(0.62, 0.52, 0.3), Color(0.3, 0.45, 0.3)][(k + row) % 4]
-						_box(sh, Vector3(0.1, 0.3 + 0.05 * ((k * 7 + row) % 3), 0.22), Vector3(-0.32 + k * 0.13, 0.28 + row * 0.48, 0), bc, 0.0)
-			var desk := _node(root, _spot(f, 0.0, 1.6), yaw)
-			_table(desk)
-			_cyl(desk, 0.05, 0.4, Vector3(-0.15, 0.8, 0), Color(0.92, 0.88, 0.76), true)
-			_box(desk, Vector3(0.3, 0.06, 0.22), Vector3(0.2, 0.8, 0), Color(0.55, 0.2, 0.18), 0.0)
 		"herbalist":
 			var rack := _node(root, _spot(f, 1.4, 0.5), yaw)
 			_cyl(rack, 0.03, 1.4, Vector3(-0.5, 0.7, 0), Color(0.45, 0.33, 0.22))

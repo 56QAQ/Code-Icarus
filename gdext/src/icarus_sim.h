@@ -43,6 +43,9 @@ public:
 
     // Rendering.
     PackedInt32Array take_dirty_cells();
+    // Cutaway views of buildings (roofs lifted off): boxes as [lo, hi] (Vector3i,
+    // inclusive). Returns the cells to mesh again (flattened x, y, z).
+    PackedInt32Array set_cutaway(const Array& boxes);
     PackedInt32Array render_cells() const;  // all cells that may contain matter
     Array material_table() const;           // by material id: key, name, colour, kind flags
     PackedInt32Array take_fx();             // [kind, x, y, z, material] per broken / landed cube

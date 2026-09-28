@@ -111,10 +111,33 @@ bool Agents::task_treat(Character& c) {
         }
         t.other = best ? best->id : 0;
         t.target = best ? best->entrance : c.foot;
+        // The cot in the 药庐 when it is free (else by the herb rack).
+        if (best) {
+            const BuildingSlot* cot = free_slot(*best, SlotKind::Bed, c);
+            if (!cot) cot = free_slot(*best, SlotKind::Work, c);
+            if (cot) {
+                t.target = cot->pos;
+                t.count = 1;
+            }
+        }
         t.step = 3;
     }
     if (t.step == 3) {
-        if (c.foot.dist2(t.target) > 2 * 2) {
+        const Building* hb = t.count == 1 ? ctx_.buildings->get(t.other) : nullptr;
+        const BuildingSlot* cot = hb ? hb->slot_at(t.target) : nullptr;
+        if (cot) {
+            const Move m = use_slot(c, *cot);
+            if (m == Move::Moving) {
+                say(c, "前往药庐");
+                return true;
+            }
+            if (m == Move::Failed) {
+                t.count = 0;
+                t.target = hb->entrance;
+                return true;
+            }
+            if (cot->kind == SlotKind::Bed) c.sleeping = true;  // lying on the cot
+        } else if (c.foot.dist2(t.target) > 2 * 2) {
             Move m = move_to(c, t.target, true);
             if (m == Move::Failed) {
                 t.target = c.foot;  // cannot get there: treat on the spot
@@ -129,7 +152,7 @@ bool Agents::task_treat(Character& c) {
     }
     if (t.step == 4) {
         c.moving = false;
-        say(c, t.other ? "在药庐疗伤" : "包扎伤口");
+        say(c, t.other ? (c.sleeping ? "躺在药庐的病床上疗伤" : "在药庐疗伤") : "包扎伤口");
         if (now_ < t.until) return true;
         if (ctx_.econ->remove(c.inv, herbs, 1, "treatment") <= 0) {
             end_task(c, false);

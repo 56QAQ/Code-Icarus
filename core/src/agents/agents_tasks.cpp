@@ -651,14 +651,42 @@ Vec3i Agents::sleep_spot(const Character& c, const Building* home, const Vec3i& 
     };
     Nav& nav = *ctx_.nav;
     const Vec3i X{1, 0, 0}, Z{0, 0, 1};
+    // Rank in the household: each member has a bed (or a spot on the floor) of her own.
+    int rank = 0;
+    if (home)
+        for (const auto& op : chars_)
+            if (op && op->alive && !op->departed && op->home == c.home && op->id < c.id) ++rank;
+    if (home && home->beds > 0) {
+        // A bed of the house: her own first, else one nobody else lies in or heads for.
+        std::vector<const BuildingSlot*> beds;
+        for (const BuildingSlot& s : home->slots)
+            if (s.kind == SlotKind::Bed) beds.push_back(&s);
+        for (size_t k = 0; k < beds.size(); ++k) {
+            const BuildingSlot& s = *beds[((size_t)rank + k) % beds.size()];
+            if (ctx_.world->material(s.pos).furniture.empty()) continue;  // burnt, smashed
+            bool free = true;
+            for (const auto& op : chars_)
+                if (op && op->alive && !op->departed && op->id != c.id && op->task.type == TaskType::Sleep &&
+                    op->task.step >= 1 && op->task.target == s.pos)
+                    free = false;
+            for (const auto& u : c.unreachable) free &= u.first != s.access;
+            if (!free) continue;
+            axis = s.axis;
+            return s.pos;
+        }
+    }
     if (home) {
         // The floor inside, farthest from the door first; each member of the household
-        // starts from their own spot.
+        // starts from their own spot. (Not where the furniture is used from, nor in the
+        // doorway.)
         std::vector<Vec3i> spots;
         for (size_t i = 0; i < home->plan_pos.size(); ++i) {
             const Vec3i& p = home->plan_pos[i];
             if (p.y != home->inside.y || vmat(home->plan_vox[i]) != 0) continue;
-            if (nav.standable(p)) spots.push_back(p);
+            bool kept = false;
+            for (const BuildingSlot& s : home->slots) kept |= s.access == p || s.pos == p;
+            if (!home->slots.empty() && p == home->inside) kept = true;
+            if (!kept && nav.standable(p)) spots.push_back(p);
         }
         std::sort(spots.begin(), spots.end(), [&](const Vec3i& a, const Vec3i& b) {
             const i64 da = a.dist2(home->entrance), db = b.dist2(home->entrance);
@@ -666,9 +694,6 @@ Vec3i Agents::sleep_spot(const Character& c, const Building* home, const Vec3i& 
         });
         auto floor = [&](const Vec3i& p) { return std::find(spots.begin(), spots.end(), p) != spots.end(); };
         if (!spots.empty()) {
-            int rank = 0;
-            for (const auto& op : chars_)
-                if (op && op->alive && !op->departed && op->home == c.home && op->id < c.id) ++rank;
             // A whole bed on the floor, three cubes in a row.
             for (size_t k = 0; k < spots.size(); ++k) {
                 const Vec3i& p = spots[((size_t)rank + k) % spots.size()];
@@ -759,17 +784,31 @@ bool Agents::task_sleep(Character& c) {
         t.step = 1;
     }
     if (t.step == 1) {
-        say(c, "回家睡觉");
-        Move m = move_to(c, t.target, false);
-        if (m == Move::Moving) return true;
+        const Building* h = ctx_.buildings->get(c.home);
+        const BuildingSlot* bed = h ? h->slot_at(t.target) : nullptr;
+        if (bed && bed->kind == SlotKind::Bed) {
+            say(c, c.foot.chebyshev(bed->pos) <= 2 ? (bed->what == "mat" ? "躺到草席上" : "上床") : "回家睡觉");
+            const Move m = use_slot(c, *bed);
+            if (m == Move::Failed) {
+                // No way to her bed: somewhere else tonight.
+                blacklist(c, bed->access, kTicksPerHour * 6);
+                t.target = sleep_spot(c, h, c.foot, t.target2);
+                return true;
+            }
+            if (m != Move::Arrived) return true;
+        } else {
+            say(c, "回家睡觉");
+            Move m = move_to(c, t.target, false);
+            if (m == Move::Moving) return true;
+            // Lying down on her side along the bed (facing one way or the other).
+            if (c.foot == t.target && (t.target2.x || t.target2.z)) {
+                c.yaw = t.target2.x ? 0.0f : -1.5707964f;
+                if (c.id & 1) c.yaw += 3.1415927f;
+            }
+        }
         t.step = 2;
         t.started = now_;
         c.sleeping = true;
-        // Lying down on her side along the bed (facing one way or the other).
-        if (c.foot == t.target && (t.target2.x || t.target2.z)) {
-            c.yaw = t.target2.x ? 0.0f : -1.5707964f;
-            if (c.id & 1) c.yaw += 3.1415927f;
-        }
     }
     if (t.step == 2) {
         c.sleeping = true;
@@ -1041,6 +1080,13 @@ bool Agents::task_govern(Character& c) {
     const bool fire = hall->def == "campfire";
     if (t.step == 0) {
         t.target = hall->inside;
+        // At the head of the table (else any seat at it).
+        const BuildingSlot* seat = free_slot(*hall, SlotKind::Seat, c, 0, "stool");
+        if (!seat) seat = free_slot(*hall, SlotKind::Seat, c);
+        if (seat) {
+            t.target = seat->pos;
+            t.count = 1;
+        }
         // Not in the flames: a seat on the ring around the fire.
         if (fire) {
             const Vec3i ring[6] = {{2, 0, 0}, {-2, 0, 1}, {1, 0, -2}, {-1, 0, 2}, {2, 0, -1}, {-2, 0, -1}};
@@ -1056,7 +1102,13 @@ bool Agents::task_govern(Character& c) {
     }
     if (t.step == 1) {
         say(c, fire ? "前往篝火" : "前往议事厅");
-        Move m = move_to(c, t.target, true);
+        const BuildingSlot* seat = t.count == 1 ? hall->slot_at(t.target) : nullptr;
+        Move m = seat ? use_slot(c, *seat) : move_to(c, t.target, true);
+        if (m == Move::Failed && seat) {
+            t.count = 0;
+            t.target = hall->inside;
+            return true;
+        }
         if (m == Move::Failed) {
             end_task(c, false);
             return false;
@@ -1912,7 +1964,19 @@ bool Agents::task_work(Character& c) {
             }
             if (t.step == 2) {
                 say(c, k->def == "campfire" ? "去篝火边" : "去灶房");
-                Move m = move_to(c, k->inside, true);
+                // To the hearth (when the kitchen has one free), else just in.
+                if (t.count == 0) {
+                    const BuildingSlot* ws = free_slot(*k, SlotKind::Work, c);
+                    t.target = ws ? ws->pos : k->inside;
+                    t.count = ws ? 1 : 2;
+                }
+                const BuildingSlot* ws = t.count == 1 ? k->slot_at(t.target) : nullptr;
+                Move m = ws ? use_slot(c, *ws) : move_to(c, k->inside, true);
+                if (m == Move::Failed && ws) {
+                    t.count = 2;
+                    t.target = k->inside;
+                    return true;
+                }
                 if (m == Move::Failed) return fail("到不了灶房");
                 if (m != Move::Arrived) return true;
                 ctx_.econ->transfer(c.inv, k->store, grain, 99);
@@ -1935,8 +1999,20 @@ bool Agents::task_work(Character& c) {
             Building* b = ctx_.buildings->get(j->building);
             if (!b || !b->functional) return fail("研究的地方不能用了");
             if (t.step == 0) {
-                say(c, "去研究");
-                Move m = move_to(c, b->inside, true);
+                // A seat of her own at a desk (or at the hall's table), else just inside.
+                if (t.count == 0) {
+                    const BuildingSlot* seat = free_slot(*b, SlotKind::Seat, c);
+                    t.target = seat ? seat->pos : b->inside;
+                    t.count = seat ? 1 : 2;
+                }
+                const BuildingSlot* seat = t.count == 1 ? b->slot_at(t.target) : nullptr;
+                say(c, seat && c.foot.chebyshev(seat->pos) <= 2 ? "在书案前坐下" : "去研究");
+                Move m = seat ? use_slot(c, *seat) : move_to(c, b->inside, true);
+                if (m == Move::Failed && seat) {
+                    t.count = 2;
+                    t.target = b->inside;
+                    return true;
+                }
                 if (m == Move::Failed) return fail("到不了研究的地方");
                 if (m != Move::Arrived) return true;
                 t.until = now_ + work_ticks(300);
@@ -1984,6 +2060,24 @@ bool Agents::task_work(Character& c) {
                 if (m != Move::Arrived) return true;
                 // The store may hold the tool for this work.
                 if (tool_factor(c, kind) < 0.99f) swap_tool(c, j->from, kind);
+                // A workshop with a bench free not far off: the materials are carried over and
+                // worked there, and what is made stays in the workshop's store.
+                for (const Building& b : ctx_.buildings->all()) {
+                    if (!b.alive || !b.functional || b.def != r.str("station") || b.polity != c.polity ||
+                        !ctx_.econ->store(b.store) || b.entrance.chebyshev(c.foot) > 32)
+                        continue;
+                    const BuildingSlot* bench = free_slot(b, SlotKind::Work, c);
+                    if (!bench) continue;
+                    for (const auto& [k, v] : r["inputs"].members()) {
+                        const ItemId in = reg.find_item(k);
+                        ctx_.econ->transfer(j->from, c.inv, in, v.as_int() * std::max(1, j->count));
+                    }
+                    ctx_.econ->release(j->from, c.id);
+                    t.other = b.id;
+                    t.target = bench->pos;
+                    t.step = 5;
+                    return true;
+                }
                 // A working workshop nearby makes the job quicker.
                 float speed = 1.0f;
                 for (const Building& b : ctx_.buildings->all())
@@ -1993,6 +2087,46 @@ bool Agents::task_work(Character& c) {
                 speed /= 1.0f + ctx_.society->tech_effect(c.polity, "craft_speed");
                 t.until = now_ + work_ticks(r.flt("ticks", 100.0f) * (float)std::max(1, j->count) * speed);
                 t.step = 2;
+            }
+            if (t.step == 5) {
+                // Carrying the materials to the bench.
+                const Building* wb = ctx_.buildings->get(t.other);
+                const BuildingSlot* bench = wb && wb->functional ? wb->slot_at(t.target) : nullptr;
+                say(c, "去工坊：" + r.str("name"));
+                const Move m = bench ? use_slot(c, *bench) : Move::Failed;
+                if (m == Move::Moving) return true;
+                if (m == Move::Failed) t.other = 0;  // (no bench after all: works where she is)
+                const float speed = (m == Move::Arrived ? 0.6f : 1.0f) /
+                                    (1.0f + ctx_.society->tech_effect(c.polity, "craft_speed"));
+                t.until = now_ + work_ticks(r.flt("ticks", 100.0f) * (float)std::max(1, j->count) * speed);
+                t.step = 6;
+            }
+            if (t.step == 6) {
+                say(c, r.str("name"));
+                if (now_ < t.until) return true;
+                const Building* wb = ctx_.buildings->get(t.other);
+                const StoreId out = wb && ctx_.econ->store(wb->store) ? wb->store : c.inv;
+                auto carried = [&]() {
+                    for (const auto& [k, v] : r["inputs"].members())
+                        if (ctx_.econ->available(c.inv, reg.find_item(k), c.id) < v.as_int()) return false;
+                    return true;
+                };
+                int done = 0;
+                const std::string reason = "craft:" + r.str("key");
+                for (int b = 0; b < std::max(1, j->count) && carried(); ++b) {
+                    for (const auto& [k, v] : r["inputs"].members())
+                        ctx_.econ->remove(c.inv, reg.find_item(k), v.as_int(), reason);
+                    for (const auto& [k, v] : r["outputs"].members())
+                        ctx_.econ->add(out, reg.find_item(k), v.as_int(), reason);
+                    ++done;
+                }
+                c.skills[kCrafting] = std::min(1.0f, c.skills[kCrafting] + 0.01f * (float)done);
+                if (done > 0 && tool_factor(c, kind) >= 0.99f) wear_tool(c);
+                if (done > 0) ctx_.society->practice(c.polity, "craft", (float)done, c.id);
+                ctx_.jobs->complete(t.job);
+                t.job = 0;
+                end_task(c, done > 0);
+                return true;
             }
             if (t.step == 2) {
                 say(c, r.str("name"));

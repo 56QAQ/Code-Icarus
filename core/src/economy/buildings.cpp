@@ -6,6 +6,7 @@
 #include <set>
 #include <stdexcept>
 
+#include "icarus/economy/furniture.h"
 #include "icarus/sim/physics.h"
 #include "icarus/util/log.h"
 
@@ -16,6 +17,7 @@ ItemId item_for_material(const Registry& reg, MatId mat) {
     if (mat == M.door) return reg.find_item("planks");
     if (mat == M.glass) return reg.find_item("sand");
     if (mat == M.path || mat == M.farmland || mat == M.grass) return reg.find_item("dirt");
+    if (reg.mat(mat).made_of_item != kNoItem) return reg.mat(mat).made_of_item;
     const std::string& key = reg.mat(mat).key;
     for (size_t i = 0; i < reg.item_count(); ++i)
         if (reg.item((ItemId)i).place_mat == key) return (ItemId)i;
@@ -26,6 +28,118 @@ MatId material_for_item_placement(const Registry& reg, ItemId item) {
     const ItemDef& d = reg.item(item);
     if (d.place_mat.empty() || !reg.has_mat(d.place_mat)) return 0;
     return reg.mat_id(d.place_mat);
+}
+
+std::vector<BuildingSlot> derive_slots(const Registry& reg, const std::vector<Vec3i>& pos, const std::vector<MatId>& mats,
+                                       int floor_y, const std::vector<Vec3i>& keep_clear) {
+    std::map<Vec3i, MatId> plan;
+    for (size_t i = 0; i < pos.size() && i < mats.size(); ++i) plan[pos[i]] = mats[i];
+    auto mat_at = [&](const Vec3i& p) -> MatId {
+        auto it = plan.find(p);
+        return it == plan.end() ? 0 : it->second;
+    };
+    auto kind = [&](const Vec3i& p) -> const std::string& { return reg.mat(mat_at(p)).furniture; };
+    auto clear = [&](const Vec3i& p) { return std::find(keep_clear.begin(), keep_clear.end(), p) == keep_clear.end(); };
+    auto solid = [&](const Vec3i& p) { return reg.mat(mat_at(p)).solid; };
+    // Open floor: an empty cube of the plan at floor height with head room above it.
+    auto floor = [&](const Vec3i& p) {
+        if (p.y != floor_y || !plan.count(p) || mat_at(p) != 0) return false;
+        for (int k = 1; k <= 2; ++k)
+            if (solid(p + Vec3i{0, k, 0})) return false;
+        return true;
+    };
+    const Vec3i dirs[4] = {{0, 0, 1}, {0, 0, -1}, {1, 0, 0}, {-1, 0, 0}};
+    std::vector<BuildingSlot> out;
+    std::set<Vec3i> used;  // floor given to a station already
+    for (size_t i = 0; i < pos.size() && i < mats.size(); ++i) {
+        const Vec3i& p = pos[i];
+        const std::string& f = reg.mat(mats[i]).furniture;
+        if (p.y != floor_y || f.empty()) continue;
+        if (f == "bed" || f == "mat") {
+            const FurnitureRun r = furniture_run(reg, mat_at, p);
+            if (p != r.start) continue;  // one slot for the whole bed
+            BuildingSlot s;
+            s.kind = SlotKind::Bed;
+            s.what = f;
+            s.axis = r.axis;
+            s.face = r.head;
+            s.pos = r.start + r.axis * (r.length / 2);
+            s.access = s.pos;  // a mat is stepped onto
+            if (f == "bed") {
+                // Climbed into from beside its middle, else beside it anywhere, else past its foot.
+                const Vec3i side{r.axis.z, 0, r.axis.x};
+                std::vector<Vec3i> cand{s.pos + side, s.pos - side};
+                for (int k = 0; k < r.length; ++k) {
+                    cand.push_back(r.start + r.axis * k + side);
+                    cand.push_back(r.start + r.axis * k - side);
+                }
+                cand.push_back(r.head == r.start ? r.end + r.axis : r.start - r.axis);
+                bool found = false;
+                for (const Vec3i& q : cand)
+                    if (floor(q)) {
+                        s.access = q;
+                        found = true;
+                        break;
+                    }
+                if (!found) continue;  // a bed nobody can get to
+            }
+            out.push_back(s);
+        } else if (f == "stool" || f == "bench") {
+            for (const Vec3i& d : dirs) {
+                const std::string& k = kind(p + d);
+                if (k != "desk" && k != "table") continue;
+                BuildingSlot s;
+                s.kind = SlotKind::Seat;
+                s.what = k;
+                s.pos = s.access = p;
+                s.face = p + d;
+                out.push_back(s);
+                break;
+            }
+        } else if (f == "workbench" || f == "hearth" || f == "herb_rack" || f == "shelf" || f == "chest") {
+            // The floor in front of it (its back to a wall), else beside it.
+            for (int pass = 0; pass < 2; ++pass) {
+                bool done = false;
+                for (const Vec3i& d : dirs) {
+                    const Vec3i q = p + d;
+                    if (!floor(q) || !clear(q) || used.count(q)) continue;
+                    if (pass == 0 && !solid(p - d)) continue;
+                    BuildingSlot s;
+                    s.kind = (f == "shelf" || f == "chest") ? SlotKind::Store : SlotKind::Work;
+                    s.what = f;
+                    s.pos = s.access = q;
+                    s.face = p;
+                    out.push_back(s);
+                    used.insert(q);
+                    done = true;
+                    break;
+                }
+                if (done) break;
+            }
+        }
+    }
+    return out;
+}
+
+void Buildings::derive(Building& b) const {
+    b.slots.clear();
+    if (b.plan_pos.empty()) return;
+    b.box_lo = b.box_hi = b.plan_pos[0];
+    for (const Vec3i& p : b.plan_pos) {
+        b.box_lo = {std::min(b.box_lo.x, p.x), std::min(b.box_lo.y, p.y), std::min(b.box_lo.z, p.z)};
+        b.box_hi = {std::max(b.box_hi.x, p.x), std::max(b.box_hi.y, p.y), std::max(b.box_hi.z, p.z)};
+    }
+    if (b.is_bridge || !reg_) return;
+    std::vector<MatId> mats;
+    mats.reserve(b.plan_vox.size());
+    for (Voxel v : b.plan_vox) mats.push_back(vmat(v));
+    // The doorway and the cube inside it stay clear.
+    const Vec3i step{b.inside.x > b.entrance.x ? 1 : (b.inside.x < b.entrance.x ? -1 : 0), 0,
+                     b.inside.z > b.entrance.z ? 1 : (b.inside.z < b.entrance.z ? -1 : 0)};
+    b.slots = derive_slots(*reg_, b.plan_pos, mats, b.origin.y, {b.entrance + step, b.inside});
+    int beds = 0;
+    for (const BuildingSlot& s : b.slots) beds += s.kind == SlotKind::Bed;
+    if (beds > 0) b.beds = beds;
 }
 
 void Buildings::load_defs(const Registry& reg) {
@@ -77,6 +191,22 @@ void Buildings::load_defs(const Registry& reg) {
                         d.door_local = {x, 0, z};
                 }
             }
+        }
+        // Use slots and beds from the furniture (in blueprint coordinates).
+        {
+            std::vector<Vec3i> lp;
+            std::vector<MatId> lm;
+            for (auto& c : d.cells) {
+                lp.push_back(c.local);
+                lm.push_back(c.mat);
+            }
+            Vec3i door = d.door_local.x >= 0 ? d.door_local : Vec3i{d.w / 2, 0, d.d - 1};
+            Vec3i inside = d.door_local.x >= 0 ? Vec3i{d.door_local.x, 0, std::max(0, d.d - 2)} : Vec3i{d.w / 2, 0, d.d / 2};
+            if (d.inside_local.x >= 0) inside = d.inside_local;
+            d.slots = derive_slots(reg, lp, lm, 0, {door, inside});
+            int beds = 0;
+            for (const BuildingSlot& s : d.slots) beds += s.kind == SlotKind::Bed;
+            if (beds > 0 && !b.has("beds")) d.beds = beds;
         }
         defs_.push_back(std::move(d));
     }
@@ -186,6 +316,7 @@ u32 Buildings::start_site(const std::string& key, const Vec3i& origin, u8 rot, u
     }
     if (d->inside_local.x >= 0) b.inside = to_world(*d, origin, rot, d->inside_local);
     if (d->entrance_local.x >= 0) b.entrance = to_world(*d, origin, rot, d->entrance_local);
+    derive(b);
     b.site = econ_.create_store(StoreKind::Site, b.entrance, polity);
     econ_.store(b.site)->building = b.id;
     list_.push_back(b);
@@ -379,7 +510,21 @@ void Buildings::finish(Building& b, EventId cause) {
     if (d && d->storage > 0 && !econ_.store(b.store)) {
         // A seat with a workstation (the band's campfire) is also where everything is kept.
         const bool stockpile = d->workstation.empty() || d->seat;
-        b.store = econ_.create_store(stockpile ? StoreKind::Stockpile : StoreKind::Workshop, b.inside, b.polity,
+        // Goods are kept at the shelves (the one nearest the middle), a workshop's at
+        // its bench or hearth; else just inside the door.
+        Vec3i at = b.inside;
+        const float mx = 0.5f * (float)(b.box_lo.x + b.box_hi.x), mz = 0.5f * (float)(b.box_lo.z + b.box_hi.z);
+        float bd = 1e30f;
+        for (int pass = 0; pass < 2 && bd > 1e29f; ++pass)
+            for (const BuildingSlot& sl : b.slots) {
+                if (sl.kind != (pass == 0 ? SlotKind::Store : SlotKind::Work)) continue;
+                const float dx = (float)sl.pos.x - mx, dz = (float)sl.pos.z - mz, dd = dx * dx + dz * dz;
+                if (dd < bd) {
+                    bd = dd;
+                    at = sl.pos;
+                }
+            }
+        b.store = econ_.create_store(stockpile ? StoreKind::Stockpile : StoreKind::Workshop, at, b.polity,
                                      kNoEntity, d->storage);
         Store* s = econ_.store(b.store);
         s->building = b.id;
@@ -746,6 +891,7 @@ void Buildings::load(BinReader& outer) {
         b.beds = (int)r.vari();
         b.end_a = r.vec3i();
         b.end_b = r.vec3i();
+        derive(b);
         index_building(b);
     }
 }

@@ -335,8 +335,11 @@ void Agents::update_physics(Character& c) {
         }
         return;
     }
-    // Buried (something solid now occupies the body space): step up / aside.
-    if (!nav.passable(c.foot) || !nav.passable(c.foot + Vec3i{0, 1, 0})) {
+    // Buried (something solid now occupies the body space): step up / aside. (Not a
+    // sleeper lying in her bed: the bed's cube is where she belongs.)
+    const bool abed = !w.material(c.foot).furniture.empty() && w.material(c.foot).solid;
+    if (abed && !c.sleeping) leave_furniture(c);  // (awake in bed: up and out)
+    if (!abed && (!nav.passable(c.foot) || !nav.passable(c.foot + Vec3i{0, 1, 0}))) {
         Vec3i np;
         if (nav.find_standable_near(c.foot + Vec3i{0, 1, 0}, np, 3)) place_at(c, np);
         else damage(c, 0.01f, kTorso, "被掩埋", 0);
@@ -599,12 +602,32 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
         return std::abs(c.foot.x - goal.x) <= reach_xz && std::abs(c.foot.z - goal.z) <= reach_xz &&
                c.foot.y - goal.y <= 2 && goal.y - c.foot.y <= reach_up;
     };
-    if (arrived()) {
+    Nav& nav = *ctx_.nav;
+    // Someone already stands here (at a store, a workbench, the edge of a field): a free
+    // cube beside it that is just as good, if there is one.
+    auto step_aside = [&]() {
+        if (!adjacent_ok || !crowded(c.foot, c)) return false;
+        Vec3i nb[8];
+        float nc[8];
+        const int n = nav.neighbors(c.foot, nb, nc);
+        for (int k = 0; k < n; ++k) {
+            const Vec3i q = nb[k];
+            // Aside on the same level only (never up onto a wall or a roof in the making).
+            if (q.y != c.foot.y || std::abs(q.x - goal.x) > reach_xz || std::abs(q.z - goal.z) > reach_xz ||
+                q.y - goal.y > 2 || goal.y - q.y > reach_up || crowded(q, c))
+                continue;
+            c.path.nodes.assign(1, q);
+            c.path.next = 0;
+            c.path_goal = goal;
+            return true;
+        }
+        return false;
+    };
+    if (arrived() && !step_aside()) {
         c.moving = false;
         c.path.clear();
         return Move::Arrived;
     }
-    Nav& nav = *ctx_.nav;
     if (!c.path.valid() || c.path_goal != goal) {
         c.path.clear();
         if (blacklisted(c, goal)) return Move::Failed;
@@ -725,24 +748,7 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
         c.path.next++;
         if (Store* s = ctx_.econ->store(c.inv)) s->pos = c.foot;
         if (arrived()) {
-            // Someone already stands here (at a store, a workbench, the edge of a field):
-            // a free cube beside it that is just as good, if there is one.
-            if (adjacent_ok && crowded(c.foot, c)) {
-                Vec3i nb[8];
-                float nc[8];
-                const int n = nav.neighbors(c.foot, nb, nc);
-                for (int k = 0; k < n; ++k) {
-                    const Vec3i q = nb[k];
-                    // Aside on the same level only (never up onto a wall or a roof in the making).
-                    if (q.y != c.foot.y || std::abs(q.x - goal.x) > reach_xz || std::abs(q.z - goal.z) > reach_xz ||
-                        q.y - goal.y > 2 || goal.y - q.y > reach_up || crowded(q, c))
-                        continue;
-                    c.path.nodes.assign(1, q);
-                    c.path.next = 0;
-                    c.path_goal = goal;
-                    return Move::Moving;
-                }
-            }
+            if (step_aside()) return Move::Moving;
             c.moving = false;
             c.path.clear();
             return Move::Arrived;

@@ -53,6 +53,12 @@ struct Material {
     std::string sprite;          // drawn as crossed sprites rather than a small box
     bool holds_loose = false;    // a sturdy plant (bush, crop, reeds): loose sand rests on it
     int sprite_layer = -1;       // decoration layer, assigned in load order (see kSpriteBase)
+    // Furniture (beds, desks, hearths...): drawn as its own model (the key), never stood
+    // upon; solid furniture blocks the way, low furniture (a mat, a stool) can be stepped
+    // onto. Built from `made_of` (one unit a cube).
+    std::string furniture;
+    std::string made_of;
+    ItemId made_of_item = kNoItem;
 };
 
 // Decoration layers 0..kSpriteBase-1 are fixed (grass tufts, flowers, wheat, dry

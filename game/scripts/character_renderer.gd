@@ -246,7 +246,10 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	# Characters walk the same cube paths; a small fixed offset per character keeps
 	# two of them on one cube from rendering as one merged body.
 	var a := float(c["id"]) * 2.39996
-	var target: Vector3 = c["pos"] + Vector3(cos(a), 0.0, sin(a)) * 0.22
+	# In a bed or on a seat she is exactly where the furniture puts her.
+	var fpose := String(c.get("pose", "stand"))
+	var seat_h := float(c.get("seat_h", 0.0))
+	var target: Vector3 = c["pos"] + (Vector3.ZERO if fpose != "stand" else Vector3(cos(a), 0.0, sin(a)) * 0.22)
 	# Interpolate between simulation snapshots: from where the figure is drawn now to
 	# the newest position over one snapshot interval, so motion is even at any frame
 	# rate and game speed.
@@ -290,7 +293,9 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	# Lying down on the side: asleep a little curled up and centred on the bed (about
 	# 2.6 cubes long and one wide, as the kernel lays the beds out), the dead fallen.
 	body.rotation.z = lerpf(body.rotation.z, PI / 2.0 if lying else 0.0, ks)
-	var rest := Vector3(1.32, 0.62, 0.0) if sleeping else (Vector3(0.0, 0.6, 0.0) if lying else Vector3.ZERO)
+	var rest := Vector3(1.32, 0.62 + seat_h, 0.0) if sleeping else (Vector3(0.0, 0.6, 0.0) if lying else Vector3.ZERO)
+	# Seated on a stool or bench: the hips come down onto the seat.
+	var sitting := fpose == "sit" and alive and not lying
 	body.position = body.position.lerp(rest, ks)
 	var legl: Node3D = parts[PART_LEG_L]
 	var legr: Node3D = parts[PART_LEG_R]
@@ -378,6 +383,20 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 			var oar: Node3D = boat.get_node("oar_l" if side < 0 else "oar_r")
 			oar.rotation.y = (stroke * 0.5 * side) if rowing else 0.0
 			oar.rotation.z = (-0.25 + 0.2 * cos(t * 3.2)) * side if rowing else -0.05 * side
+	if sitting:
+		# Thighs forward, feet down toward the floor; at a desk, bent over the writing.
+		ll = -1.2
+		lr = -1.1
+		if working and job == "research":
+			al = -1.0 + sin(t * 5.0) * 0.05
+			ar = -1.15 + sin(t * 7.0) * 0.12
+			lean = 0.32
+			head_x = 0.45
+			arm_z = -0.1
+		elif not working:
+			al = -0.5
+			ar = -0.55
+			lean = 0.08
 	if lying:
 		al = 0.1
 		ar = 0.1
@@ -414,7 +433,7 @@ func _animate(n: Dictionary, c: Dictionary, delta: float) -> void:
 	if lvl != null and is_instance_valid(lvl):
 		lvl.rotation.x = -arml.rotation.x
 	if not lying:
-		body.position.y = rest.y + bob - (0.55 if afloat else 0.0)
+		body.position.y = rest.y + bob - (0.55 if afloat else 0.0) - ((0.81 - seat_h) if sitting else 0.0)
 	# Twin tails swing with the stride and settle when standing; the emblem floats.
 	for tp in n.get("tails", []):
 		if is_instance_valid(tp):

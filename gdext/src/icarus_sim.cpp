@@ -1,6 +1,7 @@
 #include "icarus_sim.h"
 
 #include <map>
+#include <set>
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
@@ -40,6 +41,7 @@ void IcarusSim::_bind_methods() {
     ClassDB::bind_method(D_METHOD("world_stats"), &IcarusSim::world_stats);
     ClassDB::bind_method(D_METHOD("perf"), &IcarusSim::perf);
     ClassDB::bind_method(D_METHOD("take_dirty_cells"), &IcarusSim::take_dirty_cells);
+    ClassDB::bind_method(D_METHOD("set_cutaway", "boxes"), &IcarusSim::set_cutaway);
     ClassDB::bind_method(D_METHOD("render_cells"), &IcarusSim::render_cells);
     ClassDB::bind_method(D_METHOD("material_table"), &IcarusSim::material_table);
     ClassDB::bind_method(D_METHOD("take_fx"), &IcarusSim::take_fx);
@@ -287,6 +289,48 @@ PackedInt32Array IcarusSim::take_dirty_cells() {
     PackedInt32Array out;
     if (!sim_) return out;
     for (const icarus::Vec3i& c : sim_->world().take_dirty_cells()) {
+        out.push_back(c.x);
+        out.push_back(c.y);
+        out.push_back(c.z);
+    }
+    return out;
+}
+
+PackedInt32Array IcarusSim::set_cutaway(const Array& boxes) {
+    PackedInt32Array out;
+    if (!sim_ || !mesher_) return out;
+    std::vector<icarus::Mesher::Cut> cuts;
+    for (int64_t i = 0; i < boxes.size(); ++i) {
+        const Array b = boxes[i];
+        if (b.size() < 2) continue;
+        cuts.push_back({to_ic((Vector3i)b[0]), to_ic((Vector3i)b[1])});
+    }
+    const std::vector<icarus::Mesher::Cut>& old = mesher_->cuts();
+    auto same = [](const icarus::Mesher::Cut& a, const icarus::Mesher::Cut& b) { return a.lo == b.lo && a.hi == b.hi; };
+    bool changed = old.size() != cuts.size();
+    for (size_t i = 0; i < cuts.size() && !changed; ++i) changed = !same(old[i], cuts[i]);
+    if (!changed) return out;
+    // Every cell a box that comes or goes touches (with the cubes beside it).
+    std::set<icarus::Vec3i> cells;
+    auto touch = [&](const icarus::Mesher::Cut& c) {
+        const int s = icarus::kCellSize;
+        auto fl = [s](int v) { return v >= 0 ? v / s : -((-v + s - 1) / s); };
+        for (int y = fl(c.lo.y - 1); y <= fl(c.hi.y + 1); ++y)
+            for (int z = fl(c.lo.z - 1); z <= fl(c.hi.z + 1); ++z)
+                for (int x = fl(c.lo.x - 1); x <= fl(c.hi.x + 1); ++x) cells.insert({x, y, z});
+    };
+    for (const auto& c : old) {
+        bool kept = false;
+        for (const auto& n : cuts) kept |= same(c, n);
+        if (!kept) touch(c);
+    }
+    for (const auto& n : cuts) {
+        bool had = false;
+        for (const auto& c : old) had |= same(c, n);
+        if (!had) touch(n);
+    }
+    mesher_->set_cuts(std::move(cuts));
+    for (const icarus::Vec3i& c : cells) {
         out.push_back(c.x);
         out.push_back(c.y);
         out.push_back(c.z);
@@ -693,6 +737,19 @@ Array IcarusSim::characters() const {
         d["moving"] = c.moving;
         d["phase"] = c.walk_phase;
         d["sleeping"] = c.sleeping;
+        // Furniture she lies in or sits on: the renderer raises her to its top (a bed's
+        // mattress, a mat, a stool) and seats her.
+        {
+            const icarus::Material& fm = sim_->world().material(c.foot);
+            float top = 0.0f;
+            if (fm.furniture == "bed") top = 0.44f;
+            else if (fm.furniture == "mat") top = 0.05f;
+            else if (fm.furniture == "stool") top = 0.44f;
+            else if (fm.furniture == "bench") top = 0.45f;
+            const bool seat = (fm.furniture == "stool" || fm.furniture == "bench") && !c.moving && !c.sleeping;
+            d["pose"] = String(c.sleeping && top > 0.0f ? "bed" : (seat ? "sit" : "stand"));
+            d["seat_h"] = top;
+        }
         d["in_boat"] = c.in_boat;
         d["alive"] = c.alive;
         d["girl"] = c.is_girl();
@@ -1852,6 +1909,14 @@ Array IcarusSim::buildings() const {
             d["max"] = to_gd(hi);
         }
         if (const icarus::Store* st = sim_->economy().store(b.store)) d["goods"] = goods_of(*st);
+        // Fires inside (a hearth, a fire pit) still standing: they light the room.
+        Array fires;
+        for (size_t i = 0; i < b.plan_pos.size(); ++i) {
+            const std::string& f = reg_->mat(icarus::vmat(b.plan_vox[i])).furniture;
+            if ((f == "hearth" || f == "firepit") && sim_->world().material(b.plan_pos[i]).furniture == f)
+                fires.push_back(to_gd(b.plan_pos[i]));
+        }
+        if (!fires.is_empty()) d["fires"] = fires;
         out.push_back(d);
     }
     return out;

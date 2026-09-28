@@ -17,6 +17,26 @@ namespace icarus {
 
 class Physics;
 
+// Where a building is used: worked out from the furniture in its blueprint (see
+// derive_slots). A bed is lain in, a stool or bench sat on (facing the desk or table),
+// a workbench, hearth or herb rack worked at from the floor before it, a shelf or chest
+// filled and emptied from the floor before it.
+enum class SlotKind : u8 { Bed = 0, Seat, Work, Store };
+struct BuildingSlot {
+    SlotKind kind = SlotKind::Bed;
+    Vec3i pos;     // where the body is: the middle of a bed, the stool, the floor at a station
+    Vec3i face;    // what she faces: the desk, table or station (a bed: the end her head is at)
+    Vec3i access;  // the floor cube she walks to first (beside a bed; = pos elsewhere)
+    Vec3i axis;    // beds: along the bed
+    std::string what;  // the furniture ("bed", "mat", "desk", "table", "workbench", "hearth"...)
+};
+
+// The use slots of a plan: cube positions and their planned materials; `floor_y` is the
+// floor's height, `keep_clear` cubes (the door and the cube inside it) are never slots.
+std::vector<BuildingSlot> derive_slots(const Registry& reg, const std::vector<Vec3i>& pos,
+                                       const std::vector<MatId>& mats, int floor_y,
+                                       const std::vector<Vec3i>& keep_clear);
+
 struct BuildingDef {
     std::string key, name, category, description, tech, workstation;
     int w = 0, d = 0, h = 0;
@@ -33,6 +53,7 @@ struct BuildingDef {
     std::vector<PlanCell> cells;
     std::map<ItemId, int> cost;
     Vec3i door_local{-1, -1, -1};
+    std::vector<BuildingSlot> slots;  // in blueprint coordinates
     // Optional (x, z) overrides for where people stand inside and come in (open
     // structures like a campfire have no door).
     Vec3i inside_local{-1, -1, -1}, entrance_local{-1, -1, -1};
@@ -65,6 +86,20 @@ struct Building {
     int beds = 0;
     // Bridge endpoints (standable positions at each end).
     Vec3i end_a, end_b;
+    // Derived from the plan (not saved): where the building is used, and the box it
+    // stands in (lo..hi inclusive).
+    std::vector<BuildingSlot> slots;
+    Vec3i box_lo, box_hi;
+    const BuildingSlot* slot_at(const Vec3i& p) const {
+        for (const BuildingSlot& s : slots)
+            if (s.pos == p) return &s;
+        return nullptr;
+    }
+    // Inside its walls (under its roof): in the box, at the height of its floor.
+    bool contains(const Vec3i& p) const {
+        return !plan_pos.empty() && p.x >= box_lo.x && p.x <= box_hi.x && p.z >= box_lo.z && p.z <= box_hi.z &&
+               p.y >= origin.y && p.y <= origin.y + 1;
+    }
 };
 
 MatId material_for_item_placement(const Registry& reg, ItemId item);
@@ -112,6 +147,9 @@ public:
     void save(BinWriter& w) const;
     void load(BinReader& r);
     u64 hash() const;
+
+    // Works out a building's slots and box from its plan (after placing or loading).
+    void derive(Building& b) const;
 
 private:
     Vec3i to_world(const BuildingDef& d, const Vec3i& origin, u8 rot, const Vec3i& local) const;

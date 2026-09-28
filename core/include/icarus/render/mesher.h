@@ -48,6 +48,14 @@ public:
     // every `step` cubes as flat-topped blocks with walls and an underside, textured
     // like the cubes (opaque) plus lake surfaces (water).
     void build_lod_column(int cx, int cz, int step, CellMesh& out);
+    // Cutaway views: the cubes in these boxes (a building's roof and the top of its
+    // walls) are left out of the meshes, as if they were air, so what is inside shows.
+    // Presentation only: the world is untouched.
+    struct Cut {
+        Vec3i lo, hi;  // inclusive
+    };
+    void set_cuts(std::vector<Cut> cuts) { cuts_ = std::move(cuts); }
+    const std::vector<Cut>& cuts() const { return cuts_; }
 
 private:
     Voxel at(int x, int y, int z) const {  // padded local coords -1..32
@@ -56,6 +64,7 @@ private:
     void load_padded(const Vec3i& cc);
 
     const World& w_;
+    std::vector<Cut> cuts_;
     std::vector<Voxel> pad_ = std::vector<Voxel>(34 * 34 * 34);
     std::vector<Voxel> tmp_ = std::vector<Voxel>(kCellVol);
 };

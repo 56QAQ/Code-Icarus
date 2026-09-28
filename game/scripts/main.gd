@@ -28,6 +28,13 @@ var _shot_path := ""
 var _shot_frames := 30
 var _shot_wait := 0
 var _hover_timer := 0.0
+# Cutaway: roofs lifted off the buildings near the camera when it is close, and off the
+# one the selected figure is in, so the rooms and the people in them show.
+const CUT_DISTANCE := 58.0
+const CUT_RADIUS := 26.0
+var _cut_timer := 0.0
+var _cut_fetch := 0.0
+var _cut_buildings: Array = []
 var _cli := {}
 
 
@@ -394,6 +401,7 @@ func _process(delta: float) -> void:
 	renderer.focus = rig.target
 	animals.focus = rig.target
 	_update_daylight()
+	_update_cutaway(delta)
 	if _shot_path != "":
 		_screenshot_step()
 		return
@@ -401,6 +409,40 @@ func _process(delta: float) -> void:
 	if _hover_timer <= 0.0:
 		_hover_timer = 0.05
 		_update_hover()
+
+
+func _update_cutaway(delta: float) -> void:
+	if Game.sim == null or not Game.sim.has_game():
+		return
+	_cut_timer -= delta
+	if _cut_timer > 0.0 and _shot_path == "":
+		return
+	_cut_timer = 0.25
+	_cut_fetch -= 0.25
+	if _cut_fetch <= 0.0 or _cut_buildings.is_empty():
+		_cut_fetch = 2.0
+		_cut_buildings = Game.sim.buildings()
+	var close: bool = rig.distance < CUT_DISTANCE and _cli.get("cutaway", "auto") != "off"
+	var sel := Vector3(1e9, 0, 1e9)
+	if chars.selected_id >= 0:
+		sel = chars.position_of(chars.selected_id)
+	var boxes: Array = []
+	for b in _cut_buildings:
+		if b.get("bridge", false) or not b.has("min") or not b.get("complete", false):
+			continue
+		if String(b["def"]) in ["campfire", "watchtower"]:
+			continue
+		var lo: Vector3i = b["min"]
+		var hi: Vector3i = b["max"]
+		if hi.y < lo.y + 3:
+			continue
+		var cx := (lo.x + hi.x + 1) * 0.5
+		var cz := (lo.z + hi.z + 1) * 0.5
+		var near: bool = close and Vector2(cx - rig.target.x, cz - rig.target.z).length() < CUT_RADIUS
+		var holds := sel.x >= lo.x and sel.x <= hi.x + 1 and sel.z >= lo.z and sel.z <= hi.z + 1 and absf(sel.y - lo.y) < 2.0
+		if near or holds:
+			boxes.append([Vector3i(lo.x, lo.y + 3, lo.z), hi])
+	renderer.remesh(Game.sim.set_cutaway(boxes))
 
 
 func _update_daylight() -> void:
