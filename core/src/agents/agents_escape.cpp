@@ -94,7 +94,10 @@ bool Agents::task_escape(Character& c) {
     // On a ledge or in a hollow inside the region (walked down into, not back out of):
     // climb up or down to nearby ground from which home can be reached — slowly up a wall,
     // or down with a knock from a long drop.
-    if (t.step == 0 && region_map_.count(c.foot)) {
+    // (Outside every surveyed region — a ravine, a roof — only down: out of a deep hole
+    // she cuts a staircase instead, below.)
+    const bool in_region = region_map_.count(c.foot) > 0;
+    if (t.step == 0) {
         Path tmp;
         // The hollow itself: everywhere she can walk to from here nearby (no use climbing
         // to another spot on the same floor).
@@ -118,10 +121,15 @@ bool Agents::task_escape(Character& c) {
             for (int dz = -r; dz <= r; ++dz)
                 for (int dx = -r; dx <= r; ++dx) {
                     if (std::max(std::abs(dx), std::abs(dz)) != r) continue;
-                    for (int dy = 8; dy >= -12; --dy) {
+                    for (int dy = in_region ? 8 : -1; dy >= -12; --dy) {
                         const Vec3i q = c.foot + Vec3i{dx, dy, dz};
                         if (!nav.standable(q) || std::binary_search(pocket.begin(), pocket.end(), q)) continue;
-                        cands.push_back({r * 2 + (dy > 0 ? dy * 3 : -dy), q});
+                        // Down the outside of a clear drop (not through a roof), or up
+                        // with room overhead.
+                        bool clear = true;
+                        for (int y = q.y; y <= c.foot.y + 1 && clear; ++y) clear = nav.passable({q.x, y, q.z});
+                        for (int y = c.foot.y; y <= q.y + 2 && clear; ++y) clear = nav.passable({c.foot.x, y, c.foot.z});
+                        if (clear) cands.push_back({r * 2 + (dy > 0 ? dy * 3 : -dy), q});
                     }
                 }
         std::sort(cands.begin(), cands.end(), [](const auto& a, const auto& b) {
@@ -152,7 +160,7 @@ bool Agents::task_escape(Character& c) {
     }
     // (Still in the region with no way found: the stairway below would count itself
     // arrived at once. Give up here for now.)
-    if (t.step == 0 && region_map_.count(c.foot)) {
+    if (t.step == 0 && in_region) {
         say(c, "四面都是绝壁，无路可走");
         blacklist(c, c.foot, kTicksPerHour);
         end_task(c, false);

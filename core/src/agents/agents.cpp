@@ -707,8 +707,9 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
                 const int n = nav.neighbors(c.foot, nb, nc);
                 for (int k = 0; k < n; ++k) {
                     const Vec3i q = nb[k];
-                    if (std::abs(q.x - goal.x) > reach_xz || std::abs(q.z - goal.z) > reach_xz || q.y - goal.y > 2 ||
-                        goal.y - q.y > reach_up || crowded(q, c))
+                    // Aside on the same level only (never up onto a wall or a roof in the making).
+                    if (q.y != c.foot.y || std::abs(q.x - goal.x) > reach_xz || std::abs(q.z - goal.z) > reach_xz ||
+                        q.y - goal.y > 2 || goal.y - q.y > reach_up || crowded(q, c))
                         continue;
                     c.path.nodes.assign(1, q);
                     c.path.next = 0;
