@@ -393,6 +393,19 @@ void Society::draw_plan(Polity& p) {
                strfmt("床位 %d 个，要安顿 %d 人", beds, P.beds_needed));
     if (!band && storehouses == 0 && P.stock > 0.5f * P.need)
         advise("build_storehouse", 0.5f, "粮食堆在露天容易腐坏，需要仓库");
+    // The wounded: without the herbalist's craft a bad wound bleeds on until it kills.
+    {
+        int wounded = 0, lost = 0;
+        for (const auto& cp : ctx_.agents->all()) {
+            if (!cp || cp->polity != p.id || cp->is_girl()) continue;
+            if (cp->alive && !cp->departed && cp->hurt() > 0.15f) ++wounded;
+            if (!cp->alive && cp->death_cause == "伤势过重" && now - cp->died < 3 * kTicksPerDay) ++lost;
+        }
+        if ((wounded >= 2 || lost >= 1) && !p.has_tech("herbalism") && tech_available(p, "herbalism"))
+            advise("research_herbalism", clampv(0.3f + 0.08f * (float)wounded + 0.15f * (float)lost, 0.3f, 0.8f),
+                   lost > 0 ? strfmt("近来有 %d 人伤重不治，%d 人伤势未愈：学会草药与包扎，伤者才救得回来", lost, wounded)
+                            : strfmt("%d 人伤势未愈，却没人懂得草药与包扎", wounded));
+    }
     // What the wild could give that the people cannot yet take.
     if (P.capacity < 1.3f * (float)people) {
         if (!p.has_tech("hunting") && tech_available(p, "hunting") && hunt_could > 0.1f * P.need)
