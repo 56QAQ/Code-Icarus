@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "icarus/economy/buildings.h"
 #include "icarus/sim/simulation.h"
 #include "test_framework.h"
 #include "test_support.h"
@@ -241,18 +242,34 @@ TEST("miracles: called rain falls for its hours, is on record, and puts out open
     Simulation sim(test_registry());
     sim.new_game(village(3));
     sim.run(kTicksPerHour);
-    // A fire in the open, then rain.
+    // A fire in the open (on grass, with no house near it: rain cannot reach under a
+    // roof), then rain.
     const Vec3i v = sim.world().gen().features().village;
+    Vec3i spot = v + Vec3i{12, 1, 12};
+    for (int k = 0; k < 400; ++k) {
+        const Vec3i q = v + Vec3i{8 + k % 20, 0, 8 + k / 20};
+        int top = q.y + 8;
+        while (top > q.y - 8 && !sim.world().material({q.x, top, q.z}).solid) --top;
+        bool clear = sim.world().material({q.x, top, q.z}).key == "grass";
+        for (int dz = -6; dz <= 6 && clear; ++dz)
+            for (int dx = -6; dx <= 6 && clear; ++dx)
+                for (int dy = 0; dy <= 5 && clear; ++dy)
+                    if (sim.buildings().at({q.x + dx, top + dy, q.z + dz})) clear = false;
+        if (clear) {
+            spot = {q.x, top + 1, q.z};
+            break;
+        }
+    }
     AdminCommand fire;
     fire.type = "ignite";
     fire.params = Json::object();
-    fire.params.set("pos", vec_json(v + Vec3i{12, 1, 12}));
+    fire.params.set("pos", vec_json(spot));
     fire.params.set("radius", 1.5);
     sim.apply_admin(fire);
     sim.run(20);
     auto burning_near = [&]() {
         int n = 0;
-        const Vec3i c = v + Vec3i{12, 1, 12};
+        const Vec3i c = spot;
         for (int dy = -6; dy <= 10; ++dy)
             for (int dz = -16; dz <= 16; ++dz)
                 for (int dx = -16; dx <= 16; ++dx)
@@ -260,6 +277,7 @@ TEST("miracles: called rain falls for its hours, is on record, and puts out open
         return n;
     };
     const int burning = burning_near();
+    CHECK(burning > 0);
     AdminCommand rain;
     rain.type = "rain";
     rain.params = Json::object();
