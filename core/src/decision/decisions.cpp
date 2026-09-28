@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 #include "icarus/agents/agents.h"
 #include "icarus/economy/buildings.h"
@@ -98,10 +99,13 @@ void Decisions::whisper_value(EntityId girl, int feature, float delta, EventId c
 void Decisions::gate_construction(Decision& d) const {
     const Polity* p = ctx_.society->polity(d.polity);
     if (!p) return;
-    int unfinished = 0;
+    // Undertakings under way (the homes one decision laid out together count as one).
+    std::set<u64> works;
     for (const Building& b : ctx_.buildings->all())
         if (b.alive && !b.complete && b.polity == p->id && b.project)
-            if (const Project* pr = ctx_.society->project(b.project); pr && pr->alive && pr->status == 0) ++unfinished;
+            if (const Project* pr = ctx_.society->project(b.project); pr && pr->alive && pr->status == 0)
+                works.insert(pr->decision ? (u64)pr->decision << 1 : ((u64)b.project << 1 | 1));
+    const int unfinished = (int)works.size();
     const Json& recipes = ctx_.reg->doc("recipes")["recipes"];
     auto makeable = [&](ItemId it) {
         const std::string key = ctx_.reg->item(it).key;
@@ -136,8 +140,26 @@ void Decisions::gate_construction(Decision& d) const {
     }
 }
 
+// What the polity tried lately and came to nothing (no site, no land left by the fields)
+// is not tried again at once: the option rests two days, with the reason shown.
+void Decisions::recall_fruitless(Decision& d) const {
+    const size_t start = list_.size() > 256 ? list_.size() - 256 : 1;
+    for (size_t i = start; i < list_.size(); ++i) {
+        const Decision& past = list_[i];
+        if (past.polity != d.polity || past.fruitless.empty() || past.chosen < 0 || now_ > past.answered + 2 * kTicksPerDay)
+            continue;
+        const DecisionOption& po = past.options[(size_t)past.chosen];
+        for (DecisionOption& o : d.options)
+            if (o.feasible && o.key == po.key && o.action.str("def") == po.action.str("def")) {
+                o.feasible = false;
+                o.why_not = "前不久试过，" + past.fruitless;
+            }
+    }
+}
+
 u32 Decisions::open(Decision d) {
     gate_construction(d);
+    recall_fruitless(d);
     d.id = (u32)list_.size();
     d.created = now_;
     d.status = DecisionStatus::Pending;
@@ -954,6 +976,15 @@ void Decisions::save(BinWriter& w) const {
         w.u32v(g);
         w.u64v(c);
     }
+    // (Later block: what came to nothing, remembered so it is not tried again at once.)
+    u64 nf = 0;
+    for (size_t i = 1; i < list_.size(); ++i) nf += list_[i].fruitless.empty() ? 0 : 1;
+    w.varu(nf);
+    for (size_t i = 1; i < list_.size(); ++i)
+        if (!list_[i].fruitless.empty()) {
+            w.u32v((u32)i);
+            w.str(list_[i].fruitless);
+        }
     w.end_section(s);
 }
 
@@ -1036,6 +1067,14 @@ void Decisions::load(BinReader& outer) {
         for (u64 k = 0; k < nc; ++k) {
             EntityId g = r.u32v();
             whisper_cause_[g] = r.u64v();
+        }
+    }
+    if (!r.at_end()) {
+        u64 nf = r.varu();
+        for (u64 k = 0; k < nf; ++k) {
+            const u32 id = r.u32v();
+            std::string why = r.str();
+            if (id > 0 && id < list_.size()) list_[id].fruitless = std::move(why);
         }
     }
 }

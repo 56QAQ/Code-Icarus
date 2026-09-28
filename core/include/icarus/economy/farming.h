@@ -55,6 +55,8 @@ public:
     void step(Tick now, Rng& rng);
     // Adds up to n new plots next to existing ones where irrigation reaches. Returns count.
     int expand(u32 farm_id, int n);
+    // The ground `expand` would sow (up to n plots), without laying it out.
+    std::vector<Vec3i> expansion(u32 farm_id, int n);
     // Moves the share of plots nearest to `toward` into a new farm owned by polity.
     u32 split(u32 farm_id, u16 polity, const Vec3i& toward, float share, const std::string& name);
     // Lays out up to n new plots on fertile, irrigable ground near a point. 0 if none.

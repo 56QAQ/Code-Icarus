@@ -368,9 +368,22 @@ void Society::draw_plan(Polity& p) {
         advise("found_farm", 0.9f,
                P.seed >= 6.0f ? strfmt("已经会种地却还没有一块田（谷种 %.0f 份）", P.seed)
                               : std::string("已经会种地，却还没有谷种：派人去长野麦的地方采集，攒够了就开第一片田"));
-    else if (farming && fs.plots < P.plots_needed)
-        advise("expand_farms", clampv((float)(P.plots_needed - fs.plots) / (float)std::max(1, P.plots_needed) * 1.3f, 0.25f, 0.9f),
-               strfmt("要养活 %d 人约需 %d 块能灌溉的田，现在只有 %d 块", people, P.plots_needed, fs.irrigated));
+    else if (farming && fs.plots < P.plots_needed) {
+        const float u = clampv((float)(P.plots_needed - fs.plots) / (float)std::max(1, P.plots_needed) * 1.3f, 0.25f, 0.9f);
+        // (Once the fields have filled the ground their water reaches, the next ones go by
+        // other water.)
+        bool room = false;
+        for (const Farm& f : ctx_.farming->all())
+            if (f.alive && f.polity == p.id && !ctx_.farming->expansion(f.id, 1).empty()) {
+                room = true;
+                break;
+            }
+        if (room)
+            advise("expand_farms", u, strfmt("要养活 %d 人约需 %d 块能灌溉的田，现在只有 %d 块", people, P.plots_needed, fs.irrigated));
+        else
+            advise("found_farm", u,
+                   strfmt("要养活 %d 人约需 %d 块田，现有 %d 块已占满水边能浇到的地，得去别处水边另开新田", people, P.plots_needed, fs.plots));
+    }
     if (farming && fs.plots >= 8 && (float)fs.irrigated < 0.6f * (float)fs.plots) {
         if (tech_available(p, "irrigation")) advise("research_irrigation", 0.55f, "许多田地浇不上水，水利能引远处的水");
         advise("found_farm", 0.5f, "在水边另开能灌溉的新田");

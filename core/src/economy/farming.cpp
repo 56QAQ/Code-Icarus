@@ -210,21 +210,23 @@ u32 Farming::found(u16 polity, const std::string& name, const Vec3i& near, int r
     return create(polity, name, grounds);
 }
 
-int Farming::expand(u32 farm_id, int n) {
+std::vector<Vec3i> Farming::expansion(u32 farm_id, int n) {
+    std::vector<Vec3i> grounds;
     Farm* f = get(farm_id);
-    if (!f || n <= 0) return 0;
-    const Registry& reg = w_.reg();
-    int added = 0;
+    if (!f || n <= 0) return grounds;
+    // (Never onto another field's plots either.)
     std::vector<Vec3i> taken;
-    for (auto& p : f->plots) taken.push_back(p.ground);
+    for (const Farm& o : farms_)
+        if (o.alive)
+            for (const Plot& p : o.plots) taken.push_back(p.ground);
     auto is_taken = [&](int x, int z) {
         for (auto& t : taken)
             if (t.x == x && t.z == z) return true;
         return false;
     };
-    for (size_t i = 0; i < f->plots.size() && added < n; ++i) {
+    for (size_t i = 0; i < f->plots.size() && (int)grounds.size() < n; ++i) {
         Vec3i base = f->plots[i].ground;
-        for (int d = 0; d < 4 && added < n; ++d) {
+        for (int d = 0; d < 4 && (int)grounds.size() < n; ++d) {
             int x = base.x + kDir4H[d].x, z = base.z + kDir4H[d].z;
             if (is_taken(x, z)) continue;
             int y = w_.surface_y(x, z);
@@ -237,15 +239,23 @@ int Farming::expand(u32 farm_id, int n) {
             Plot probe;
             probe.ground = g;
             if (!check_irrigation(probe, irrigation_bonus ? irrigation_bonus(f->polity) : 0)) continue;
-            Plot p;
-            p.ground = g;
-            f->plots.push_back(p);
+            grounds.push_back(g);
             taken.push_back(g);
-            ++added;
         }
     }
-    (void)reg;
-    return added;
+    return grounds;
+}
+
+int Farming::expand(u32 farm_id, int n) {
+    Farm* f = get(farm_id);
+    if (!f) return 0;
+    const std::vector<Vec3i> grounds = expansion(farm_id, n);
+    for (const Vec3i& g : grounds) {
+        Plot p;
+        p.ground = g;
+        f->plots.push_back(p);
+    }
+    return (int)grounds.size();
 }
 
 FarmStats Farming::stats(u32 farm_id) {

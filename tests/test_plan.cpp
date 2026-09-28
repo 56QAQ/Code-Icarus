@@ -66,3 +66,38 @@ TEST("steward: a people whose grown folk are ageing is told to have children to 
     CHECK(plan.birth >= 0.2f);
     CHECK(plan.birth_why.find("接替") != std::string::npos);
 }
+
+TEST("steward: fields that have filled the ground their water reaches are not 'expanded' again and again") {
+    Simulation sim(test_registry());
+    GameConfig cfg;
+    cfg.world.seed = 1;
+    cfg.scenario = "village";
+    sim.new_game(cfg);
+    sim.run(kTicksPerHour);
+    u32 fid = 0;
+    for (const Farm& f : sim.farming().all())
+        if (f.alive && f.polity == 1) fid = f.id;
+    REQUIRE(fid != 0);
+    // What `expansion` shows is what `expand` lays out, and looking changes nothing.
+    const size_t before = sim.farming().get(fid)->plots.size();
+    const std::vector<Vec3i> room = sim.farming().expansion(fid, 6);
+    CHECK_EQ(sim.farming().get(fid)->plots.size(), before);
+    CHECK_EQ(sim.farming().expand(fid, 6), (int)room.size());
+    // Sow every patch of ground the water reaches, then a long stretch of rule.
+    while (sim.farming().expand(fid, 64) > 0) {}
+    CHECK(sim.farming().expansion(fid, 1).empty());
+    const size_t seen = sim.decisions().all().size();
+    sim.run(kTicksPerDay * 3);
+    int offered = 0;
+    for (size_t i = seen; i < sim.decisions().all().size(); ++i) {
+        const Decision& d = sim.decisions().all()[i];
+        if (d.polity != 1) continue;
+        for (const DecisionOption& o : d.options)
+            if (o.key == "expand_farms") {
+                ++offered;
+                CHECK(!o.feasible);
+            }
+        if (d.chosen >= 0) CHECK(d.options[(size_t)d.chosen].key != "expand_farms");
+    }
+    CHECK(offered > 0);
+}

@@ -75,6 +75,21 @@ u32 polity_farm(SimContext& ctx, u16 polity) {
     return 0;
 }
 
+// The polity's field with the most room to grow by, and that room (up to n plots).
+u32 farm_with_room(SimContext& ctx, u16 polity, int n, int& room) {
+    room = 0;
+    u32 best = 0;
+    for (const Farm& f : ctx.farming->all())
+        if (f.alive && f.polity == polity) {
+            const int r = (int)ctx.farming->expansion(f.id, n).size();
+            if (r > room) {
+                room = r;
+                best = f.id;
+            }
+        }
+    return best;
+}
+
 i64 public_count(SimContext& ctx, u16 polity, const char* item) {
     ItemId it = ctx.reg->find_item(item);
     i64 n = 0;
@@ -257,17 +272,25 @@ void Decisions::build_crisis_options(Decision& d, Polity& p, const Crisis& c, Ch
                 const int grain = public_count(ctx_, p.id, "grain");
                 const int keep = band ? 4 : 12;
                 int n = std::clamp(grain - keep, 4, 20);
+                int room = 0;
+                const u32 fid = farm_with_room(ctx_, p.id, n, room);
+                const bool no_room = room == 0;
+                if (!no_room) n = std::min(n, room);
                 DecisionOption o = make("expand_farms", strfmt("扩建田地（约 +%d 块）", n),
                                         strfmt("在灌溉渠附近开垦新田：每块要一份谷种（共约 %d 份），约 3 天后才有收成。", n),
                                         {{kFoodSecurity, 0.7f}, {kGrowth, 0.8f}, {kWelfare, 0.2f}, {kSpeed, -0.6f}, {kFrugality, -0.2f}},
                                         act("expand_farm"));
                 o.action.set("n", n);
+                if (fid) o.action.set("farm", (double)fid);
                 int plots = 0;
                 for (const Farm& f : ctx_.farming->all())
                     if (f.alive && f.polity == p.id) plots += (int)f.plots.size();
                 if (plots >= 3 * std::max(4, s.population)) {
                     o.feasible = false;
                     o.why_not = "田地已多到种不过来";
+                } else if (no_room) {
+                    o.feasible = false;
+                    o.why_not = "田边已没有能灌溉的空地，只能去别处水边另开新田";
                 } else if (grain < n + keep) {
                     o.feasible = false;
                     o.why_not = "存粮太少，拿不出谷种";
@@ -501,6 +524,15 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         }
         // Everyone sleeping on the ground presses harder than a few without a bed.
         o.bias += beds == 0 ? 0.4f : 0.3f * (float)(residents - beds) / (float)std::max(1, residents);
+        // Many without a roof: several homes at once, as many as the builders can take on.
+        if (const BuildingDef* hd = ctx_.buildings->def(home_def); hd && hd->beds > 0) {
+            const int homes = (residents - beds + hd->beds - 1) / hd->beds;
+            const int count = std::clamp(homes, 1, std::clamp(p.plan.staff[1] / 3, 1, 4));
+            if (count > 1) {
+                o.action.set("count", count);
+                o.title = strfmt("兴建%s %d 座（缺 %d 个床位）", home_name.c_str(), count, residents - beds);
+            }
+        }
         O.push_back(o);
     }
     // Expansion: once the home village has grown, a new one by distant water. It widens
@@ -623,7 +655,11 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         const bool band = ctx_.society->foraging_band(p);
         const int grain = public_count(ctx_, p.id, "grain");
         const int keep = band ? 4 : 12;
-        const int n = std::clamp(grain - keep, 4, 16);
+        int n = std::clamp(grain - keep, 4, 16);
+        int room = 0;
+        const u32 fid = farm_with_room(ctx_, p.id, n, room);
+        const bool no_room = room == 0;
+        if (!no_room) n = std::min(n, room);
         int plots = 0;
         for (const Farm& f : ctx_.farming->all())
             if (f.alive && f.polity == p.id) plots += (int)f.plots.size();
@@ -635,10 +671,14 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
                                 {{kFoodSecurity, band || short_fields ? 0.8f : 0.5f}, {kGrowth, 0.7f}, {kFrugality, -0.2f}, {kSpeed, -0.4f}},
                                 act("expand_farm"));
         o.action.set("n", n);
+        if (fid) o.action.set("farm", (double)fid);
         if (short_fields) o.bias += p.stats.food_days < 3.0f ? 0.35f : 0.2f;
         if (plots >= 3 * std::max(4, p.stats.population)) {
             o.feasible = false;
             o.why_not = "田地已多到种不过来";
+        } else if (no_room) {
+            o.feasible = false;
+            o.why_not = "田边已没有能灌溉的空地";
         } else if (grain < n + keep) {
             o.feasible = false;
             o.why_not = "还没攒下足够的谷种";
@@ -650,6 +690,21 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
             o.why_not = "正闹饥荒，谷种先留作口粮";
         }
         O.push_back(o);
+        // The fields have filled the ground their water reaches: a new field by other water.
+        if (no_room && short_fields && !band) {
+            const int m = std::clamp(grain - keep, 4, 24);
+            DecisionOption nf = make("found_farm", "在别处水边另开一片新田",
+                                     strfmt("现有 %d 块田已占满了水渠能浇到的地；去附近另一处水边开出约 %d 块新田。", plots, m),
+                                     {{kFoodSecurity, 0.8f}, {kGrowth, 0.8f}, {kWelfare, 0.2f}, {kSpeed, -0.5f}, {kFrugality, -0.2f}},
+                                     act("found_farm"));
+            nf.action.set("n", m);
+            nf.bias += p.stats.food_days < 3.0f ? 0.35f : 0.2f;
+            if (grain < m + keep) {
+                nf.feasible = false;
+                nf.why_not = "还没攒下足够的谷种";
+            }
+            O.push_back(nf);
+        }
     }
     if (q.punishment < 0.85f) {
         DecisionOption o = make("harsher", "加重惩罚", "更严厉地对待怠工与偷窃。",
@@ -1121,21 +1176,31 @@ void Decisions::execute(Decision& d) {
         Vec3i origin;
         u8 rot = 0;
         std::string def = a.str("def");
-        if (ctx_.buildings->find_site(def, near, 40, origin, rot)) {
+        // Homes for many are laid out several at once (as many as the builders can take on);
+        // the village grows outward when the ground near its heart is taken.
+        const int count = std::max(1, (int)a.integer("count", 1));
+        int started = 0;
+        for (int k = 0; k < count; ++k) {
+            if (!ctx_.buildings->find_site(def, near, 40, origin, rot) && !ctx_.buildings->find_site(def, near, 64, origin, rot))
+                break;
             Project pr;
             pr.polity = p->id;
             pr.kind = "construct";
-            pr.title = o.title;
+            pr.title = count > 1 ? strfmt("%s（%d/%d）", o.title.c_str(), k + 1, count) : o.title;
             pr.sponsor = g->id;
             pr.cause = cause;
             pr.decision = d.id;
             pr.target = origin;
             pr.priority = 1.2f;
-            d.project = ctx_.society->add_project(pr);
-            u32 bid = ctx_.buildings->start_site(def, origin, rot, p->id, d.project);
-            if (Project* prp = ctx_.society->project(d.project)) prp->building = bid;
-        } else {
+            const u32 pid = ctx_.society->add_project(pr);
+            if (!d.project) d.project = pid;
+            u32 bid = ctx_.buildings->start_site(def, origin, rot, p->id, pid);
+            if (Project* prp = ctx_.society->project(pid)) prp->building = bid;
+            ++started;
+        }
+        if (!started) {
             d.note = "找不到合适的建址";
+            d.fruitless = d.note;
         }
     } else if (what == "found_outpost") {
         const Json& cj = a["center"];
@@ -1176,11 +1241,18 @@ void Decisions::execute(Decision& d) {
         }
         const u32 fid = ctx_.farming->found(p->id, p->name + "新村的田地", water, 18, 24);
         p->outposts.push_back(center);
-        if (!started && !fid) d.note = "找不到合适的建址";
+        if (!started && !fid) {
+            d.note = "找不到合适的建址";
+            d.fruitless = d.note;
+        }
     } else if (what == "expand_farm") {
-        u32 f = polity_farm(ctx_, p->id);
+        u32 f = a.has("farm") ? (u32)a.integer("farm") : polity_farm(ctx_, p->id);
+        if (const Farm* fm = ctx_.farming->get(f); !fm || fm->polity != p->id) f = polity_farm(ctx_, p->id);
         int n = ctx_.farming->expand(f, a.integer("n", 16));
-        policy_event(strfmt("开垦新田 %d 块", n));
+        if (n > 0)
+            policy_event(strfmt("开垦新田 %d 块", n));
+        else
+            d.fruitless = "田边已没有能灌溉的空地可开垦";
     } else if (what == "dig") {
         Project pr;
         pr.polity = p->id;
@@ -1226,6 +1298,7 @@ void Decisions::execute(Decision& d) {
             if (fid) break;
         }
         policy_event(fid ? strfmt("在水边开垦了 %zu 块新田", ctx_.farming->get(fid)->plots.size()) : std::string("找不到可以开垦的水边良田"));
+        if (!fid) d.fruitless = "找不到可以开垦的水边良田";
     } else if (what == "forage") {
         p->forage_until = now_ + kTicksPerDay;
         p->policies.pri_gather = std::max(p->policies.pri_gather, 1.2f);
