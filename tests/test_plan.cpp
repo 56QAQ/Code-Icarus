@@ -129,3 +129,29 @@ TEST("steward: emergency measures lapse after their days; building and full port
         if (e.polity == 1 && e.text.find("应急措施到期") != std::string::npos) told = true;
     CHECK(told);
 }
+
+TEST("steward: a war leaves a people tired of fighting for a while, and the steward says so") {
+    Simulation sim(test_registry());
+    GameConfig cfg;
+    cfg.world = WorldConfig::for_layout(WorldLayout::Random, 3);
+    cfg.world.sized();
+    cfg.era = "wild";
+    cfg.civs = 2;
+    cfg.scenario = "wild";
+    sim.new_game(cfg);
+    sim.run(kTicksPerHour);
+    Polity* a = sim.society().polity(1);
+    Polity* b = sim.society().polity(2);
+    REQUIRE(a != nullptr && b != nullptr);
+    CHECK(a->weary == 0.0f);
+    sim.society().declare_war(1, 2, "raid", a->ruler, 0);
+    sim.run(kTicksPerDay * 2);
+    sim.society().make_peace(1, 2, "议和停战", 0);
+    CHECK(a->weary > 0.25f);
+    CHECK(b->weary > 0.25f);
+    const float w0 = a->weary;
+    sim.run(kTicksPerHour * 3);  // (the plan is drawn up every two hours)
+    CHECK(a->plan.backing("avoid_war") > 0.0f);
+    sim.run(kTicksPerDay * 3);
+    CHECK(a->weary < w0);
+}

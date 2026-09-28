@@ -180,6 +180,7 @@ struct Polity {
     int deaths_total = 0;
     Tick forage_until = 0;   // organised foraging campaign
     Tick emergency_until = 0;  // emergency work priorities or rations lapse then
+    float weary = 0.0f;        // tired of war: grows with each war fought, fades by the day
     // Passive spells of the polity's magical girls, summed by effect (refreshed hourly).
     std::vector<std::pair<std::string, float>> passives;
     float passive(const std::string& effect) const {

@@ -204,7 +204,7 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         o.action.set("soldiers", raiders);
         o.facts.set("weapons", weapons);
         o.facts.set("strength_ratio", as.ratio);
-        o.bias += 0.5f * (as.motive + as.opportunity) + 0.3f * (as.ratio - 1.0f) - 0.35f;
+        o.bias += 0.5f * (as.motive + as.opportunity) + 0.3f * (as.ratio - 1.0f) - 0.35f - p.weary;
         const std::string no = why_not_war(0.9f);
         if (!no.empty()) {
             o.feasible = false;
@@ -239,7 +239,7 @@ void Decisions::build_diplomacy_options(Decision& d, Polity& p, Polity& other) {
         o.action.set("aim", "conquest");
         o.action.set("soldiers", army);
         o.facts.set("strength_ratio", as.ratio);
-        o.bias += 0.5f * (as.motive + as.opportunity) + 0.3f * (as.ratio - 1.5f) - 0.5f;
+        o.bias += 0.5f * (as.motive + as.opportunity) + 0.3f * (as.ratio - 1.5f) - 0.5f - p.weary;
         const std::string no = why_not_war(1.6f);
         if (!no.empty()) {
             o.feasible = false;
@@ -538,8 +538,9 @@ void Decisions::build_peace_options(Decision& d, Polity& p, u16 from, const Json
         // A people starving or bled to a handful takes the terms, whatever its ruler's pride.
         const float collapse = (p.stats.food_days < 1.0f ? 0.6f : 0.0f) + (p.stats.population < 8 ? 0.8f : 0.0f);
         a.bias += collapse;
-        // A war that drags on without end: everyone longs for it to be over.
-        a.bias += stalemate(*w, now_);
+        // A war that drags on without end: everyone longs for it to be over (all the more
+        // after the last one).
+        a.bias += stalemate(*w, now_) + 0.5f * p.weary;
         if (collapse > 0.0f) a.facts.set("collapse", collapse);
         a.facts.set("war_days", (float)(now_ - w->since) / (float)kTicksPerDay);
         a.facts.set("losses", w->losses);

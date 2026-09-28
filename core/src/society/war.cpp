@@ -183,11 +183,18 @@ int Society::enlist_champions(u16 id, EventId cause) {
     return n;
 }
 
+void Society::tire_of_war(Polity& p, const War& w) {
+    const float days = (float)(ctx_.now - w.since) / (float)kTicksPerDay;
+    p.weary = std::min(1.5f, p.weary + 0.2f + 0.05f * days + 0.08f * (float)w.losses);
+}
+
 EventId Society::make_peace(u16 a, u16 b, const std::string& how, EventId cause) {
     Polity* pa = polity(a);
     Polity* pb = polity(b);
     if (!pa || !pb) return 0;
-    auto drop = [](Polity& p, u16 other) {
+    auto drop = [this](Polity& p, u16 other) {
+        for (const War& w : p.wars)
+            if (w.enemy == other) tire_of_war(p, w);
         p.wars.erase(std::remove_if(p.wars.begin(), p.wars.end(), [&](const War& w) { return w.enemy == other; }),
                      p.wars.end());
         if (p.op.active && p.op.enemy == other) p.op.active = false;
@@ -320,6 +327,7 @@ void Society::update_wars(Polity& p) {
     for (War& w : p.wars) {
         Polity* enemy = polity(w.enemy);
         if (!enemy) {
+            tire_of_war(p, w);
             w.enemy = 0;
             continue;
         }

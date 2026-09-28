@@ -102,6 +102,8 @@ public:
     void grant_research(u16 polity, const std::string& key, float points, EventId cause);
     // War and peace.
     EventId declare_war(u16 attacker, u16 defender, const std::string& aim, EntityId by, EventId cause);
+    // A war over (peace, or the enemy gone) leaves a people tired of fighting.
+    void tire_of_war(Polity& p, const War& w);
     EventId make_peace(u16 a, u16 b, const std::string& how, EventId cause);
     // A new undertaking of the army (raid / conquest) against an enemy already at war.
     void start_operation(u16 polity, u16 enemy, const std::string& aim, EventId cause);

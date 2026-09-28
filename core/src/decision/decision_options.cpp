@@ -774,6 +774,34 @@ void Decisions::build_governance_options(Decision& d, Polity& p, Character& girl
         o.action.set("amount", sp->num("amount", 0.15));
         O.push_back(o);
     }
+    // A change of policy is weighed against the policy it gives up: what rewards by work
+    // gain in growth, equal shares lose in fairness. (Without this every change looks like
+    // pure gain, and the rules flip back and forth every other day.)
+    auto option = [&](const char* key) -> DecisionOption* {
+        for (DecisionOption& o : O)
+            if (o.key == key) return &o;
+        return nullptr;
+    };
+    auto against = [&](DecisionOption* a, const DecisionOption& given_up, float scale) {
+        if (!a) return;
+        for (int f = 0; f < kFeatureCount; ++f) a->f[f] = clampv((a->f[f] - given_up.f[f]) * scale, -1.0f, 1.0f);
+    };
+    auto pair = [&](const char* ka, const char* kb, float scale) {
+        DecisionOption* a = option(ka);
+        DecisionOption* b = option(kb);
+        if (!a || !b) return;
+        const DecisionOption a0 = *a, b0 = *b;
+        against(a, b0, scale);
+        against(b, a0, scale);
+    };
+    pair("harsher", "gentler", 0.6f);
+    pair("longer_hours", "shorter_hours", 0.7f);
+    {
+        const DecisionOption merit = make("merit", "", "", {{kGrowth, 0.4f}, {kFairness, 0.3f}, {kOrder, 0.2f}, {kWelfare, 0.1f}, {kFrugality, -0.2f}}, act("policy"));
+        const DecisionOption equal = make("equal", "", "", {{kFairness, 0.6f}, {kWelfare, 0.3f}, {kSelfPower, -0.2f}}, act("policy"));
+        if (q.distribution == 0) against(option("merit"), equal, 1.0f);
+        if (q.distribution == 1) against(option("equal"), merit, 1.0f);
+    }
 }
 
 void Decisions::build_stance_options(Decision& d, Polity& p, Character& girl) {

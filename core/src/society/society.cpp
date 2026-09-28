@@ -250,7 +250,10 @@ void Society::check_unification() {
 void Society::daily(Tick now) {
     trade_daily();
     for (auto& p : polities_)
-        if (p.alive) update_diplomacy(p);
+        if (p.alive) {
+            update_diplomacy(p);
+            p.weary *= 0.85f;  // war weariness fades over a week or two
+        }
     // The civilisation index, per polity and for the island. The island's people and what
     // stands built add up; what is known counts once, wherever on the island it is known
     // (one people taking in another loses no knowledge).
@@ -1070,6 +1073,9 @@ void Society::save(BinWriter& w) const {
     // Version 9: when emergency measures lapse.
     w.varu(polities_.size());
     for (size_t i = 1; i < polities_.size(); ++i) w.u64v(polities_[i].emergency_until);
+    // Version 10: how tired of war each people is.
+    w.varu(polities_.size());
+    for (size_t i = 1; i < polities_.size(); ++i) w.f32(polities_[i].weary);
     w.end_section(sec);
 }
 
@@ -1344,6 +1350,13 @@ void Society::load(BinReader& outer) {
                 for (size_t i = 1; i < (size_t)np11; ++i) {
                     const Tick until = r.u64v();
                     if (i < polities_.size()) polities_[i].emergency_until = until;
+                }
+            }
+            if (!r.at_end()) {
+                const u64 np12 = r.varu();
+                for (size_t i = 1; i < (size_t)np12; ++i) {
+                    const float weary = r.f32();
+                    if (i < polities_.size()) polities_[i].weary = weary;
                 }
             }
         }

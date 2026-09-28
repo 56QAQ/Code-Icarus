@@ -427,6 +427,14 @@ void Society::draw_plan(Polity& p) {
                     why = strfmt("周边的土地还能多养活约 %.0f 人，与其打仗折损人手，不如埋头发展", P.capacity - (float)people);
                 }
             }
+            // Just out of a war: everyone is tired of fighting.
+            if (p.weary > 0.25f && !desperate) {
+                const float v = std::min(0.8f, 0.3f + 0.4f * p.weary);
+                if (v > u) {
+                    u = v;
+                    why = "上一场仗才打完，人人厌战，正该休养生息";
+                }
+            }
             if (u > 0.0f) advise("avoid_war", u, why);
             // Stores well past their target while a neighbour has run out: a gift feeds them
             // and takes away their reason to come and take it.
