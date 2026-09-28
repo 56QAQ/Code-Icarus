@@ -276,6 +276,22 @@ growth depends on irrigation from real water nearby.
   off), and crowding then weighs less. Unattached grown-ups of a people get to know each
   other about the village (not only under one roof) and pair off with someone of about
   their own age.
+* **Rulers that learn from what happened** (`decision/decisions.cpp: recall_recent`): an
+  order that came to nothing (no site for the building, no irrigable ground left beside
+  the fields) is recorded on the decision (`fruitless`) and the same option rests for two
+  days with the reason shown; fields report the room they have (`Farming::expansion`),
+  so "expand" is offered only where it can happen and a new field by other water
+  otherwise. A policy change is weighed against the policy it gives up (merit against
+  equal shares, harsher against gentler), and turning a change straight back weighs
+  against it, so rules do not flip every other day. Emergency orders (everyone to the
+  food, building halted, short rations, a rush on a site) lapse after two days or when
+  the food crisis resolves (`Polity::emergency_until`, logged in the chronicle). Homes
+  for many are laid out several at once, sized to the builders; one decision's homes
+  count as one undertaking against the limit on unfinished works, and what the steward
+  presses for may start beside two others.
+* **War weariness** (`Polity::weary`): every war that ends (peace, or the enemy gone)
+  adds weariness by its length and losses; it fades by the day. Weary peoples weigh
+  raids and conquests less, take peace terms sooner, and the steward counsels rest.
 
 * **Polity** (`society/`): identity and display name are separate from the ruler, so the
   title "X的文明，国名" follows the ruler while people, industry and history remain.
