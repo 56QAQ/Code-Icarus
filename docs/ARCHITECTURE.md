@@ -88,11 +88,15 @@ and strike them; carcasses are butchered into meat, hide and bone in the ledger.
 only prey on lone people at night when starving and far from buildings; bears and boars
 strike once at whoever comes too close or struck them, then break off. Fish (crucian,
 carp; `habitat: water`) school in lakes and ponds at least two cubes deep: they swim in
-water cubes only (mid-water, up and down as well), dart from anyone at the edge, breed
-back towards what the water held at first, and die stranded if their water is drained.
-Once a people knows fishing (捕鱼), fishers take a spot on the shore by a school, spear
-(or, with weaving, net) whatever comes within reach and carry the catch home; fish are
-eaten raw or roasted at a campfire or kitchen.
+water cubes only (mid-water, up and down as well), dart from anyone at the edge, and die
+stranded if their water is drained. Each school has a **fishing ground** (saved) with
+its own carrying capacity: fish breed towards it (logistically, fastest when half full)
+and an emptied ground is found again, now and then, by a pair swimming in. Once a people
+knows fishing (捕鱼), fishers go to the fullest ground within reach (leaving any below
+two fifths of its capacity to recover), stand on the shore nearest to where the school
+swims, follow the fish along the shore if none are near, and cast — the more fish about,
+the likelier a catch (spear, or with weaving a net); a catch is two or three fish, eaten
+raw or roasted at a campfire or kitchen.
 
 ## 5. Chronicle (core/sim/chronicle)
 
@@ -145,6 +149,15 @@ events) and a decision trace (the scored options behind the current activity).
   another survey region is out of reach only when both floods ran their course. Long
   searches share a per-tick budget of expanded nodes; beyond it they wait a tick. Someone outside every region (fallen into the ravine) plans and cuts a
   45° staircase out of the rock (`agents_escape.cpp`).
+* **Bodies keep apart** (`agents.cpp`, `footprint.h`): a sleeper lies on her side along
+  a **bed** of three cubes in a row (about 2.6 × 1 cubes), and beds are chosen so that
+  no two bodies overlap — tight inside a house, a little apart and clear of the flames
+  outdoors, feet towards the fire. Cubes with a sleeper on them cost more in the path
+  search (never blocked). Someone standing still is a disc of the shoulders' width;
+  people standing in each other ease apart within their own cube (leaning into an open
+  one beside it, never into a wall), someone arriving where another already stands takes
+  a free cube beside it within the same reach, and walkers keep right of anyone coming
+  the other way. The cube each stands on — what every rule goes by — never changes for it.
 * **Magic on her own initiative** (`agents_magic.cpp`): healing the injured nearby,
   quenching fires, battle magic (enemy magical girls first: a told **duel**), and the
   rituals — a war cry (the fighters around her fearless and stronger for two hours),
