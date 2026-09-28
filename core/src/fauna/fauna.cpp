@@ -1,6 +1,7 @@
 #include "icarus/fauna/fauna.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include "icarus/agents/agents.h"
@@ -106,6 +107,7 @@ int Fauna::species_id(const std::string& key) const {
 void Fauna::reset(u64 seed) {
     rng_.seed(seed, 0xFA0A);
     animals_.clear();
+    grounds_.clear();
     capacity_.assign(species_.size(), 0);
     next_id_ = 1;
     now_ = 0;
@@ -249,6 +251,7 @@ void Fauna::populate() {
                     const size_t before = animals_.size();
                     spawn_herd(s.id, Vec3i{x, col.water_top, z}, n, 0);
                     spawned[s.id] += (int)(animals_.size() - before);
+                    if (animals_.size() > before) grounds_.push_back({Vec3i{x, col.water_top, z}, s.id, s.herd_max * 2, 0});
                 }
             if (!col.land || col.water_top >= 0 || col.reserved) continue;
             float site_d = 1e9f;
@@ -270,6 +273,51 @@ void Fauna::populate() {
         }
     for (size_t s = 0; s < species_.size(); ++s)
         capacity_[s] = std::max(spawned[s] > 0 ? 4 : 0, (int)std::ceil((float)spawned[s] * 1.25f));
+    refresh_grounds();
+}
+
+int Fauna::ground_of(const Animal& a) const {
+    int best = -1;
+    i64 bd = 24 * 24;
+    for (size_t g = 0; g < grounds_.size(); ++g) {
+        if (grounds_[g].species != a.species) continue;
+        const Vec3i& at = grounds_[g].at;
+        const i64 d = (i64)(at.x - a.home.x) * (at.x - a.home.x) + (i64)(at.z - a.home.z) * (at.z - a.home.z);
+        if (d < bd) {
+            bd = d;
+            best = (int)g;
+        }
+    }
+    return best;
+}
+
+void Fauna::refresh_grounds() {
+    std::vector<std::array<i64, 3>> sum(grounds_.size(), {0, 0, 0});
+    for (FishGround& g : grounds_) g.stock = 0;
+    for (const Animal& a : animals_) {
+        if (!a.alive || !species_[a.species].aquatic) continue;
+        const int g = ground_of(a);
+        if (g < 0) continue;
+        grounds_[(size_t)g].stock++;
+        sum[(size_t)g][0] += a.foot.x;
+        sum[(size_t)g][1] += a.foot.y;
+        sum[(size_t)g][2] += a.foot.z;
+    }
+    for (size_t g = 0; g < grounds_.size(); ++g) {
+        FishGround& fg = grounds_[g];
+        const i64 n = fg.stock;
+        fg.center = n ? Vec3i{(i32)(sum[g][0] / n), (i32)(sum[g][1] / n), (i32)(sum[g][2] / n)} : fg.at;
+    }
+}
+
+int Fauna::fish_near(const Vec3f& p, float radius) const {
+    int n = 0;
+    for (const Animal& a : animals_) {
+        if (!a.alive || !species_[a.species].aquatic || std::abs(a.pos.y - p.y) > 6.0f) continue;
+        const float dx = a.pos.x - p.x, dz = a.pos.z - p.z;
+        if (dx * dx + dz * dz < radius * radius) ++n;
+    }
+    return n;
 }
 
 // ------------------------------------------------------------------------ people nearby
@@ -823,11 +871,33 @@ void Fauna::daily() {
     std::vector<int> alive(species_.size(), 0);
     for (const Animal& a : animals_)
         if (a.alive) alive[a.species]++;
+    // Fish breed towards what their own ground carries (fastest when it is half full).
+    refresh_grounds();
+    std::vector<int> stock;
+    for (const FishGround& g : grounds_) stock.push_back(g.stock);
     const size_t n = animals_.size();
     for (size_t i = 0; i < n; ++i) {
         Animal& a = animals_[i];
         if (!a.alive || !a.female) continue;
         const SpeciesDef& s = species_[a.species];
+        if (s.aquatic) {
+            const int g = ground_of(a);
+            if (g < 0 || (float)(now_ - a.born) / (float)kTicksPerDay < kGrownDays * 1.5f) continue;
+            const float room = 1.0f - (float)stock[(size_t)g] / (float)std::max(1, grounds_[(size_t)g].cap);
+            if (room <= 0.0f || !rng_.chance(room / s.breed_days)) continue;
+            const int litter = rng_.range(s.litter_min, s.litter_max);
+            rough_ = !people_near(a.foot, kNearPeople);
+            const Vec3i at = a.foot;
+            const u32 herd = a.herd;
+            for (int k = 0; k < litter && stock[(size_t)g] < grounds_[(size_t)g].cap; ++k) {
+                Vec3i p = at + Vec3i{rng_.range(-1, 1), 0, rng_.range(-1, 1)};
+                if (!find_spot(p, s)) continue;
+                const u32 id = spawn(s.id, p, herd, now_);
+                if (Animal* f = get(id)) f->home = grounds_[(size_t)g].at;
+                stock[(size_t)g]++;
+            }
+            continue;
+        }
         if (alive[s.id] >= capacity_[s.id]) continue;
         if ((float)(now_ - a.born) / (float)kTicksPerDay < kGrownDays * 1.5f) continue;
         if (a.hunger > 0.8f || !rng_.chance(1.0f / s.breed_days)) continue;
@@ -842,6 +912,24 @@ void Fauna::daily() {
             alive[s.id]++;
         }
     }
+    // A ground fished out (or never refilled) is found again, now and then, by a pair
+    // swimming in from the rest of the water.
+    for (size_t g = 0; g < grounds_.size(); ++g) {
+        if (stock[g] > 0 || !rng_.chance(1.0f / 6.0f)) continue;
+        const SpeciesDef& s = species_[grounds_[g].species];
+        rough_ = !people_near(grounds_[g].at, kNearPeople);
+        for (int k = 0; k < 2; ++k) {
+            Vec3i p = grounds_[g].at + Vec3i{rng_.range(-2, 2), 0, rng_.range(-2, 2)};
+            if (!find_spot(p, s)) continue;
+            const u32 id = spawn(s.id, p, 0, now_);
+            if (Animal* f = get(id)) {
+                f->home = grounds_[g].at;
+                f->female = k == 0;
+                f->born = now_ - (Tick)(kGrownDays * 2.0f * (float)kTicksPerDay);
+            }
+        }
+    }
+    refresh_grounds();
 }
 
 // ------------------------------------------------------------------------ persistence
@@ -885,6 +973,13 @@ void Fauna::save(BinWriter& w) const {
         w.u64v(a.state_until);
         w.u64v(a.last_bite);
         w.str(a.death_cause);
+    }
+    // Fishing grounds (added later).
+    w.varu(grounds_.size());
+    for (const FishGround& g : grounds_) {
+        w.vec3i(g.at);
+        w.str(species_[g.species].key);
+        w.vari(g.cap);
     }
     w.end_section(sec);
 }
@@ -937,6 +1032,30 @@ void Fauna::load(BinReader& outer) {
         a.species = (u16)s;
         animals_.push_back(std::move(a));
     }
+    grounds_.clear();
+    if (!r.at_end()) {
+        const u64 ng = r.varu();
+        for (u64 i = 0; i < ng; ++i) {
+            FishGround g;
+            g.at = r.vec3i();
+            const int s = species_id(r.str());
+            g.cap = (int)r.vari();
+            if (s < 0) continue;
+            g.species = (u16)s;
+            grounds_.push_back(g);
+        }
+    } else {
+        // An older save: a ground where each school of fish lives.
+        for (const Animal& a : animals_) {
+            const SpeciesDef& s = species_[a.species];
+            if (!a.alive || !s.aquatic) continue;
+            bool have = false;
+            for (const FishGround& g : grounds_)
+                if (g.species == a.species && g.at.dist2(a.home) < 8 * 8) have = true;
+            if (!have) grounds_.push_back({a.home, a.species, s.herd_max * 2, 0});
+        }
+    }
+    refresh_grounds();
     people_.clear();
     people_at_ = ~0ull;
     rough_ = false;

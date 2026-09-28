@@ -266,7 +266,7 @@ private:
     void update_equipment(Character& c);
     void assign_homes();
     void appoint_scholars();
-    bool shore_near(const Vec3i& p, Vec3i& out);
+    bool shore_near(const Vec3i& p, Vec3i& out, int radius = 6);
     // Craft, chop, quarry and mine jobs from what the polity needs (agents_production.cpp).
     void production_jobs();
     void say(Character& c, const std::string& s) { c.status_text = s; }

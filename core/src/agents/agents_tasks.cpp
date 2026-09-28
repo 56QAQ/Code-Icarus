@@ -1564,7 +1564,6 @@ bool Agents::task_work(Character& c) {
             // cast for them), a few if they bite, and bring the catch home.
             Fauna* fauna = ctx_.fauna;
             auto give_up = [&](const std::string& msg) {
-                if (Animal* a = fauna ? fauna->get(j->project) : nullptr; a && a->alive) a->hunted_by = kNoEntity;
                 say(c, msg);
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
@@ -1593,20 +1592,36 @@ bool Agents::task_work(Character& c) {
                             c.yaw = std::atan2((float)kDir4H[d].x, (float)kDir4H[d].z);
                 say(c, net ? "撒网捕鱼" : "在水边叉鱼");
                 if (now_ < t.until) return true;
-                Animal* best = nullptr;
-                float bd = 7.0f * 7.0f;
-                for (const Animal& a : fauna->all()) {
-                    if (!a.alive || !fauna->spec(a.species).aquatic || std::abs(a.foot.y - c.foot.y) > 5) continue;
-                    const float dx = a.pos.x - c.pos.x, dz = a.pos.z - c.pos.z;
-                    if (dx * dx + dz * dz < bd) {
-                        bd = dx * dx + dz * dz;
-                        best = fauna->get(a.id);
+                // A cast pays off the more fish there are about: a ground fished down
+                // yields less and less (and the fishers move on to fuller water).
+                const int local = fauna->fish_near(c.pos, 10.0f);
+                // Nothing in reach: walk along the shore towards the nearest fish (twice at most).
+                if (local == 0 && t.count == 0 && t.target2.y < 2) {
+                    u32 nearest = fauna->find_fish(c.foot, 26);
+                    Vec3i stand;
+                    if (const Animal* a = fauna->get(nearest); a && shore_near(a->foot, stand, 8) && stand != c.foot) {
+                        ++t.target2.y;
+                        j->pos = stand;
+                        t.step = 0;
+                        say(c, "鱼在那边，换个地方");
+                        return true;
                     }
                 }
-                const float chance = (net ? 0.8f : 0.5f) * (0.75f + 0.5f * c.skills[kFarming]);
-                if (best && rng_.chance(chance)) {
-                    const std::string kind = fauna->spec(best->species).name;
-                    if (fauna->catch_fish(*best, c.id, c.inv) > 0) {
+                const float chance = (net ? 0.7f : 0.45f) * (0.75f + 0.5f * c.skills[kFarming]) *
+                                     std::min(1.0f, (float)local / 5.0f);
+                if (local > 0 && rng_.chance(chance)) {
+                    Animal* best = nullptr;
+                    float bd = 10.0f * 10.0f;
+                    for (const Animal& a : fauna->all()) {
+                        if (!a.alive || !fauna->spec(a.species).aquatic || std::abs(a.pos.y - c.pos.y) > 6.0f) continue;
+                        const float dx = a.pos.x - c.pos.x, dz = a.pos.z - c.pos.z;
+                        if (dx * dx + dz * dz < bd) {
+                            bd = dx * dx + dz * dz;
+                            best = fauna->get(a.id);
+                        }
+                    }
+                    const std::string kind = best ? fauna->spec(best->species).name : std::string();
+                    if (best && fauna->catch_fish(*best, c.id, c.inv) > 0) {
                         Event e;
                         e.type = EventType::Hunt;
                         e.severity = 1;
@@ -1619,17 +1634,13 @@ bool Agents::task_work(Character& c) {
                         ctx_.society->practice(c.polity, "hunt", 0.3f, c.id);
                         ++t.count;
                     }
-                    // Another cast while there is room in the basket.
-                    if (t.count < 3 && carried_weight(c) + 1.0f < carry_capacity(c)) {
-                        t.until = now_ + work_ticks(net ? 60 : 80);
-                        return true;
-                    }
-                } else if (++t.target2.x < 3) {
-                    t.until = now_ + work_ticks(60);  // nothing yet: wait a while longer
+                }
+                // Another cast while the fish are there and the basket has room.
+                if (local > 0 && t.count < 4 && ++t.target2.x < 6 && carried_weight(c) + 1.2f < carry_capacity(c)) {
+                    t.until = now_ + work_ticks(net ? 60 : 80);
                     return true;
                 }
-                if (t.count == 0) return give_up("鱼都游走了");
-                if (Animal* a = fauna->get(j->project); a && a->alive) a->hunted_by = kNoEntity;
+                if (t.count == 0) return give_up(local == 0 ? "这片水里没有鱼了" : "鱼都游走了");
                 ctx_.jobs->complete(t.job);
                 t.job = 0;
                 t.step = 10;  // home with the catch

@@ -79,6 +79,17 @@ struct Animal {
     std::string death_cause;
 };
 
+// A fishing ground: where a school of fish lives in a lake or pond. Fish breed towards
+// what the ground can carry, so a ground fished hard recovers when it is left alone,
+// and one fished out is found again by a few fish swimming in.
+struct FishGround {
+    Vec3i at;          // water surface at the school's centre
+    u16 species = 0;
+    int cap = 0;       // fish the ground carries
+    int stock = 0;     // fish living there now (counted, not saved)
+    Vec3i center;      // where they are swimming now (counted with the stock)
+};
+
 class Fauna {
 public:
     static constexpr Tick kFarStep = 20;
@@ -107,6 +118,14 @@ public:
     u32 find_prey(const Vec3i& from, int radius, bool dangerous_too) const;
     // The nearest fish within radius that nobody is after (0 if none).
     u32 find_fish(const Vec3i& from, int radius) const;
+    // Fishing grounds with their current stock (recounted by refresh_grounds()).
+    const std::vector<FishGround>& grounds() const { return grounds_; }
+    void refresh_grounds();
+    // Where the fish of ground g are swimming now (their middle; the ground itself if
+    // none), as of the last refresh_grounds().
+    Vec3i ground_center(size_t g) const { return grounds_[g].center; }
+    // Fish of any kind swimming within radius of p (xz, and a few cubes up or down).
+    int fish_near(const Vec3f& p, float radius) const;
     // Kills a fish caught by `by` (a fisher) and puts the catch in `into`; returns units.
     int catch_fish(Animal& a, EntityId by, StoreId into);
     // Whether an animal of species s can be at p (on its feet, or swimming).
@@ -144,6 +163,9 @@ private:
     std::vector<SpeciesDef> species_;
     std::vector<Animal> animals_;  // index = id - 1; dead animals stay (carcasses) until pruned
     std::vector<int> capacity_;    // per species: what the land carried at the start
+    std::vector<FishGround> grounds_;
+    // Which ground a fish belongs to (nearest of its kind by its home), -1 if none.
+    int ground_of(const Animal& a) const;
     Rng rng_;
     u32 next_id_ = 1;
     Tick now_ = 0;

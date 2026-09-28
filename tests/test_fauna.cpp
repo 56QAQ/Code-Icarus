@@ -171,3 +171,32 @@ TEST("fauna: fish school in the lakes, stay in the water, and fishers bring them
     for (const auto& [k, n] : f.deaths)
         if (k.rfind("crucian:", 0) == 0 || k.rfind("carp:", 0) == 0) CHECK(k.find("猎杀") == std::string::npos);
 }
+
+TEST("fauna: fish breed back to what their ground carries; a fished-out ground is found again") {
+    Simulation sim(test_registry());
+    GameConfig c;
+    c.world = WorldConfig::for_layout(WorldLayout::Continent, 3);
+    c.scenario = "wild";
+    c.era = "wild";
+    sim.new_game(c);
+    Fauna& f = sim.fauna();
+    f.refresh_grounds();
+    const size_t grounds = f.grounds().size();
+    CHECK(grounds > 20);
+    for (const FishGround& g : f.grounds()) CHECK(g.stock <= g.cap);
+    // Every fish taken: the grounds stand empty ...
+    for (const Animal& a : f.all())
+        if (a.alive && f.spec(a.species).aquatic) f.strike(*f.get(a.id), 10.0f, kNoEntity, 0);
+    f.refresh_grounds();
+    for (const FishGround& g : f.grounds()) CHECK_EQ(g.stock, 0);
+    // ... until pairs swim in, a few grounds a day, and breed (never past what a ground carries).
+    sim.run(kTicksPerDay * 2);
+    f.refresh_grounds();
+    int refilled = 0;
+    for (const FishGround& g : f.grounds()) {
+        if (g.stock > 0) ++refilled;
+        CHECK(g.stock <= g.cap);
+    }
+    CHECK(refilled * 10 >= (int)grounds);
+    CHECK(refilled < (int)grounds);
+}

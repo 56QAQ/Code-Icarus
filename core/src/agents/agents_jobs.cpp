@@ -651,40 +651,51 @@ void Agents::generate_jobs() {
         }
     }
 
-    // Fishing: a spot on the shore by a school of fish, for a people that knows how and
-    // could use more food. The fish named in the job is spoken for; the catch is whatever
-    // of its school comes within reach.
+    // Fishing: a spot on the shore of a fishing ground that still has plenty of fish.
+    // Fishers leave a ground fished down below two fifths of what it carries, so that it
+    // recovers; a people short of food sends more of them, a well-fed one fewer.
     if (ctx_.fauna && now_ % 300 == 150) {
-        for (const Animal& a : ctx_.fauna->all()) {
-            if (!a.alive || !(a.hunted_by & 0x80000000u) || !ctx_.fauna->spec(a.species).aquatic) continue;
-            bool live = false;
-            for (const Job& j : jobs.all())
-                if (j.alive && j.type == JobType::Fish && j.project == a.id) live = true;
-            if (!live) ctx_.fauna->get(a.id)->hunted_by = kNoEntity;
-        }
+        for (const Animal& a : ctx_.fauna->all())  // (older saves marked single fish)
+            if (a.alive && (a.hunted_by & 0x80000000u) && ctx_.fauna->spec(a.species).aquatic)
+                ctx_.fauna->get(a.id)->hunted_by = kNoEntity;
+        ctx_.fauna->refresh_grounds();
+        const std::vector<FishGround>& grounds = ctx_.fauna->grounds();
         for (auto& pc : ctx_.society->polities()) {
-            if (!pc.alive || !pc.has_tech("fishing") || pc.stats.food_days >= 6.0f) continue;
+            if (!pc.alive || !pc.has_tech("fishing") || pc.stats.food_days >= 12.0f) continue;
             const Building* seat = ctx_.buildings->get(pc.seat);
             if (!seat) continue;
+            std::vector<Vec3i> homes{seat->entrance};
+            for (const Vec3i& o : pc.outposts) homes.push_back(o);
             int people = 0;
             for (const auto& cp : chars_)
                 if (cp && cp->alive && !cp->departed && cp->polity == pc.id && !cp->is_girl()) ++people;
             int open = 0;
             for (const Job& j : jobs.all())
                 if (j.alive && j.type == JobType::Fish && j.polity == pc.id) ++open;
-            const int max_open = std::max(1, people / 6);
-            for (int tries = 0; open < max_open && tries < 4; ++tries) {
-                Animal* a = ctx_.fauna->get(ctx_.fauna->find_fish(seat->entrance, 90));
-                if (!a) break;
-                a->hunted_by = 0x80000000u | pc.id;  // spoken for (also when no shore is found)
-                Vec3i stand;
-                if (!shore_near(a->foot, stand)) continue;
-                bool taken = false;  // one fisher to a stretch of shore
+            const int max_open = std::max(1, people / (pc.stats.food_days < 4.0f ? 5 : 10));
+            if (open >= max_open) continue;
+            // The fullest grounds within reach first (a little nearer counts for a little).
+            std::vector<std::pair<float, int>> cands;
+            for (size_t g = 0; g < grounds.size(); ++g) {
+                const FishGround& fg = grounds[g];
+                if (fg.stock < std::max(2, (fg.cap * 2 + 4) / 5)) continue;
+                i64 d2 = 1LL << 60;
+                for (const Vec3i& h : homes) d2 = std::min(d2, fg.at.dist2(h));
+                if (d2 > 90 * 90) continue;
+                bool taken = false;  // one fisher to a ground
                 for (const Job& o : jobs.all())
-                    if (o.alive && o.type == JobType::Fish && o.pos.dist2(stand) < 6 * 6) taken = true;
+                    if (o.alive && o.type == JobType::Fish && o.project == (u32)g + 1) taken = true;
                 if (taken) continue;
+                cands.push_back({-((float)fg.stock / (float)fg.cap - std::sqrt((float)d2) / 300.0f), (int)g});
+            }
+            std::sort(cands.begin(), cands.end());
+            for (const auto& [score, g] : cands) {
+                if (open >= max_open) break;
+                Vec3i stand;
+                // On the shore nearest to where the school is swimming now.
+                if (!shore_near(ctx_.fauna->ground_center((size_t)g), stand, 10)) continue;
                 Job& j = add(JobType::Fish, pc.id, stand, pc.stats.food_days < 2.0f ? 1.05f : 0.9f);
-                j.project = a->id;
+                j.project = (u32)g + 1;
                 ++open;
             }
         }
@@ -692,13 +703,13 @@ void Agents::generate_jobs() {
 }
 
 // A spot on dry ground at the water's edge within a few cubes of p (nearest first).
-bool Agents::shore_near(const Vec3i& p, Vec3i& out) {
+bool Agents::shore_near(const Vec3i& p, Vec3i& out, int radius) {
     const MatId WATER = ctx_.reg->m().water;
     Nav& nav = *ctx_.nav;
     i64 bd = 1LL << 60;
     bool found = false;
-    for (int dz = -6; dz <= 6; ++dz)
-        for (int dx = -6; dx <= 6; ++dx)
+    for (int dz = -radius; dz <= radius; ++dz)
+        for (int dx = -radius; dx <= radius; ++dx)
             for (int dy = -1; dy <= 4; ++dy) {
                 const Vec3i q = p + Vec3i{dx, dy, dz};
                 if (ctx_.world->mat(q) == WATER || !nav.standable(q)) continue;
