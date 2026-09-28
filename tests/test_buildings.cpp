@@ -217,3 +217,45 @@ TEST("buildings: old saved houses without furniture still work (floor beds, near
         }
     CHECK(derive_slots(reg, pos, mats, 0, {}).empty());
 }
+
+TEST("buildings: a site built from exactly its bill of materials uses every unit (thatch: a bundle for two cubes)") {
+    Simulation sim(test_registry());
+    sim.new_game(village(2));
+    Polity& p = first(sim);
+    const Building* seat = sim.buildings().get(p.seat);
+    REQUIRE(seat != nullptr);
+    for (const char* key : {"hut", "lean_to", "study"}) {
+        Vec3i origin;
+        u8 rot = 0;
+        REQUIRE(sim.buildings().find_site(key, seat->entrance, 60, origin, rot));
+        const u32 id = sim.buildings().start_site(key, origin, rot, p.id, 0);
+        Building* b = sim.buildings().get(id);
+        REQUIRE(b != nullptr);
+        // The bill matches the blueprint's cost, and a bundle of straw goes two cubes.
+        const BuildingDef* d = sim.buildings().def(key);
+        const auto bill = sim.buildings().remaining_cost(*b);
+        CHECK(bill == d->cost);
+        const ItemId fiber = test_registry().find_item("fiber");
+        int thatch = 0;
+        for (const Voxel v : b->plan_vox) thatch += vmat(v) == test_registry().mat_id("thatch");
+        CHECK_EQ(bill.count(fiber) ? bill.at(fiber) : 0,
+                 (thatch + 1) / 2 + (d->key == "lean_to" ? 6 : 0));  // (the lean-to's mats: a unit each)
+        for (auto& [it, n] : bill) sim.economy().add(b->site, it, n, "admin_create");
+        // Lay it all (whatever can be laid, round and round).
+        for (int round = 0; round < 40 && !sim.buildings().site_done(*b); ++round)
+            for (int k = 0; k < (int)b->plan_pos.size(); ++k) {
+                const int idx = sim.buildings().next_buildable(*b, k);
+                if (idx < 0) break;
+                const Material& here = sim.world().material(b->plan_pos[(size_t)idx]);
+                if (here.solid && vmat(b->plan_vox[(size_t)idx]) != sim.world().mat(b->plan_pos[(size_t)idx])) {
+                    sim.world().set(b->plan_pos[(size_t)idx], make_voxel(0), 0);  // (clear the ground first)
+                    continue;
+                }
+                CHECK(sim.buildings().place_cell(*b, idx, 0));
+            }
+        CHECK(sim.buildings().site_done(*b));
+        const Store* site = sim.economy().store(b->site);
+        REQUIRE(site != nullptr);
+        CHECK(site->empty());
+    }
+}

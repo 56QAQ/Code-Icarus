@@ -1874,8 +1874,10 @@ bool Agents::task_work(Character& c) {
                 }
                 if (vmat(want) != 0) {
                     ItemId it = item_for_material(reg, vmat(want));
-                    if (it != kNoItem && ctx_.econ->available(b->site, it, c.id) <= 0) return fail("工地缺少材料");
-                    if (it != kNoItem) ctx_.econ->reserve(b->site, it, 1, c.id, now_ + kTicksPerHour);
+                    if (it != kNoItem && ctx_.buildings->needs_item(*b, idx)) {
+                        if (ctx_.econ->available(b->site, it, c.id) <= 0) return fail("工地缺少材料");
+                        ctx_.econ->reserve(b->site, it, 1, c.id, now_ + kTicksPerHour);
+                    }
                 }
                 t.step = 1;
                 if (fetch_tool(1)) return true;

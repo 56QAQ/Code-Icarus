@@ -190,13 +190,19 @@ void Buildings::load_defs(const Registry& reg) {
                         m = reg.mat_id(mk);
                     }
                     d.cells.push_back({{x, y, z}, m});
-                    if (m != 0) {
-                        ItemId it = item_for_material(reg, m);
-                        if (it != kNoItem) d.cost[it]++;
-                    }
                     if (y == 0 && (c == 'D' || (c == '.' && z == (int)rows.size() - 1)) && d.door_local.x < 0)
                         d.door_local = {x, 0, z};
                 }
+            }
+        }
+        // Cost: a unit of material for each cube (thatch: a bundle for every two).
+        {
+            std::map<MatId, int> cubes;
+            for (auto& c : d.cells)
+                if (c.mat != 0) cubes[c.mat]++;
+            for (auto& [m, n] : cubes) {
+                const ItemId it = item_for_material(reg, m);
+                if (it != kNoItem) d.cost[it] += (n + reg.mat(m).per_unit - 1) / reg.mat(m).per_unit;
             }
         }
         // Use slots and beds from the furniture (in blueprint coordinates).
@@ -466,21 +472,42 @@ bool Buildings::place_cell(Building& b, int idx, EventId cause) {
         return true;
     }
     ItemId it = item_for_material(*reg_, vmat(want));
-    if (it != kNoItem) {
+    if (it != kNoItem && needs_item(b, idx)) {
         if (econ_.remove(b.site, it, 1, "construction") < 1) return false;
     }
     w_.set(p, want, cause);
     return true;
 }
 
+bool Buildings::needs_item(const Building& b, int idx) const {
+    if (idx < 0 || idx >= (int)b.plan_pos.size()) return false;
+    const MatId want = vmat(b.plan_vox[(size_t)idx]);
+    if (want == 0 || item_for_material(*reg_, want) == kNoItem) return false;
+    const int per = reg_->mat(want).per_unit;
+    if (per <= 1) return true;
+    int intact = 0;
+    for (size_t i = 0; i < b.plan_pos.size(); ++i)
+        if (vmat(b.plan_vox[i]) == want && vmat(w_.peek(b.plan_pos[i])) == want) ++intact;
+    return intact % per == 0;
+}
+
 std::map<ItemId, int> Buildings::remaining_cost(const Building& b) const {
     std::map<ItemId, int> need;
+    std::map<MatId, std::pair<int, int>> cubes;  // material -> (laid, still to lay)
     for (size_t i = 0; i < b.plan_pos.size(); ++i) {
         MatId want = vmat(b.plan_vox[i]);
         if (want == 0) continue;
-        if (vmat(w_.peek(b.plan_pos[i])) == want) continue;
-        ItemId it = item_for_material(*reg_, want);
-        if (it != kNoItem) need[it]++;
+        auto& c = cubes[want];
+        if (vmat(w_.peek(b.plan_pos[i])) == want) ++c.first;
+        else ++c.second;
+    }
+    for (auto& [m, c] : cubes) {
+        const ItemId it = item_for_material(*reg_, m);
+        if (it == kNoItem || c.second == 0) continue;
+        // A unit is used up whenever a cube is laid with a multiple of `per` laid before it.
+        const int per = reg_->mat(m).per_unit, from = c.first, to = c.first + c.second - 1;
+        const int units = to / per - (from == 0 ? -1 : (from - 1) / per);
+        if (units > 0) need[it] += units;
     }
     const Store* s = econ_.store(b.site);
     if (s)

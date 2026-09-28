@@ -317,7 +317,9 @@ void Agents::generate_jobs() {
             MatId want = vmat(b->plan_vox[(size_t)idx]);
             if (want) {
                 ItemId it = item_for_material(reg, want);
-                if (it != kNoItem && econ.available(b->site, it) <= 0 && !ctx_.world->material(p).solid) continue;
+                if (it != kNoItem && ctx_.buildings->needs_item(*b, idx) && econ.available(b->site, it) <= 0 &&
+                    !ctx_.world->material(p).solid)
+                    continue;
             }
             Job& j = add(JobType::Build, b->polity, p, prio);
             j.building = b->id;

@@ -59,6 +59,8 @@ struct Material {
     std::string furniture;
     std::string made_of;
     ItemId made_of_item = kNoItem;
+    // Cubes one unit of its building material makes (a bundle of straw thatches two).
+    int per_unit = 1;
 };
 
 // Decoration layers 0..kSpriteBase-1 are fixed (grass tufts, flowers, wheat, dry

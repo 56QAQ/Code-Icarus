@@ -1,5 +1,7 @@
 #include "icarus/data/registry.h"
 
+#include <algorithm>
+
 #include <filesystem>
 #include <stdexcept>
 
@@ -197,6 +199,7 @@ void Registry::parse_materials(const Json& j) {
         m.sprite = e.str("sprite");
         m.furniture = e.str("furniture");
         m.made_of = e.str("made_of");
+        m.per_unit = std::max(1, e.integer("per_unit", 1));
         mat_index_[m.key] = m.id;
         mats_.push_back(m);
     }

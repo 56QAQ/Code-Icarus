@@ -132,6 +132,9 @@ public:
     // Next plan index that can be built now (supported, needs material), or -1.
     int next_buildable(const Building& b, int start_hint = 0);
     bool place_cell(Building& b, int idx, EventId cause);
+    // Whether laying plan cube idx now uses up a unit of material (thatch goes two cubes
+    // to a bundle: every other one is laid from the bundle already begun).
+    bool needs_item(const Building& b, int idx) const;
     std::map<ItemId, int> remaining_cost(const Building& b) const;
     bool site_done(const Building& b);
     void finish(Building& b, EventId cause);

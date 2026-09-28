@@ -25,7 +25,7 @@
     {"key": "crop", "name": "作物", "color": "#c9b24a", "color_var": 0.10, "solid": false, "opaque": false, "hardness": 4, "toughness": 1, "density": 0.1, "flammability": 0.5, "burn_ticks": 20, "burn_to": "air", "rigid": false},
     {"key": "ash", "name": "灰烬", "color": "#4a4745", "color_var": 0.10, "granular": true, "hardness": 5, "toughness": 1, "density": 0.4},
     {"key": "path", "name": "道路", "color": "#9c8664", "color_var": 0.04, "hardness": 30, "toughness": 3, "density": 1.7, "drop": "dirt"},
-    {"key": "thatch", "name": "茅草", "color": "#c7a85a", "color_var": 0.07, "hardness": 8, "toughness": 1, "density": 0.2, "drop": "fiber", "flammability": 0.7, "burn_ticks": 60, "burn_to": "air"},
+    {"key": "thatch", "name": "茅草", "color": "#c7a85a", "color_var": 0.07, "per_unit": 2, "hardness": 8, "toughness": 1, "density": 0.2, "drop": "fiber", "flammability": 0.7, "burn_ticks": 60, "burn_to": "air"},
     {"key": "meteorite", "name": "陨铁", "color": "#3d3a44", "color_var": 0.10, "hardness": 180, "toughness": 7, "density": 5.0, "drop": "meteoric_iron"},
     {"key": "basalt", "name": "玄武岩", "color": "#3b3836", "color_var": 0.06, "hardness": 120, "toughness": 6, "density": 2.9, "drop": "stone"},
     {"key": "spring", "name": "泉眼", "color": "#6fb8e0", "color_var": 0.04, "hardness": 150, "toughness": 5, "density": 2.4, "drop": "stone"},
