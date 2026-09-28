@@ -52,7 +52,7 @@ bool Agents::wild_food_near(const Vec3i& from, int radius, Vec3i& out) {
     return false;
 }
 
-bool Agents::wild_water_near(const Vec3i& from, int radius, Vec3i& stand) {
+bool Agents::wild_water_near(const Vec3i& from, int radius, Vec3i& stand, Character* who) {
     // Any pool or stream within reach (away from the settlements' surveyed water).
     const World& w = *ctx_.world;
     const MatId WATER = ctx_.reg->m().water;
@@ -67,9 +67,11 @@ bool Agents::wild_water_near(const Vec3i& from, int radius, Vec3i& stand) {
                     const Voxel v = w.peek({x, y, z});
                     if (vmat(v) == 0) continue;
                     if (vmat(v) != WATER || vlevel(v) < 3) break;
+                    // (Not a spot she has just found she cannot get to: she would set out for
+                    // it again and again, and die of thirst on the spot.)
                     for (const Vec3i& s : {Vec3i{x + 1, y + 1, z}, Vec3i{x - 1, y + 1, z}, Vec3i{x, y + 1, z + 1},
                                            Vec3i{x, y + 1, z - 1}, Vec3i{x, y, z}})
-                        if (ctx_.nav->standable(s)) {
+                        if (ctx_.nav->standable(s) && !(who && blacklisted(*who, s))) {
                             stand = s;
                             return true;
                         }

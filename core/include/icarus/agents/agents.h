@@ -111,7 +111,8 @@ public:
     // The nearest wild food plant within radius of p (not already someone's job).
     bool wild_food_near(const Vec3i& p, int radius, Vec3i& out);
     // A standable place by any water within radius (pools and streams in the wild).
-    bool wild_water_near(const Vec3i& p, int radius, Vec3i& stand);
+    // Any pool or stream within reach; for a resident, none of the spots she could not get to.
+    bool wild_water_near(const Vec3i& p, int radius, Vec3i& stand, Character* who = nullptr);
 
     // Equipment (agents_equipment.cpp). The tool a job is done with ("" = none helps).
     std::string tool_kind_for(const Job& j) const;

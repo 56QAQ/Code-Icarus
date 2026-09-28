@@ -558,8 +558,8 @@ bool Agents::task_drink(Character& c) {
         // Far from home (on campaign, on an errand): a stream or pond at hand first.
         const bool away = far_from_home(c);
         // Far from the known springs: any water nearby, and farther afield when parched.
-        if (!(away && wild_water_near(c.foot, 40, stand)) && !find_water(c, stand, water) &&
-            !wild_water_near(c.foot, 40, stand) && !(c.needs.water < 0.35f && wild_water_near(c.foot, 100, stand))) {
+        if (!(away && wild_water_near(c.foot, 40, stand, &c)) && !find_water(c, stand, water) &&
+            !wild_water_near(c.foot, 40, stand, &c) && !(c.needs.water < 0.35f && wild_water_near(c.foot, 100, stand, &c))) {
             day.thirsty_no_water++;
             say(c, "找不到水源");
             end_task(c, false);
