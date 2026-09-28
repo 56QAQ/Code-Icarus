@@ -315,6 +315,18 @@ private:
     // Path search nodes expanded this tick (long searches beyond the budget wait a tick).
     static constexpr u64 kPathTickBudget = 40000;
     u64 path_spent_ = 0;
+    // The long way (agents_route.cpp): a goal farther than kLegFar is walked in legs of
+    // about kLeg cubes along a coarse route over tiles of the land. Points along the route
+    // to walk to next (the farthest first); false when there is no coarse route.
+    static constexpr int kLegFar = 64, kLeg = 48;
+    bool route_vias(const Vec3i& from, const Vec3i& to, std::vector<Vec3i>& vias);
+    void route_tile(int tx, int tz, i16& h, u8& wet);
+    int route_tx_ = 0, route_tz_ = 0;
+    std::vector<i16> route_h_;   // ground height of each tile (worked out when first needed)
+    std::vector<u8> route_wet_;  // fresh water over it: 0 none, 1 shallow, 2 deep
+    std::vector<float> route_g_;
+    std::vector<u32> route_gen_, route_parent_;
+    u32 route_stamp_ = 0;
     std::vector<std::pair<u64, u32>> crowd_;  // (4x4 column cell, index in chars_), sorted
     std::array<int, 24> fail_ring_{};                // path failures per hour, last 24 h
     int fail_ring_pos_ = 0;

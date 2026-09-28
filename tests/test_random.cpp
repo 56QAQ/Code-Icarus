@@ -159,7 +159,10 @@ TEST("random island: the sea keeps its level and its wall") {
             CHECK_EQ((int)vlevel(w.get(p)), (int)kFluidFull);
         }
     // Water poured on the sea above its level runs off.
-    w.set({q.x + 4, sl + 1, q.z + 4}, make_voxel(M.water, kFluidFull));
+    Vec3i pour{q.x + 4, sl + 1, q.z + 4};
+    for (int k = 0; k < 64 && !g.column(pour.x, pour.z).sea; ++k) pour = Vec3i{q.x + 4 - (k % 8), sl + 1, q.z + 4 - (k / 8)};
+    CHECK(g.column(pour.x, pour.z).sea);
+    w.set(pour, make_voxel(M.water, kFluidFull));
     sim.run(20);
     CHECK(sim.physics().stats().water_units_sea_in > 0);
     // Nothing crosses the wall at the rim.
@@ -227,4 +230,39 @@ TEST("random island: sea fish near the coast and out at sea, made up when thin")
     sim.run(kTicksPerDay * 4);
     fauna.refresh_grounds();
     CHECK(fauna.grounds()[gi].stock >= 2);
+}
+
+TEST("random island: fishers row boats out to the schools beyond the shore and bring them home") {
+    Simulation sim(test_registry());
+    GameConfig cfg;
+    cfg.world = random_island(3);
+    cfg.scenario = "village";
+    cfg.civs = 1;
+    sim.new_game(cfg);
+    Polity& p = *sim.society().polity(1);
+    for (const char* k : {"fishing", "carpentry", "boats"})
+        if (!p.has_tech(k)) p.techs.push_back(k);
+    const ItemId boat = sim.reg().find_item("boat");
+    REQUIRE(boat != kNoItem);
+    StoreId store = kNoStore;
+    for (const Store& s : sim.economy().stores())
+        if (s.alive && s.polity == 1 && s.kind == StoreKind::Stockpile) store = s.id;
+    REQUIRE(store != kNoStore);
+    sim.economy().add(store, boat, 2, "admin_create");
+    int caught = 0, afloat = 0;
+    for (int h = 0; h < 48 && caught < 2; ++h) {
+        sim.run(kTicksPerHour);
+        for (auto& cp : sim.agents().all())
+            if (cp && cp->alive && cp->in_boat) ++afloat;
+        caught = 0;
+        for (const Event& e : sim.chronicle().events())
+            if (e.text.find("在船上捕到") != std::string::npos) ++caught;
+    }
+    std::printf("  boats: %d catches, %d character-hours afloat\n", caught, afloat);
+    CHECK(caught >= 2);
+    // The boats are all still somewhere (the workshop may have made more).
+    sim.run(kTicksPerHour * 8);
+    const LedgerLine& l = sim.economy().ledger(boat);
+    CHECK(sim.economy().total(boat) >= 2);
+    CHECK_EQ(sim.economy().total(boat), l.produced - l.consumed);
 }

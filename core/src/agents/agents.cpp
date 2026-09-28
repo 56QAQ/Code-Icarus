@@ -636,8 +636,25 @@ Agents::Move Agents::move_to(Character& c, const Vec3i& goal, bool adjacent_ok, 
             c.moving = false;
             return Move::Moving;
         }
+        // Far away: the next leg along the coarse route (the path ends on the way; the
+        // goal stays the goal, and the leg after is sought where this one ends).
+        if (budget > 0 && std::max(std::abs(goal.x - c.foot.x), std::abs(goal.z - c.foot.z)) > kLegFar) {
+            std::vector<Vec3i> vias;
+            if (route_vias(c.foot, goal, vias))
+                for (const Vec3i& v : vias) {
+                    const u64 before = nav.stats.expansions;
+                    const bool ok = nav.find_path(c.foot, v, true, c.path, 8000, 3, 3);
+                    path_spent_ += nav.stats.expansions - before;
+                    if (ok && c.path.valid()) {
+                        c.path_goal = goal;
+                        break;
+                    }
+                    c.path.clear();
+                }
+        }
         const u64 expanded = nav.stats.expansions;
-        const bool found = budget > 0 && nav.find_path(c.foot, goal, adjacent_ok, c.path, budget, reach_up, reach_xz);
+        const bool found = c.path.valid() ||
+                           (budget > 0 && nav.find_path(c.foot, goal, adjacent_ok, c.path, budget, reach_up, reach_xz));
         path_spent_ += nav.stats.expansions - expanded;
         if (!found) {
             blacklist(c, goal, kTicksPerHour * 3);

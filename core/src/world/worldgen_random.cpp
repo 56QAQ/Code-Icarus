@@ -605,8 +605,9 @@ void WorldGen::init_random() {
     for (size_t n = 0; n < N; ++n) I.near_sea[n] = to_out[n] <= 3;
 
     // ------------------------------------------------------------ settlement sites
-    // Flat, fertile ground a short walk from fresh water, away from the coast, apart from
-    // each other and in different climates where the island allows.
+    // Flat, fertile ground a short walk from fresh water, back from the shore, apart from
+    // each other and in different climates where the island allows; with a sea, one of
+    // them near the coast.
     {
         std::vector<int> wdist(N, 1 << 20);
         std::vector<int> q;
@@ -631,6 +632,7 @@ void WorldGen::init_random() {
             int n;
             float score;
             Biome biome;
+            bool coast;  // a short walk from the sea (fishing from the shore, boats)
         };
         std::vector<SiteCand> sc;
         for (int j = 6; j < gd - 6; j += 2)
@@ -662,7 +664,7 @@ void WorldGen::init_random() {
                         if (I.kind[m] == kLand && !I.river[m] && wdist[m] <= 4 && std::fabs(I.H[m] - I.H[n]) < 5.0f) ++fertile;
                     }
                 s += 0.02f * (float)fertile;
-                sc.push_back({(int)n, s, bi});
+                sc.push_back({(int)n, s, bi, I.sea && to_out[n] <= 16});
             }
         std::stable_sort(sc.begin(), sc.end(), [](const SiteCand& a, const SiteCand& b) { return a.score > b.score; });
         std::vector<SiteCand> chosen;
@@ -672,14 +674,17 @@ void WorldGen::init_random() {
             float bs = -1e9f;
             for (const SiteCand& c : sc) {
                 float md = 1e9f;
-                bool used_biome = false;
+                bool used_biome = false, coast_taken = false;
                 for (const SiteCand& o : chosen) {
+                    coast_taken = coast_taken || o.coast;
                     md = std::min(md, dist2d(I.nx(c.n % gw), I.nx(c.n / gw), I.nx(o.n % gw), I.nx(o.n / gw)));
                     if (o.biome == c.biome) used_biome = true;
                 }
                 if (md < spacing) continue;
                 const bool poor = c.biome == Biome::Wetland || c.biome == Biome::Desert || c.biome == Biome::Snowfield;
-                const float s = c.score + (chosen.empty() ? 0.0f : 0.004f * std::min(md, R)) + (used_biome || poor ? 0.0f : 0.5f);
+                // With a sea, one people lives by the coast.
+                const float s = c.score + (chosen.empty() ? 0.0f : 0.004f * std::min(md, R)) + (used_biome || poor ? 0.0f : 0.5f) +
+                                (c.coast && !coast_taken ? 1.0f : 0.0f);
                 if (s > bs) {
                     bs = s;
                     best = &c;
