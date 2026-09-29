@@ -155,7 +155,8 @@ events) and a decision trace (the scored options behind the current activity).
 * **Jobs** (`agents_jobs.cpp`) appear where the world needs them: fields to till, sow
   and harvest; piles to store; construction/repair sites to supply and build; dig
   projects; kitchens; crafting on demand (recipes in `data/recipes.json`, produced at a
-  public store and logged in the ledger); foraging under scarcity.
+  public store and logged in the ledger); foraging under scarcity; reeds cut and trees
+  felled for their crowns while building sites are short of straw for thatch.
 * **Using buildings** (`agents_furniture.cpp`): each member of a household has a bed of
   her own (by rank; the magical girls sleep in the hall's) — she walks to the floor
   beside it, climbs over onto it and lies down with her head on the pillow, and gets
@@ -261,7 +262,9 @@ blueprints; integrity is derived from the world, so damage degrades function.
   materials (`made_of`), and burns or breaks like any cube. Beds, desks and stations
   block the way; mats, stools and benches can be stepped on; nothing can be stood on top
   of. Every floor people walk or stand on has three cubes of head room (they are about
-  2.6 cubes tall) and doors are three cubes high.
+  2.6 cubes tall) and doors are three cubes high. A unit of material builds one cube,
+  or `per_unit` cubes (a bundle of straw thatches two): costs, bills of materials and the
+  builders count it alike, so a site stocked with its bill uses every unit.
 * **Use slots** (`derive_slots`, recomputed from the plan on placing and loading, never
   saved): a bed or mat (a run of like cubes, its head against a wall, worked out by
   `economy/furniture.h` so the mesher draws it the same way) with the floor beside it;
