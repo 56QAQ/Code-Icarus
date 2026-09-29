@@ -11,6 +11,7 @@
 #include <cmath>
 
 #include "convert.h"
+#include "icarus/economy/furniture.h"
 #include "icarus/util/log.h"
 #include "icarus/world/query.h"
 
@@ -749,6 +750,16 @@ Array IcarusSim::characters() const {
             const bool seat = (fm.furniture == "stool" || fm.furniture == "bench") && !c.moving && !c.sleeping;
             d["pose"] = String(c.sleeping && top > 0.0f ? "bed" : (seat ? "sit" : "stand"));
             d["seat_h"] = top;
+            // Under the covers: the bed's own blanket, or a hide over a straw mat.
+            if (c.sleeping && fm.furniture == "bed") {
+                const icarus::World& w = sim_->world();
+                auto mat_at = [&w](const icarus::Vec3i& q) { return icarus::vmat(w.peek(q)); };
+                const icarus::FurnitureRun run = icarus::furniture_run(*reg_, mat_at, c.foot);
+                const uint32_t v = icarus::bed_blanket_rgb(run.head);
+                d["blanket"] = Color(((v >> 16) & 0xFF) / 255.0, ((v >> 8) & 0xFF) / 255.0, (v & 0xFF) / 255.0);
+            } else if (c.sleeping && fm.furniture == "mat") {
+                d["blanket"] = Color(0.47, 0.33, 0.21);
+            }
         }
         d["in_boat"] = c.in_boat;
         d["alive"] = c.alive;
